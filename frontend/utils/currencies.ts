@@ -1,7 +1,8 @@
 export const CURRENCIES = [
-  { code: 'USD', symbol: '$', name: 'US Dollar' },
-  { code: 'CFA', symbol: 'FCFA', name: 'CFA Franc' },
-  { code: 'CDF', symbol: 'FC', name: 'Congolese Franc' },
+  { code: 'CDF', symbol: 'FC', name: 'Franc Congolais (RDC)' },
+  { code: 'USD', symbol: '$', name: 'Dollar Américain' },
+  { code: 'EUR', symbol: '€', name: 'Euro' },
+  { code: 'CFA', symbol: 'FCFA', name: 'Franc CFA' },
 ];
 
 export const getCurrencySymbol = (code: string): string => {
@@ -18,6 +19,8 @@ export const formatCurrency = (amount: number, currencyCode: string): string => 
   
   if (currencyCode === 'USD') {
     return `${symbol}${formatted}`;
+  } else if (currencyCode === 'EUR') {
+    return `${formatted} ${symbol}`;
   }
   return `${formatted} ${symbol}`;
 };
