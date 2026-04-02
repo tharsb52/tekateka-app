@@ -67,7 +67,7 @@ export default function DashboardScreen() {
             <Text style={styles.statLabel}>{i18n.t('totalSales')}</Text>
           </View>
           <Text style={[styles.statValue, { color: '#10b981' }]}>
-            {formatCurrency(stats.totalSales, user?.currency || 'CDF')}
+            {formatCurrency(stats.totalSales, user?.currency || 'USD')}
           </Text>
           <Text style={styles.statCount}>{sales.length} transactions</Text>
         </View>
@@ -79,7 +79,7 @@ export default function DashboardScreen() {
             <Text style={styles.statLabel}>{i18n.t('totalExpenses')}</Text>
           </View>
           <Text style={[styles.statValue, { color: '#dc2626' }]}>
-            {formatCurrency(stats.totalExpenses, user?.currency || 'CDF')}
+            {formatCurrency(stats.totalExpenses, user?.currency || 'USD')}
           </Text>
           <Text style={styles.statCount}>{expenses.length} expenses</Text>
         </View>
@@ -97,7 +97,7 @@ export default function DashboardScreen() {
                 {isProfit ? i18n.t('profit') : i18n.t('loss')}
               </Text>
               <Text style={styles.profitValue}>
-                {formatCurrency(Math.abs(stats.netProfit), user?.currency || 'CDF')}
+                {formatCurrency(Math.abs(stats.netProfit), user?.currency || 'USD')}
               </Text>
             </View>
           </View>
@@ -121,7 +121,7 @@ export default function DashboardScreen() {
               <View style={styles.productInfo}>
                 <Text style={styles.productName}>{product.name}</Text>
                 <Text style={styles.productStats}>
-                  {product.quantity} sold • {formatCurrency(product.revenue, user?.currency || 'CDF')}
+                  {product.quantity} sold • {formatCurrency(product.revenue, user?.currency || 'USD')}
                 </Text>
               </View>
             </View>

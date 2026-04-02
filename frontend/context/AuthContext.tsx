@@ -65,7 +65,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       createdAt: new Date().toISOString(),
       trialStartDate: new Date().toISOString(),
       isSubscribed: false,
-      currency: 'CDF', // Franc Congolais (RDC) par défaut
+      currency: 'USD', // Dollar Américain par défaut
       language: 'fr',
     };
 

@@ -20,7 +20,7 @@ export default function SellScreen() {
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [quantity, setQuantity] = useState('1');
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'mobileMoney'>('cash');
-  const [currency, setCurrency] = useState(user?.currency || 'CDF');
+  const [currency, setCurrency] = useState(user?.currency || 'USD');
 
   const availableProducts = products.filter(p => p.stock > 0);
 
