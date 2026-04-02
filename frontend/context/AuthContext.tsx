@@ -70,6 +70,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
     await saveUser(newUser);
+    
+    // Initialize sample data for new users
+    const { initializeSampleData } = await import('../utils/sampleData');
+    await initializeSampleData(phoneNumber);
+    console.log('✅ Sample data initialized for demo');
+    
     setUser(newUser);
   };
 
