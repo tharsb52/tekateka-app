@@ -48,8 +48,18 @@ async def create_status_check(input: StatusCheckCreate):
     return status_obj
 
 @api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    status_checks = await db.status_checks.find().to_list(1000)
+async def get_status_checks(limit: int = 100, skip: int = 0):
+    """
+    Get status checks with pagination support.
+    
+    Args:
+        limit: Maximum number of results to return (default: 100, max: 500)
+        skip: Number of results to skip for pagination (default: 0)
+    """
+    # Enforce maximum limit to prevent memory issues
+    limit = min(limit, 500)
+    
+    status_checks = await db.status_checks.find().limit(limit).skip(skip).to_list(limit)
     return [StatusCheck(**status_check) for status_check in status_checks]
 
 # Include the router in the main app
