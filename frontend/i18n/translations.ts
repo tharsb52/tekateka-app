@@ -1,0 +1,263 @@
+export const translations = {
+  fr: {
+    // Authentication
+    welcome: 'Bienvenue sur TekaTeka',
+    phoneNumber: 'Numéro de téléphone',
+    enterPhone: 'Entrez votre numéro',
+    sendOTP: 'Envoyer le code',
+    verifyOTP: 'Vérifier le code',
+    enterOTP: 'Entrez le code SMS',
+    login: 'Connexion',
+    
+    // Navigation
+    sell: 'Vendre',
+    products: 'Produits',
+    expenses: 'Charges',
+    dashboard: 'Tableau de bord',
+    
+    // Products
+    addProduct: 'Ajouter Produit',
+    editProduct: 'Modifier Produit',
+    deleteProduct: 'Supprimer',
+    productName: 'Nom du produit',
+    price: 'Prix',
+    stock: 'Stock',
+    category: 'Catégorie',
+    save: 'Enregistrer',
+    cancel: 'Annuler',
+    
+    // Categories
+    food: 'Alimentaire',
+    drinks: 'Boissons',
+    clothes: 'Vêtements',
+    cosmetics: 'Cosmétiques',
+    electronics: 'Électronique',
+    other: 'Autre',
+    
+    // Sales
+    selectProduct: 'Sélectionner un produit',
+    quantity: 'Quantité',
+    paymentMethod: 'Mode de paiement',
+    cash: 'Espèces',
+    mobileMoney: 'Mobile Money',
+    recordSale: 'Enregistrer la vente',
+    totalAmount: 'Montant total',
+    
+    // Expenses
+    addExpense: 'Ajouter Charge',
+    expenseAmount: 'Montant',
+    expenseCategory: 'Type de charge',
+    customExpense: 'Charge personnalisée',
+    
+    // Expense Categories
+    inventory: 'Achat marchandises',
+    transport: 'Transport',
+    rent: 'Loyer',
+    electricity: 'Électricité',
+    water: 'Eau',
+    internet: 'Internet',
+    salaries: 'Salaires',
+    mobileMoneyFees: 'Commission mobile money',
+    taxes: 'Taxes',
+    maintenance: 'Entretien/Réparations',
+    supplies: 'Fournitures',
+    miscellaneous: 'Charges imprévues',
+    
+    // Dashboard
+    totalSales: 'Total Ventes',
+    totalExpenses: 'Total Charges',
+    netProfit: 'Bénéfice Net',
+    topProducts: 'Produits Populaires',
+    profit: 'Bénéfice',
+    loss: 'Perte',
+    
+    // Subscription
+    trialDaysLeft: 'Jours restants',
+    subscribe: 'S\'abonner',
+    subscriptionRequired: 'Abonnement requis',
+    
+    // Common
+    delete: 'Supprimer',
+    edit: 'Modifier',
+    confirm: 'Confirmer',
+    success: 'Succès',
+    error: 'Erreur',
+    loading: 'Chargement...',
+    noData: 'Aucune donnée',
+    currency: 'Devise',
+  },
+  ln: {
+    // Authentication
+    welcome: 'Boyei malamu na TekaTeka',
+    phoneNumber: 'Numéro ya téléphone',
+    enterPhone: 'Koma numéro na yo',
+    sendOTP: 'Tinda code',
+    verifyOTP: 'Vérifier code',
+    enterOTP: 'Koma code oyo ozwi',
+    login: 'Kokota',
+    
+    // Navigation
+    sell: 'Teka',
+    products: 'Biloko',
+    expenses: 'Ba dépenses',
+    dashboard: 'Tableau',
+    
+    // Products
+    addProduct: 'Bakisa Produit',
+    editProduct: 'Bongola Produit',
+    deleteProduct: 'Longola',
+    productName: 'Kombo ya produit',
+    price: 'Prix',
+    stock: 'Stock',
+    category: 'Catégorie',
+    save: 'Bomba',
+    cancel: 'Tika',
+    
+    // Categories
+    food: 'Biloko ya kolia',
+    drinks: 'Masanga',
+    clothes: 'Bilamba',
+    cosmetics: 'Biloko ya kitoko',
+    electronics: 'Électronique',
+    other: 'Ndenge mosusu',
+    
+    // Sales
+    selectProduct: 'Pona produit',
+    quantity: 'Motango',
+    paymentMethod: 'Lolenge ya kofuta',
+    cash: 'Mbongo ya maboko',
+    mobileMoney: 'Mobile Money',
+    recordSale: 'Bomba vente',
+    totalAmount: 'Total',
+    
+    // Expenses
+    addExpense: 'Bakisa Dépense',
+    expenseAmount: 'Mbongo',
+    expenseCategory: 'Type ya dépense',
+    customExpense: 'Dépense ya yo moko',
+    
+    // Expense Categories
+    inventory: 'Kosomba marchandises',
+    transport: 'Transport',
+    rent: 'Loyer',
+    electricity: 'Électricité',
+    water: 'Mai',
+    internet: 'Internet',
+    salaries: 'Salaire',
+    mobileMoneyFees: 'Commission mobile money',
+    taxes: 'Taxes',
+    maintenance: 'Réparations',
+    supplies: 'Fournitures',
+    miscellaneous: 'Ba dépenses mosusu',
+    
+    // Dashboard
+    totalSales: 'Total ya ba ventes',
+    totalExpenses: 'Total ya ba dépenses',
+    netProfit: 'Bénéfice',
+    topProducts: 'Ba produits ya malamu',
+    profit: 'Bénéfice',
+    loss: 'Perte',
+    
+    // Subscription
+    trialDaysLeft: 'Mikolo etikali',
+    subscribe: 'Futa abonnement',
+    subscriptionRequired: 'Abonnement esengeli',
+    
+    // Common
+    delete: 'Longola',
+    edit: 'Bongola',
+    confirm: 'Ndima',
+    success: 'Malamu',
+    error: 'Erreur',
+    loading: 'Ezali ko charger...',
+    noData: 'Eloko moko te',
+    currency: 'Mbongo',
+  },
+  en: {
+    // Authentication
+    welcome: 'Welcome to TekaTeka',
+    phoneNumber: 'Phone number',
+    enterPhone: 'Enter your phone number',
+    sendOTP: 'Send code',
+    verifyOTP: 'Verify code',
+    enterOTP: 'Enter the SMS code',
+    login: 'Login',
+    
+    // Navigation
+    sell: 'Sell',
+    products: 'Products',
+    expenses: 'Expenses',
+    dashboard: 'Dashboard',
+    
+    // Products
+    addProduct: 'Add Product',
+    editProduct: 'Edit Product',
+    deleteProduct: 'Delete',
+    productName: 'Product name',
+    price: 'Price',
+    stock: 'Stock',
+    category: 'Category',
+    save: 'Save',
+    cancel: 'Cancel',
+    
+    // Categories
+    food: 'Food',
+    drinks: 'Drinks',
+    clothes: 'Clothes',
+    cosmetics: 'Cosmetics',
+    electronics: 'Electronics',
+    other: 'Other',
+    
+    // Sales
+    selectProduct: 'Select product',
+    quantity: 'Quantity',
+    paymentMethod: 'Payment method',
+    cash: 'Cash',
+    mobileMoney: 'Mobile Money',
+    recordSale: 'Record sale',
+    totalAmount: 'Total amount',
+    
+    // Expenses
+    addExpense: 'Add Expense',
+    expenseAmount: 'Amount',
+    expenseCategory: 'Expense type',
+    customExpense: 'Custom expense',
+    
+    // Expense Categories
+    inventory: 'Inventory purchase',
+    transport: 'Transport',
+    rent: 'Rent',
+    electricity: 'Electricity',
+    water: 'Water',
+    internet: 'Internet',
+    salaries: 'Salaries',
+    mobileMoneyFees: 'Mobile money fees',
+    taxes: 'Taxes',
+    maintenance: 'Maintenance/Repairs',
+    supplies: 'Supplies',
+    miscellaneous: 'Miscellaneous',
+    
+    // Dashboard
+    totalSales: 'Total Sales',
+    totalExpenses: 'Total Expenses',
+    netProfit: 'Net Profit',
+    topProducts: 'Top Products',
+    profit: 'Profit',
+    loss: 'Loss',
+    
+    // Subscription
+    trialDaysLeft: 'Days remaining',
+    subscribe: 'Subscribe',
+    subscriptionRequired: 'Subscription required',
+    
+    // Common
+    delete: 'Delete',
+    edit: 'Edit',
+    confirm: 'Confirm',
+    success: 'Success',
+    error: 'Error',
+    loading: 'Loading...',
+    noData: 'No data',
+    currency: 'Currency',
+  },
+};
