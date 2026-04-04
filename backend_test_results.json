@@ -1,0 +1,62 @@
+{
+  "timestamp": "2026-04-04T12:11:12.865565",
+  "backend_url": "https://low-data-shop.preview.emergentagent.com",
+  "summary": {
+    "total_tests": 5,
+    "passed": 5,
+    "failed": 0
+  },
+  "results": [
+    {
+      "endpoint": "/api/health",
+      "status": "PASS",
+      "details": "Health check returned correct format and healthy status",
+      "timestamp": "2026-04-04T12:11:12.655694",
+      "response_data": {
+        "status": "healthy",
+        "database": "connected"
+      }
+    },
+    {
+      "endpoint": "/api/",
+      "status": "PASS",
+      "details": "Root endpoint returned correct message",
+      "timestamp": "2026-04-04T12:11:12.700539",
+      "response_data": {
+        "message": "Hello World"
+      }
+    },
+    {
+      "endpoint": "/api/reports/analytics",
+      "status": "PASS",
+      "details": "Analytics endpoint returned correct format and data types",
+      "timestamp": "2026-04-04T12:11:12.757623",
+      "response_data": {
+        "total_users": 0,
+        "new_users_this_week": 0,
+        "countries": {},
+        "total_revenue": 0.0,
+        "revenue_growth": 0.0,
+        "active_users": 0
+      }
+    },
+    {
+      "endpoint": "/api/status",
+      "status": "PASS",
+      "details": "Status endpoint returned empty list (no data yet)",
+      "timestamp": "2026-04-04T12:11:12.803645",
+      "response_data": []
+    },
+    {
+      "endpoint": "POST /api/status",
+      "status": "PASS",
+      "details": "Status check created successfully",
+      "timestamp": "2026-04-04T12:11:12.865405",
+      "response_data": {
+        "id": "05e14e3f-ef48-4762-a290-4e833af38332",
+        "client_name": "TekaTeka Mobile App",
+        "timestamp": "2026-04-04T12:11:12.831675"
+      }
+    }
+  ]
+}

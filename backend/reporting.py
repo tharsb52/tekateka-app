@@ -111,47 +111,67 @@ async def get_country_from_phone(phone_number: str) -> str:
 
 @router.get("/analytics", response_model=ReportResponse)
 async def get_analytics():
-    """Get current analytics for the admin"""
+    """Get current analytics for the admin - optimized with MongoDB aggregation pipelines"""
     
-    # Get all users
-    users = await db.users.find().to_list(10000)
-    total_users = len(users)
+    now = datetime.now()
+    one_week_ago = (now - timedelta(days=7)).isoformat()
+    two_weeks_ago = (now - timedelta(days=14)).isoformat()
+
+    # 1. Total users count (no need to fetch docs)
+    total_users = await db.users.count_documents({})
     
-    # Count users by country
+    # 2. New users this week (count only)
+    new_users_this_week = await db.users.count_documents({
+        "createdAt": {"$gte": one_week_ago}
+    })
+
+    # 3. Country distribution - fetch only phoneNumber field
+    users_phones = await db.users.find(
+        {}, {"phoneNumber": 1, "_id": 0}
+    ).to_list(10000)
+    
     countries = {}
-    for user in users:
+    for user in users_phones:
         country = await get_country_from_phone(user.get("phoneNumber", ""))
         countries[country] = countries.get(country, 0) + 1
-    
-    # New users this week
-    one_week_ago = (datetime.now() - timedelta(days=7)).isoformat()
-    new_users = [u for u in users if u.get("createdAt", "") >= one_week_ago]
-    
-    # Get all sales for revenue calculation
-    sales = await db.sales.find().to_list(100000)
-    total_revenue = sum(sale.get("totalAmount", 0) for sale in sales)
-    
-    # Revenue from last week
-    last_week_sales = [s for s in sales if s.get("createdAt", "") >= one_week_ago]
-    this_week_revenue = sum(s.get("totalAmount", 0) for s in last_week_sales)
-    
-    # Previous week revenue
-    two_weeks_ago = (datetime.now() - timedelta(days=14)).isoformat()
-    prev_week_sales = [s for s in sales if two_weeks_ago <= s.get("createdAt", "") < one_week_ago]
-    prev_week_revenue = sum(s.get("totalAmount", 0) for s in prev_week_sales)
-    
-    # Calculate growth
+
+    # 4. Total revenue - use aggregation pipeline (server-side sum)
+    revenue_pipeline = [
+        {"$group": {"_id": None, "total": {"$sum": "$totalAmount"}}}
+    ]
+    revenue_result = await db.sales.aggregate(revenue_pipeline).to_list(1)
+    total_revenue = revenue_result[0]["total"] if revenue_result else 0
+
+    # 5. This week revenue - aggregation with date filter
+    this_week_pipeline = [
+        {"$match": {"createdAt": {"$gte": one_week_ago}}},
+        {"$group": {
+            "_id": None,
+            "total": {"$sum": "$totalAmount"},
+            "user_ids": {"$addToSet": "$userId"}
+        }}
+    ]
+    this_week_result = await db.sales.aggregate(this_week_pipeline).to_list(1)
+    this_week_revenue = this_week_result[0]["total"] if this_week_result else 0
+    active_user_ids = this_week_result[0].get("user_ids", []) if this_week_result else []
+    active_users = len(active_user_ids)
+
+    # 6. Previous week revenue - aggregation with date range filter
+    prev_week_pipeline = [
+        {"$match": {"createdAt": {"$gte": two_weeks_ago, "$lt": one_week_ago}}},
+        {"$group": {"_id": None, "total": {"$sum": "$totalAmount"}}}
+    ]
+    prev_week_result = await db.sales.aggregate(prev_week_pipeline).to_list(1)
+    prev_week_revenue = prev_week_result[0]["total"] if prev_week_result else 0
+
+    # 7. Calculate growth percentage
     revenue_growth = 0
     if prev_week_revenue > 0:
         revenue_growth = ((this_week_revenue - prev_week_revenue) / prev_week_revenue) * 100
-    
-    # Active users (users with sales in last 7 days)
-    active_user_ids = set(s.get("userId") for s in last_week_sales)
-    active_users = len(active_user_ids)
-    
+
     return {
         "total_users": total_users,
-        "new_users_this_week": len(new_users),
+        "new_users_this_week": new_users_this_week,
         "countries": countries,
         "total_revenue": total_revenue,
         "revenue_growth": revenue_growth,

@@ -42,6 +42,15 @@ class StatusCheckCreate(BaseModel):
 async def root():
     return {"message": "Hello World"}
 
+@api_router.get("/health")
+async def health_check():
+    """Health check endpoint for deployment monitoring"""
+    try:
+        await db.command("ping")
+        return {"status": "healthy", "database": "connected"}
+    except Exception:
+        return {"status": "degraded", "database": "disconnected"}
+
 @api_router.post("/status", response_model=StatusCheck)
 async def create_status_check(input: StatusCheckCreate):
     status_dict = input.dict()
@@ -61,7 +70,9 @@ async def get_status_checks(limit: int = 100, skip: int = 0):
     # Enforce maximum limit to prevent memory issues
     limit = min(limit, 500)
     
-    status_checks = await db.status_checks.find().limit(limit).skip(skip).to_list(limit)
+    status_checks = await db.status_checks.find(
+        {}, {"id": 1, "client_name": 1, "timestamp": 1, "_id": 0}
+    ).limit(limit).skip(skip).to_list(limit)
     return [StatusCheck(**status_check) for status_check in status_checks]
 
 # Include the router in the main app
