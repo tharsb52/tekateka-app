@@ -6,7 +6,6 @@ import {
   ScrollView,
   Image,
   TouchableOpacity,
-  Linking,
 } from 'react-native';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
@@ -15,8 +14,10 @@ import i18n from '../../utils/i18n';
 import { Ionicons } from '@expo/vector-icons';
 import { formatCurrency } from '../../utils/currencies';
 
+const BG = '#fef3e7';
+
 export default function DashboardScreen() {
-  const { sales, expenses, products, debts } = useData();
+  const { sales, expenses, products, debts, purchases } = useData();
   const { user, getDaysRemaining } = useAuth();
   const router = useRouter();
 
@@ -24,11 +25,14 @@ export default function DashboardScreen() {
     const totalSales = sales.reduce((sum, sale) => sum + sale.totalAmount, 0);
     const totalExpenses = expenses.reduce((sum, exp) => sum + exp.amount, 0);
     const totalDebts = debts.filter(d => !d.isPaid).reduce((sum, debt) => sum + debt.amount, 0);
+    const totalPurchases = purchases.reduce((sum, p) => sum + p.totalCost, 0);
     const netProfit = totalSales - totalExpenses;
+    const realProfit = totalSales - totalExpenses - totalPurchases;
 
     // Top selling products
     const productSales = new Map<string, { name: string; quantity: number; revenue: number }>();
     sales.forEach((sale) => {
+      if (sale.productId === 'debt-payment') return; // Skip debt payments for top products
       const existing = productSales.get(sale.productId) || { name: sale.productName, quantity: 0, revenue: 0 };
       productSales.set(sale.productId, {
         name: sale.productName,
@@ -41,10 +45,10 @@ export default function DashboardScreen() {
       .sort((a, b) => b.quantity - a.quantity)
       .slice(0, 5);
 
-    return { totalSales, totalExpenses, netProfit, topProducts, totalDebts };
-  }, [sales, expenses, debts]);
+    return { totalSales, totalExpenses, netProfit, realProfit, topProducts, totalDebts, totalPurchases };
+  }, [sales, expenses, debts, purchases]);
 
-  const isProfit = stats.netProfit >= 0;
+  const isProfit = stats.realProfit >= 0;
   const daysRemaining = getDaysRemaining();
 
   return (
@@ -120,8 +124,24 @@ export default function DashboardScreen() {
           <Text style={[styles.statValue, { color: '#dc2626' }]}>
             {formatCurrency(stats.totalExpenses, user?.currency || 'USD')}
           </Text>
-          <Text style={styles.statCount}>{expenses.length} expenses</Text>
+          <Text style={styles.statCount}>{expenses.length} charges</Text>
         </View>
+
+        {/* Purchases Card */}
+        <TouchableOpacity
+          style={[styles.statCard, styles.purchasesCard]}
+          onPress={() => router.push('/(tabs)/purchases')}
+        >
+          <View style={styles.statHeader}>
+            <Ionicons name="bag-handle" size={24} color="#7c3aed" />
+            <Text style={styles.statLabel}>{i18n.t('totalPurchases')}</Text>
+          </View>
+          <Text style={[styles.statValue, { color: '#7c3aed' }]}>
+            {formatCurrency(stats.totalPurchases, user?.currency || 'USD')}
+          </Text>
+          <Text style={styles.statCount}>{purchases.length} achats</Text>
+          <Ionicons name="chevron-forward" size={20} color="#7c3aed" style={styles.cardArrow} />
+        </TouchableOpacity>
 
         {/* Debts Card */}
         <TouchableOpacity
@@ -139,7 +159,7 @@ export default function DashboardScreen() {
           <Ionicons name="chevron-forward" size={20} color="#f59e0b" style={styles.cardArrow} />
         </TouchableOpacity>
 
-        {/* Profit Card */}
+        {/* Real Profit Card */}
         <View style={[styles.profitCard, isProfit ? styles.profitPositive : styles.profitNegative]}>
           <View style={styles.profitHeader}>
             <Ionicons
@@ -149,10 +169,13 @@ export default function DashboardScreen() {
             />
             <View style={{ flex: 1 }}>
               <Text style={styles.profitLabel}>
-                {isProfit ? i18n.t('profit') : i18n.t('loss')}
+                {isProfit ? i18n.t('realProfit') || i18n.t('profit') : i18n.t('loss')}
               </Text>
               <Text style={styles.profitValue}>
-                {formatCurrency(Math.abs(stats.netProfit), user?.currency || 'USD')}
+                {formatCurrency(Math.abs(stats.realProfit), user?.currency || 'USD')}
+              </Text>
+              <Text style={styles.profitFormula}>
+                Ventes - Charges - Achats
               </Text>
             </View>
           </View>
@@ -165,7 +188,7 @@ export default function DashboardScreen() {
         {stats.topProducts.length === 0 ? (
           <View style={styles.emptyState}>
             <Ionicons name="bar-chart-outline" size={48} color="#cbd5e1" />
-            <Text style={styles.emptyText}>No sales yet</Text>
+            <Text style={styles.emptyText}>Aucune vente</Text>
           </View>
         ) : (
           stats.topProducts.map((product, index) => (
@@ -176,7 +199,7 @@ export default function DashboardScreen() {
               <View style={styles.productInfo}>
                 <Text style={styles.productName}>{product.name}</Text>
                 <Text style={styles.productStats}>
-                  {product.quantity} sold • {formatCurrency(product.revenue, user?.currency || 'USD')}
+                  {product.quantity} vendus • {formatCurrency(product.revenue, user?.currency || 'USD')}
                 </Text>
               </View>
             </View>
@@ -189,14 +212,14 @@ export default function DashboardScreen() {
         <View style={styles.section}>
           <View style={styles.alertHeader}>
             <Ionicons name="warning" size={24} color="#f59e0b" />
-            <Text style={styles.alertTitle}>Low Stock Alert</Text>
+            <Text style={styles.alertTitle}>Stock faible</Text>
           </View>
           {products
             .filter(p => p.stock < 5 && p.stock > 0)
             .map((product) => (
               <View key={product.id} style={styles.alertItem}>
                 <Text style={styles.alertProductName}>{product.name}</Text>
-                <Text style={styles.alertStock}>{product.stock} left</Text>
+                <Text style={styles.alertStock}>{product.stock} restant(s)</Text>
               </View>
             ))}
         </View>
@@ -210,10 +233,10 @@ export default function DashboardScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: BG,
   },
   header: {
-    backgroundColor: '#fff',
+    backgroundColor: BG,
     padding: 20,
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -248,9 +271,9 @@ const styles = StyleSheet.create({
     color: '#92400e',
   },
   storiesSection: {
-    backgroundColor: '#fff',
+    backgroundColor: BG,
     paddingVertical: 20,
-    marginBottom: 16,
+    marginBottom: 8,
   },
   storiesTitle: {
     fontSize: 18,
@@ -308,12 +331,20 @@ const styles = StyleSheet.create({
     padding: 20,
     borderLeftWidth: 4,
     position: 'relative',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
   },
   salesCard: {
     borderLeftColor: '#10b981',
   },
   expensesCard: {
     borderLeftColor: '#dc2626',
+  },
+  purchasesCard: {
+    borderLeftColor: '#7c3aed',
   },
   debtsCard: {
     borderLeftColor: '#f59e0b',
@@ -370,12 +401,22 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#fff',
   },
+  profitFormula: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.7)',
+    marginTop: 4,
+  },
   section: {
     backgroundColor: '#fff',
     margin: 16,
     marginTop: 0,
     borderRadius: 16,
     padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
   },
   sectionTitle: {
     fontSize: 18,

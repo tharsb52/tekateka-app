@@ -245,14 +245,16 @@ export default function ProductsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#fef3e7',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 20,
-    backgroundColor: '#fff',
+    backgroundColor: '#fef3e7',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0d9c0',
   },
   headerLeft: {
     flexDirection: 'row',

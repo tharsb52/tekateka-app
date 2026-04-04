@@ -76,3 +76,17 @@ export type ExpenseCategoryType =
   | 'supplies'
   | 'miscellaneous'
   | 'custom';
+
+export interface Purchase {
+  id: string;
+  productName: string;
+  supplier: string;
+  quantity: number;
+  unitPrice: number;
+  totalCost: number;
+  currency: string;
+  notes?: string;
+  userId: string;
+  createdAt: string;
+  synced?: boolean;
+}

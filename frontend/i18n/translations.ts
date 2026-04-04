@@ -75,6 +75,7 @@ export const translations = {
     
     // Debts
     addDebt: 'Ajouter Dette',
+    editDebt: 'Modifier Dette',
     debtorName: 'Nom du débiteur',
     debtAmount: 'Montant',
     debtDescription: 'Description',
@@ -83,6 +84,19 @@ export const translations = {
     totalDebts: 'Total Dettes',
     unpaidDebts: 'Dettes Non Payées',
     paidDebts: 'Dettes Payées',
+    debtPaidRevenue: 'Dette payée ajoutée au chiffre d\'affaires',
+    
+    // Purchases
+    purchases: 'Achats',
+    addPurchase: 'Ajouter Achat',
+    editPurchase: 'Modifier Achat',
+    supplier: 'Fournisseur',
+    unitPrice: 'Prix unitaire',
+    totalCost: 'Coût total',
+    purchaseProduct: 'Produit / Article',
+    noPurchases: 'Aucun achat enregistré',
+    totalPurchases: 'Total Achats',
+    realProfit: 'Profit Réel',
     
     // Subscription
     trialDaysLeft: 'Jours restants',
@@ -176,6 +190,32 @@ export const translations = {
     subscribe: 'Futa abonnement',
     subscriptionRequired: 'Abonnement esengeli',
     
+    // Debts
+    debts: 'Ba niongo',
+    addDebt: 'Bakisa niongo',
+    editDebt: 'Bongola niongo',
+    debtorName: 'Kombo ya moto',
+    debtAmount: 'Mbongo',
+    debtDescription: 'Makundoli',
+    dueDate: 'Mokolo ya kofuta',
+    markAsPaid: 'Efulami',
+    totalDebts: 'Total ya ba niongo',
+    unpaidDebts: 'Ba niongo eefulami te',
+    paidDebts: 'Ba niongo eefulami',
+    debtPaidRevenue: 'Niongo ebakisami na chiffre d\'affaires',
+    
+    // Purchases
+    purchases: 'Bisombi',
+    addPurchase: 'Bakisa sombi',
+    editPurchase: 'Bongola sombi',
+    supplier: 'Moto ya kotekela',
+    unitPrice: 'Prix ya moko',
+    totalCost: 'Total ya prix',
+    purchaseProduct: 'Produit / Eloko',
+    noPurchases: 'Sombi moko te',
+    totalPurchases: 'Total ya bisombi',
+    realProfit: 'Bénéfice ya solo',
+    
     // Common
     delete: 'Longola',
     edit: 'Bongola',
@@ -258,10 +298,36 @@ export const translations = {
     profit: 'Profit',
     loss: 'Loss',
     
-    // Subscription
+    // Subscription (en)
     trialDaysLeft: 'Days remaining',
     subscribe: 'Subscribe',
     subscriptionRequired: 'Subscription required',
+    
+    // Debts
+    debts: 'Debts',
+    addDebt: 'Add Debt',
+    editDebt: 'Edit Debt',
+    debtorName: 'Debtor name',
+    debtAmount: 'Amount',
+    debtDescription: 'Description',
+    dueDate: 'Due date',
+    markAsPaid: 'Mark as paid',
+    totalDebts: 'Total Debts',
+    unpaidDebts: 'Unpaid Debts',
+    paidDebts: 'Paid Debts',
+    debtPaidRevenue: 'Paid debt added to revenue',
+    
+    // Purchases
+    purchases: 'Purchases',
+    addPurchase: 'Add Purchase',
+    editPurchase: 'Edit Purchase',
+    supplier: 'Supplier',
+    unitPrice: 'Unit price',
+    totalCost: 'Total cost',
+    purchaseProduct: 'Product / Item',
+    noPurchases: 'No purchases recorded',
+    totalPurchases: 'Total Purchases',
+    realProfit: 'Real Profit',
     
     // Common
     delete: 'Delete',

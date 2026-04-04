@@ -18,8 +18,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { formatCurrency } from '../../utils/currencies';
 import { format } from 'date-fns';
 
+const BG = '#fef3e7';
+
 export default function DebtsScreen() {
-  const { debts, addDebt, updateDebt, deleteDebt, addSale } = useData();
+  const { debts, addDebt, updateDebt, deleteDebt, markDebtAsPaidWithRevenue } = useData();
   const { user } = useAuth();
   const [modalVisible, setModalVisible] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -35,6 +37,23 @@ export default function DebtsScreen() {
   const paidDebts = debts.filter(d => d.isPaid);
   const totalUnpaidAmount = unpaidDebts.reduce((sum, debt) => sum + debt.amount, 0);
 
+  const openAddModal = () => {
+    setEditingDebt(null);
+    setFormData({ debtorName: '', amount: '', description: '', dueDate: new Date() });
+    setModalVisible(true);
+  };
+
+  const openEditModal = (debt: any) => {
+    setEditingDebt(debt);
+    setFormData({
+      debtorName: debt.debtorName,
+      amount: debt.amount.toString(),
+      description: debt.description || '',
+      dueDate: debt.dueDate ? new Date(debt.dueDate) : new Date(),
+    });
+    setModalVisible(true);
+  };
+
   const handleSave = async () => {
     if (!formData.debtorName || !formData.amount) {
       Alert.alert(i18n.t('error'), 'Veuillez remplir les champs requis');
@@ -48,15 +67,25 @@ export default function DebtsScreen() {
     }
 
     try {
-      await addDebt({
-        debtorName: formData.debtorName,
-        amount,
-        currency: user?.currency || 'USD',
-        description: formData.description,
-        dueDate: formData.dueDate.toISOString(),
-        isPaid: false,
-      });
+      if (editingDebt) {
+        await updateDebt(editingDebt.id, {
+          debtorName: formData.debtorName,
+          amount,
+          description: formData.description,
+          dueDate: formData.dueDate.toISOString(),
+        });
+      } else {
+        await addDebt({
+          debtorName: formData.debtorName,
+          amount,
+          currency: user?.currency || 'USD',
+          description: formData.description,
+          dueDate: formData.dueDate.toISOString(),
+          isPaid: false,
+        });
+      }
       setModalVisible(false);
+      setEditingDebt(null);
       setFormData({ debtorName: '', amount: '', description: '', dueDate: new Date() });
     } catch (error) {
       Alert.alert(i18n.t('error'), 'Échec de l\'enregistrement');
@@ -70,16 +99,20 @@ export default function DebtsScreen() {
     }
   };
 
-  const handleMarkAsPaid = (debtId: string) => {
+  const handleMarkAsPaid = (debtId: string, debtorName: string, amount: number) => {
     Alert.alert(
       i18n.t('markAsPaid'),
-      'Marquer cette dette comme payée?',
+      `Marquer la dette de "${debtorName}" (${formatCurrency(amount, user?.currency || 'USD')}) comme payée ?\n\nLe montant sera ajouté à votre chiffre d'affaires.`,
       [
         { text: i18n.t('cancel'), style: 'cancel' },
         {
           text: i18n.t('confirm'),
           onPress: async () => {
-            await updateDebt(debtId, { isPaid: true, paidAt: new Date().toISOString() });
+            await markDebtAsPaidWithRevenue(debtId);
+            Alert.alert(
+              i18n.t('success'),
+              `${formatCurrency(amount, user?.currency || 'USD')} ajouté au chiffre d'affaires !`
+            );
           },
         },
       ]
@@ -89,7 +122,7 @@ export default function DebtsScreen() {
   const handleDelete = (debtId: string, debtorName: string) => {
     Alert.alert(
       i18n.t('delete'),
-      `Supprimer la dette de "${debtorName}"?`,
+      `Supprimer la dette de "${debtorName}" ?`,
       [
         { text: i18n.t('cancel'), style: 'cancel' },
         {
@@ -113,7 +146,7 @@ export default function DebtsScreen() {
             </Text>
           </View>
         </View>
-        <TouchableOpacity style={styles.addButton} onPress={() => setModalVisible(true)}>
+        <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
           <Ionicons name="add" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
@@ -128,10 +161,10 @@ export default function DebtsScreen() {
                 <View style={styles.debtHeader}>
                   <View style={styles.debtInfo}>
                     <Text style={styles.debtorName}>{debt.debtorName}</Text>
-                    {debt.description && (
+                    {debt.description ? (
                       <Text style={styles.debtDescription}>{debt.description}</Text>
-                    )}
-                    {debt.dueDate && (
+                    ) : null}
+                    {debt.dueDate ? (
                       <Text style={styles.dueDate}>
                         <Ionicons name="calendar-outline" size={12} color="#64748b" /> 
                         {' '}Échéance: {(() => {
@@ -143,7 +176,7 @@ export default function DebtsScreen() {
                           }
                         })()}
                       </Text>
-                    )}
+                    ) : null}
                   </View>
                   <Text style={styles.debtAmount}>
                     {formatCurrency(debt.amount, debt.currency)}
@@ -151,10 +184,17 @@ export default function DebtsScreen() {
                 </View>
                 <View style={styles.debtActions}>
                   <TouchableOpacity
-                    style={styles.paidButton}
-                    onPress={() => handleMarkAsPaid(debt.id)}
+                    style={styles.editDebtButton}
+                    onPress={() => openEditModal(debt)}
                   >
-                    <Ionicons name="checkmark-circle" size={18} color="#10b981" />
+                    <Ionicons name="pencil" size={16} color="#2563eb" />
+                    <Text style={styles.editDebtButtonText}>{i18n.t('edit')}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.paidButton}
+                    onPress={() => handleMarkAsPaid(debt.id, debt.debtorName, debt.amount)}
+                  >
+                    <Ionicons name="checkmark-circle" size={16} color="#10b981" />
                     <Text style={styles.paidButtonText}>{i18n.t('markAsPaid')}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
@@ -178,22 +218,25 @@ export default function DebtsScreen() {
                 <View style={styles.debtHeader}>
                   <View style={styles.debtInfo}>
                     <Text style={[styles.debtorName, styles.paidText]}>{debt.debtorName}</Text>
-                    {debt.description && (
+                    {debt.description ? (
                       <Text style={[styles.debtDescription, styles.paidText]}>{debt.description}</Text>
-                    )}
-                    {debt.paidAt && (
-                      <Text style={styles.paidDate}>
-                        <Ionicons name="checkmark-done" size={12} color="#10b981" /> 
-                        {' '}Payé le {(() => {
-                          try {
-                            const date = new Date(debt.paidAt);
-                            return !isNaN(date.getTime()) ? format(date, 'dd/MM/yyyy') : 'Date invalide';
-                          } catch {
-                            return 'Date invalide';
-                          }
-                        })()}
-                      </Text>
-                    )}
+                    ) : null}
+                    {debt.paidAt ? (
+                      <View style={styles.paidBadge}>
+                        <Ionicons name="checkmark-done" size={14} color="#10b981" /> 
+                        <Text style={styles.paidDate}>
+                          Payé le {(() => {
+                            try {
+                              const date = new Date(debt.paidAt);
+                              return !isNaN(date.getTime()) ? format(date, 'dd/MM/yyyy') : 'Date invalide';
+                            } catch {
+                              return 'Date invalide';
+                            }
+                          })()}
+                        </Text>
+                        <Text style={styles.addedToRevenue}>+ Chiffre d'affaires</Text>
+                      </View>
+                    ) : null}
                   </View>
                   <Text style={[styles.debtAmount, styles.paidText]}>
                     {formatCurrency(debt.amount, debt.currency)}
@@ -215,13 +258,15 @@ export default function DebtsScreen() {
         <View style={{ height: 80 }} />
       </ScrollView>
 
-      {/* Add Debt Modal */}
+      {/* Add/Edit Debt Modal */}
       <Modal visible={modalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{i18n.t('addDebt')}</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
+              <Text style={styles.modalTitle}>
+                {editingDebt ? i18n.t('editDebt') : i18n.t('addDebt')}
+              </Text>
+              <TouchableOpacity onPress={() => { setModalVisible(false); setEditingDebt(null); }}>
                 <Ionicons name="close" size={28} color="#64748b" />
               </TouchableOpacity>
             </View>
@@ -279,7 +324,7 @@ export default function DebtsScreen() {
             <View style={styles.modalActions}>
               <TouchableOpacity
                 style={styles.cancelButton}
-                onPress={() => setModalVisible(false)}
+                onPress={() => { setModalVisible(false); setEditingDebt(null); }}
               >
                 <Text style={styles.cancelButtonText}>{i18n.t('cancel')}</Text>
               </TouchableOpacity>
@@ -297,14 +342,16 @@ export default function DebtsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: BG,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 20,
-    backgroundColor: '#fff',
+    backgroundColor: BG,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0d9c0',
   },
   headerLeft: {
     flexDirection: 'row',
@@ -349,13 +396,18 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 12,
     borderWidth: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
   },
   unpaidCard: {
     borderColor: '#fbbf24',
   },
   paidCard: {
-    borderColor: '#e2e8f0',
-    opacity: 0.7,
+    borderColor: '#d1fae5',
+    opacity: 0.8,
   },
   debtHeader: {
     flexDirection: 'row',
@@ -381,10 +433,26 @@ const styles = StyleSheet.create({
     color: '#64748b',
     marginTop: 4,
   },
+  paidBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 6,
+    flexWrap: 'wrap',
+  },
   paidDate: {
     fontSize: 12,
     color: '#10b981',
-    marginTop: 4,
+  },
+  addedToRevenue: {
+    fontSize: 10,
+    color: '#10b981',
+    fontWeight: '700',
+    backgroundColor: '#d1fae5',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginLeft: 4,
   },
   debtAmount: {
     fontSize: 20,
@@ -399,24 +467,41 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     justifyContent: 'flex-start',
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    paddingTop: 10,
+  },
+  editDebtButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#eff6ff',
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    gap: 4,
+  },
+  editDebtButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#2563eb',
   },
   paidButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#d1fae5',
-    paddingVertical: 8,
+    paddingVertical: 7,
     paddingHorizontal: 12,
     borderRadius: 8,
     gap: 4,
   },
   paidButtonText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: '#10b981',
   },
   deleteButton: {
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
   },

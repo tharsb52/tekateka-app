@@ -1,10 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Product, Sale, Expense, Debt } from '../types';
+import { Product, Sale, Expense, Debt, Purchase } from '../types';
 import {
   getProducts,
   getSales,
   getExpenses,
   getDebts,
+  getPurchases,
   addProduct as addProductToStorage,
   updateProduct as updateProductInStorage,
   deleteProduct as deleteProductFromStorage,
@@ -13,6 +14,9 @@ import {
   addDebt as addDebtToStorage,
   updateDebt as updateDebtInStorage,
   deleteDebt as deleteDebtFromStorage,
+  addPurchase as addPurchaseToStorage,
+  updatePurchase as updatePurchaseInStorage,
+  deletePurchase as deletePurchaseFromStorage,
 } from '../utils/storage';
 import { useAuth } from './AuthContext';
 
@@ -21,6 +25,7 @@ interface DataContextType {
   sales: Sale[];
   expenses: Expense[];
   debts: Debt[];
+  purchases: Purchase[];
   loading: boolean;
   addProduct: (product: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'userId'>) => Promise<void>;
   updateProduct: (productId: string, updates: Partial<Product>) => Promise<void>;
@@ -30,6 +35,10 @@ interface DataContextType {
   addDebt: (debt: Omit<Debt, 'id' | 'createdAt' | 'userId'>) => Promise<void>;
   updateDebt: (debtId: string, updates: Partial<Debt>) => Promise<void>;
   deleteDebt: (debtId: string) => Promise<void>;
+  addPurchase: (purchase: Omit<Purchase, 'id' | 'createdAt' | 'userId'>) => Promise<void>;
+  updatePurchase: (purchaseId: string, updates: Partial<Purchase>) => Promise<void>;
+  deletePurchase: (purchaseId: string) => Promise<void>;
+  markDebtAsPaidWithRevenue: (debtId: string) => Promise<void>;
   refreshData: () => Promise<void>;
 }
 
@@ -53,6 +62,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   const [sales, setSales] = useState<Sale[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [debts, setDebts] = useState<Debt[]>([]);
+  const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -63,17 +73,19 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
 
   const loadData = async () => {
     try {
-      const [loadedProducts, loadedSales, loadedExpenses, loadedDebts] = await Promise.all([
+      const [loadedProducts, loadedSales, loadedExpenses, loadedDebts, loadedPurchases] = await Promise.all([
         getProducts(),
         getSales(),
         getExpenses(),
         getDebts(),
+        getPurchases(),
       ]);
       
       setProducts(loadedProducts);
       setSales(loadedSales);
       setExpenses(loadedExpenses);
       setDebts(loadedDebts);
+      setPurchases(loadedPurchases);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -117,7 +129,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     };
     
     await addSaleToStorage(newSale);
-    setSales([...sales, newSale]);
+    setSales(prev => [...prev, newSale]);
     
     // Update product stock
     const product = products.find(p => p.id === saleData.productId);
@@ -164,6 +176,59 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     setDebts(debts.filter(d => d.id !== debtId));
   };
 
+  // Mark debt as paid AND add amount to revenue
+  const markDebtAsPaidWithRevenue = async (debtId: string) => {
+    const debt = debts.find(d => d.id === debtId);
+    if (!debt || !user) return;
+
+    // Mark debt as paid
+    const paidAt = new Date().toISOString();
+    await updateDebtInStorage(debtId, { isPaid: true, paidAt });
+    setDebts(debts.map(d => d.id === debtId ? { ...d, isPaid: true, paidAt } : d));
+
+    // Add as revenue (sale) 
+    const revenueSale: Sale = {
+      id: `debt-${Date.now()}`,
+      productId: 'debt-payment',
+      productName: `Dette payee - ${debt.debtorName}`,
+      quantity: 1,
+      price: debt.amount,
+      totalAmount: debt.amount,
+      paymentMethod: 'cash',
+      currency: debt.currency || user.currency || 'USD',
+      userId: user.id,
+      createdAt: paidAt,
+    };
+
+    await addSaleToStorage(revenueSale);
+    setSales(prev => [...prev, revenueSale]);
+  };
+
+  // Purchase operations
+  const addPurchase = async (purchaseData: Omit<Purchase, 'id' | 'createdAt' | 'userId'>) => {
+    if (!user) return;
+    
+    const newPurchase: Purchase = {
+      ...purchaseData,
+      id: Date.now().toString(),
+      userId: user.id,
+      createdAt: new Date().toISOString(),
+    };
+    
+    await addPurchaseToStorage(newPurchase);
+    setPurchases([...purchases, newPurchase]);
+  };
+
+  const updatePurchase = async (purchaseId: string, updates: Partial<Purchase>) => {
+    await updatePurchaseInStorage(purchaseId, updates);
+    setPurchases(purchases.map(p => p.id === purchaseId ? { ...p, ...updates } : p));
+  };
+
+  const deletePurchase = async (purchaseId: string) => {
+    await deletePurchaseFromStorage(purchaseId);
+    setPurchases(purchases.filter(p => p.id !== purchaseId));
+  };
+
   const refreshData = async () => {
     await loadData();
   };
@@ -175,6 +240,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
         sales,
         expenses,
         debts,
+        purchases,
         loading,
         addProduct,
         updateProduct,
@@ -184,6 +250,10 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
         addDebt,
         updateDebt,
         deleteDebt,
+        addPurchase,
+        updatePurchase,
+        deletePurchase,
+        markDebtAsPaidWithRevenue,
         refreshData,
       }}
     >

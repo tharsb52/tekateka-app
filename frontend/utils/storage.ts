@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { User, Product, Sale, Expense, Debt } from '../types';
+import { User, Product, Sale, Expense, Debt, Purchase } from '../types';
 
 const KEYS = {
   USER: '@tekateka:user',
@@ -7,6 +7,7 @@ const KEYS = {
   SALES: '@tekateka:sales',
   EXPENSES: '@tekateka:expenses',
   DEBTS: '@tekateka:debts',
+  PURCHASES: '@tekateka:purchases',
   PENDING_SYNC: '@tekateka:pendingSync',
 };
 
@@ -118,7 +119,38 @@ export const deleteDebt = async (debtId: string): Promise<void> => {
   await saveDebts(filtered);
 };
 
+// Purchases operations
+export const savePurchases = async (purchases: Purchase[]): Promise<void> => {
+  await AsyncStorage.setItem(KEYS.PURCHASES, JSON.stringify(purchases));
+};
+
+export const getPurchases = async (): Promise<Purchase[]> => {
+  const data = await AsyncStorage.getItem(KEYS.PURCHASES);
+  return data ? JSON.parse(data) : [];
+};
+
+export const addPurchase = async (purchase: Purchase): Promise<void> => {
+  const purchases = await getPurchases();
+  purchases.push({ ...purchase, synced: false });
+  await savePurchases(purchases);
+};
+
+export const updatePurchase = async (purchaseId: string, updates: Partial<Purchase>): Promise<void> => {
+  const purchases = await getPurchases();
+  const index = purchases.findIndex(p => p.id === purchaseId);
+  if (index !== -1) {
+    purchases[index] = { ...purchases[index], ...updates, synced: false };
+    await savePurchases(purchases);
+  }
+};
+
+export const deletePurchase = async (purchaseId: string): Promise<void> => {
+  const purchases = await getPurchases();
+  const filtered = purchases.filter(p => p.id !== purchaseId);
+  await savePurchases(filtered);
+};
+
 // Clear all data
 export const clearAllData = async (): Promise<void> => {
-  await AsyncStorage.multiRemove([KEYS.USER, KEYS.PRODUCTS, KEYS.SALES, KEYS.EXPENSES, KEYS.DEBTS, KEYS.PENDING_SYNC]);
+  await AsyncStorage.multiRemove([KEYS.USER, KEYS.PRODUCTS, KEYS.SALES, KEYS.EXPENSES, KEYS.DEBTS, KEYS.PURCHASES, KEYS.PENDING_SYNC]);
 };

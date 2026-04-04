@@ -3,6 +3,8 @@ import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import i18n from '../../utils/i18n';
 
+const BG = '#fef3e7';
+
 export default function TabLayout() {
   return (
     <Tabs
@@ -10,18 +12,19 @@ export default function TabLayout() {
         tabBarActiveTintColor: '#2563eb',
         tabBarInactiveTintColor: '#94a3b8',
         tabBarStyle: {
-          backgroundColor: '#fff',
+          backgroundColor: BG,
           borderTopWidth: 1,
-          borderTopColor: '#e2e8f0',
+          borderTopColor: '#f0d9c0',
           height: 70,
           paddingBottom: 10,
           paddingTop: 10,
         },
         tabBarLabelStyle: {
-          fontSize: 12,
+          fontSize: 10,
           fontWeight: '600',
         },
         headerShown: false,
+        sceneStyle: { backgroundColor: BG },
       }}
     >
       <Tabs.Screen
@@ -48,6 +51,15 @@ export default function TabLayout() {
           title: i18n.t('products'),
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="cube" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="purchases"
+        options={{
+          title: i18n.t('purchases'),
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="bag-handle" size={size} color={color} />
           ),
         }}
       />
