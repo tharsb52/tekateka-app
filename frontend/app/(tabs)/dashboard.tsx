@@ -4,21 +4,26 @@ import {
   Text,
   StyleSheet,
   ScrollView,
+  Image,
   TouchableOpacity,
+  Linking,
 } from 'react-native';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
+import { useRouter } from 'expo-router';
 import i18n from '../../utils/i18n';
 import { Ionicons } from '@expo/vector-icons';
 import { formatCurrency } from '../../utils/currencies';
 
 export default function DashboardScreen() {
-  const { sales, expenses, products } = useData();
+  const { sales, expenses, products, debts } = useData();
   const { user, getDaysRemaining } = useAuth();
+  const router = useRouter();
 
   const stats = useMemo(() => {
     const totalSales = sales.reduce((sum, sale) => sum + sale.totalAmount, 0);
     const totalExpenses = expenses.reduce((sum, exp) => sum + exp.amount, 0);
+    const totalDebts = debts.filter(d => !d.isPaid).reduce((sum, debt) => sum + debt.amount, 0);
     const netProfit = totalSales - totalExpenses;
 
     // Top selling products
@@ -36,26 +41,60 @@ export default function DashboardScreen() {
       .sort((a, b) => b.quantity - a.quantity)
       .slice(0, 5);
 
-    return { totalSales, totalExpenses, netProfit, topProducts };
-  }, [sales, expenses]);
+    return { totalSales, totalExpenses, netProfit, topProducts, totalDebts };
+  }, [sales, expenses, debts]);
 
   const isProfit = stats.netProfit >= 0;
   const daysRemaining = getDaysRemaining();
 
   return (
     <ScrollView style={styles.container}>
+      {/* Header with Slogan */}
       <View style={styles.header}>
         <View>
           <Text style={styles.greeting}>TekaTeka</Text>
-          <Text style={styles.subGreeting}>{i18n.t('dashboard')}</Text>
+          <Text style={styles.slogan}>{i18n.t('slogan')}</Text>
         </View>
         {!user?.isSubscribed && daysRemaining > 0 && (
-          <View style={styles.trialBadge}>
+          <TouchableOpacity
+            style={styles.trialBadge}
+            onPress={() => router.push('/subscription')}
+          >
             <Text style={styles.trialText}>
               {daysRemaining} {i18n.t('trialDaysLeft')}
             </Text>
-          </View>
+            <Ionicons name="chevron-forward" size={16} color="#92400e" />
+          </TouchableOpacity>
         )}
+      </View>
+
+      {/* Success Stories with Photos */}
+      <View style={styles.storiesSection}>
+        <Text style={styles.storiesTitle}>Ils réussissent avec TekaTeka</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.storiesScroll}>
+          <View style={styles.storyCard}>
+            <Image
+              source={{ uri: 'https://images.unsplash.com/photo-1687422809654-579d81c29d32?w=400' }}
+              style={styles.storyImage}
+            />
+            <View style={styles.storyOverlay}>
+              <Text style={styles.storyName}>Marie K.</Text>
+              <Text style={styles.storyLocation}>Kinshasa, RDC</Text>
+              <Text style={styles.storyQuote}>"Mes bénéfices ont augmenté de 40%!"</Text>
+            </View>
+          </View>
+          <View style={styles.storyCard}>
+            <Image
+              source={{ uri: 'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=400' }}
+              style={styles.storyImage}
+            />
+            <View style={styles.storyOverlay}>
+              <Text style={styles.storyName}>Dr. Kouassi</Text>
+              <Text style={styles.storyLocation}>Abidjan, Côte d'Ivoire</Text>
+              <Text style={styles.storyQuote}>"Gestion simplifiée de ma pharmacie"</Text>
+            </View>
+          </View>
+        </ScrollView>
       </View>
 
       {/* Main Stats Cards */}
@@ -83,6 +122,22 @@ export default function DashboardScreen() {
           </Text>
           <Text style={styles.statCount}>{expenses.length} expenses</Text>
         </View>
+
+        {/* Debts Card */}
+        <TouchableOpacity
+          style={[styles.statCard, styles.debtsCard]}
+          onPress={() => router.push('/(tabs)/debts')}
+        >
+          <View style={styles.statHeader}>
+            <Ionicons name="receipt" size={24} color="#f59e0b" />
+            <Text style={styles.statLabel}>{i18n.t('totalDebts')}</Text>
+          </View>
+          <Text style={[styles.statValue, { color: '#f59e0b' }]}>
+            {formatCurrency(stats.totalDebts, user?.currency || 'USD')}
+          </Text>
+          <Text style={styles.statCount}>{debts.filter(d => !d.isPaid).length} non payées</Text>
+          <Ionicons name="chevron-forward" size={20} color="#f59e0b" style={styles.cardArrow} />
+        </TouchableOpacity>
 
         {/* Profit Card */}
         <View style={[styles.profitCard, isProfit ? styles.profitPositive : styles.profitNegative]}>
@@ -169,23 +224,79 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#1e293b',
   },
-  subGreeting: {
-    fontSize: 16,
-    color: '#64748b',
+  slogan: {
+    fontSize: 14,
+    color: '#2563eb',
     marginTop: 4,
+    fontWeight: '600',
+    fontStyle: 'italic',
   },
   trialBadge: {
     backgroundColor: '#fef3c7',
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: '#fbbf24',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   trialText: {
     fontSize: 12,
     fontWeight: '600',
     color: '#92400e',
+  },
+  storiesSection: {
+    backgroundColor: '#fff',
+    paddingVertical: 20,
+    marginBottom: 16,
+  },
+  storiesTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1e293b',
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
+  storiesScroll: {
+    paddingLeft: 20,
+  },
+  storyCard: {
+    width: 280,
+    height: 180,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginRight: 16,
+    position: 'relative',
+  },
+  storyImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  storyOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    padding: 12,
+  },
+  storyName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  storyLocation: {
+    fontSize: 12,
+    color: '#e2e8f0',
+    marginBottom: 4,
+  },
+  storyQuote: {
+    fontSize: 13,
+    color: '#fbbf24',
+    fontStyle: 'italic',
   },
   statsContainer: {
     padding: 16,
@@ -196,12 +307,16 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     borderLeftWidth: 4,
+    position: 'relative',
   },
   salesCard: {
     borderLeftColor: '#10b981',
   },
   expensesCard: {
     borderLeftColor: '#dc2626',
+  },
+  debtsCard: {
+    borderLeftColor: '#f59e0b',
   },
   statHeader: {
     flexDirection: 'row',
@@ -222,6 +337,11 @@ const styles = StyleSheet.create({
   statCount: {
     fontSize: 12,
     color: '#94a3b8',
+  },
+  cardArrow: {
+    position: 'absolute',
+    top: 20,
+    right: 20,
   },
   profitCard: {
     borderRadius: 16,
