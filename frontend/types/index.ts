@@ -46,6 +46,20 @@ export interface Expense {
   synced?: boolean;
 }
 
+export interface Debt {
+  id: string;
+  debtorName: string;
+  amount: number;
+  currency: string;
+  description?: string;
+  dueDate?: string;
+  isPaid: boolean;
+  userId: string;
+  createdAt: string;
+  paidAt?: string;
+  synced?: boolean;
+}
+
 export type CategoryType = 'food' | 'drinks' | 'clothes' | 'cosmetics' | 'electronics' | 'other';
 
 export type ExpenseCategoryType = 

@@ -1,11 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { User, Product, Sale, Expense } from '../types';
+import { User, Product, Sale, Expense, Debt } from '../types';
 
 const KEYS = {
   USER: '@tekateka:user',
   PRODUCTS: '@tekateka:products',
   SALES: '@tekateka:sales',
   EXPENSES: '@tekateka:expenses',
+  DEBTS: '@tekateka:debts',
   PENDING_SYNC: '@tekateka:pendingSync',
 };
 
@@ -86,7 +87,38 @@ export const addExpense = async (expense: Expense): Promise<void> => {
   await saveExpenses(expenses);
 };
 
+// Debts operations
+export const saveDebts = async (debts: Debt[]): Promise<void> => {
+  await AsyncStorage.setItem(KEYS.DEBTS, JSON.stringify(debts));
+};
+
+export const getDebts = async (): Promise<Debt[]> => {
+  const data = await AsyncStorage.getItem(KEYS.DEBTS);
+  return data ? JSON.parse(data) : [];
+};
+
+export const addDebt = async (debt: Debt): Promise<void> => {
+  const debts = await getDebts();
+  debts.push({ ...debt, synced: false });
+  await saveDebts(debts);
+};
+
+export const updateDebt = async (debtId: string, updates: Partial<Debt>): Promise<void> => {
+  const debts = await getDebts();
+  const index = debts.findIndex(d => d.id === debtId);
+  if (index !== -1) {
+    debts[index] = { ...debts[index], ...updates, synced: false };
+    await saveDebts(debts);
+  }
+};
+
+export const deleteDebt = async (debtId: string): Promise<void> => {
+  const debts = await getDebts();
+  const filtered = debts.filter(d => d.id !== debtId);
+  await saveDebts(filtered);
+};
+
 // Clear all data
 export const clearAllData = async (): Promise<void> => {
-  await AsyncStorage.multiRemove([KEYS.USER, KEYS.PRODUCTS, KEYS.SALES, KEYS.EXPENSES, KEYS.PENDING_SYNC]);
+  await AsyncStorage.multiRemove([KEYS.USER, KEYS.PRODUCTS, KEYS.SALES, KEYS.EXPENSES, KEYS.DEBTS, KEYS.PENDING_SYNC]);
 };

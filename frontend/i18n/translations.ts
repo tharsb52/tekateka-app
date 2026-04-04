@@ -14,6 +14,7 @@ export const translations = {
     products: 'Produits',
     expenses: 'Charges',
     dashboard: 'Tableau de bord',
+    debts: 'Dettes',
     
     // Products
     addProduct: 'Ajouter Produit',
@@ -70,6 +71,18 @@ export const translations = {
     topProducts: 'Produits Populaires',
     profit: 'Bénéfice',
     loss: 'Perte',
+    slogan: 'Passe du carnet au contrôle total de ton business',
+    
+    // Debts
+    addDebt: 'Ajouter Dette',
+    debtorName: 'Nom du débiteur',
+    debtAmount: 'Montant',
+    debtDescription: 'Description',
+    dueDate: 'Date d\'échéance',
+    markAsPaid: 'Marquer comme payé',
+    totalDebts: 'Total Dettes',
+    unpaidDebts: 'Dettes Non Payées',
+    paidDebts: 'Dettes Payées',
     
     // Subscription
     trialDaysLeft: 'Jours restants',
