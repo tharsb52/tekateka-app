@@ -1,22 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Product, Sale, Expense, Debt, Purchase } from '../types';
 import {
-  getProducts,
-  getSales,
-  getExpenses,
-  getDebts,
-  getPurchases,
-  addProduct as addProductToStorage,
-  updateProduct as updateProductInStorage,
-  deleteProduct as deleteProductFromStorage,
-  addSale as addSaleToStorage,
-  addExpense as addExpenseToStorage,
-  addDebt as addDebtToStorage,
-  updateDebt as updateDebtInStorage,
-  deleteDebt as deleteDebtFromStorage,
-  addPurchase as addPurchaseToStorage,
-  updatePurchase as updatePurchaseInStorage,
-  deletePurchase as deletePurchaseFromStorage,
+  getProducts, getSales, getExpenses, getDebts, getPurchases,
+  addProduct as addProductToStorage, updateProduct as updateProductInStorage, deleteProduct as deleteProductFromStorage,
+  addSale as addSaleToStorage, updateSale as updateSaleInStorage, deleteSale as deleteSaleFromStorage,
+  addExpense as addExpenseToStorage, updateExpense as updateExpenseInStorage, deleteExpense as deleteExpenseFromStorage,
+  addDebt as addDebtToStorage, updateDebt as updateDebtInStorage, deleteDebt as deleteDebtFromStorage,
+  addPurchase as addPurchaseToStorage, updatePurchase as updatePurchaseInStorage, deletePurchase as deletePurchaseFromStorage,
 } from '../utils/storage';
 import { useAuth } from './AuthContext';
 
@@ -27,36 +17,34 @@ interface DataContextType {
   debts: Debt[];
   purchases: Purchase[];
   loading: boolean;
-  addProduct: (product: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'userId'>) => Promise<void>;
-  updateProduct: (productId: string, updates: Partial<Product>) => Promise<void>;
-  deleteProduct: (productId: string) => Promise<void>;
-  addSale: (sale: Omit<Sale, 'id' | 'createdAt' | 'userId'>) => Promise<void>;
-  addExpense: (expense: Omit<Expense, 'id' | 'createdAt' | 'userId'>) => Promise<void>;
-  addDebt: (debt: Omit<Debt, 'id' | 'createdAt' | 'userId'>) => Promise<void>;
-  updateDebt: (debtId: string, updates: Partial<Debt>) => Promise<void>;
-  deleteDebt: (debtId: string) => Promise<void>;
-  addPurchase: (purchase: Omit<Purchase, 'id' | 'createdAt' | 'userId'>) => Promise<void>;
-  updatePurchase: (purchaseId: string, updates: Partial<Purchase>) => Promise<void>;
-  deletePurchase: (purchaseId: string) => Promise<void>;
-  markDebtAsPaidWithRevenue: (debtId: string) => Promise<void>;
+  addProduct: (p: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'userId'>) => Promise<void>;
+  updateProduct: (id: string, u: Partial<Product>) => Promise<void>;
+  deleteProduct: (id: string) => Promise<void>;
+  addSale: (s: Omit<Sale, 'id' | 'createdAt' | 'userId'>) => Promise<void>;
+  updateSale: (id: string, u: Partial<Sale>) => Promise<void>;
+  deleteSale: (id: string) => Promise<void>;
+  addExpense: (e: Omit<Expense, 'id' | 'createdAt' | 'userId'>) => Promise<void>;
+  updateExpense: (id: string, u: Partial<Expense>) => Promise<void>;
+  deleteExpense: (id: string) => Promise<void>;
+  addDebt: (d: Omit<Debt, 'id' | 'createdAt' | 'userId'>) => Promise<void>;
+  updateDebt: (id: string, u: Partial<Debt>) => Promise<void>;
+  deleteDebt: (id: string) => Promise<void>;
+  addPurchase: (p: Omit<Purchase, 'id' | 'createdAt' | 'userId'>) => Promise<void>;
+  updatePurchase: (id: string, u: Partial<Purchase>) => Promise<void>;
+  deletePurchase: (id: string) => Promise<void>;
+  markDebtAsPaidWithRevenue: (id: string) => Promise<void>;
   refreshData: () => Promise<void>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
 export const useData = () => {
-  const context = useContext(DataContext);
-  if (!context) {
-    throw new Error('useData must be used within DataProvider');
-  }
-  return context;
+  const ctx = useContext(DataContext);
+  if (!ctx) throw new Error('useData must be used within DataProvider');
+  return ctx;
 };
 
-interface DataProviderProps {
-  children: ReactNode;
-}
-
-export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
+export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { user } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
@@ -65,198 +53,128 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (user) {
-      loadData();
-    }
-  }, [user]);
+  useEffect(() => { if (user) loadData(); }, [user]);
 
   const loadData = async () => {
     try {
-      const [loadedProducts, loadedSales, loadedExpenses, loadedDebts, loadedPurchases] = await Promise.all([
-        getProducts(),
-        getSales(),
-        getExpenses(),
-        getDebts(),
-        getPurchases(),
-      ]);
-      
-      setProducts(loadedProducts);
-      setSales(loadedSales);
-      setExpenses(loadedExpenses);
-      setDebts(loadedDebts);
-      setPurchases(loadedPurchases);
-    } catch (error) {
-      console.error('Error loading data:', error);
-    } finally {
-      setLoading(false);
-    }
+      const [p, s, e, d, pu] = await Promise.all([getProducts(), getSales(), getExpenses(), getDebts(), getPurchases()]);
+      // Migrate old products: map legacy `price` to `salePrice`
+      const migratedProducts = p.map((prod: any) => ({
+        ...prod,
+        salePrice: prod.salePrice ?? prod.price ?? 0,
+        purchasePrice: prod.purchasePrice ?? 0,
+      }));
+      setProducts(migratedProducts);
+      setSales(s); setExpenses(e); setDebts(d); setPurchases(pu);
+    } catch (err) { console.error('Load data error:', err); }
+    finally { setLoading(false); }
   };
 
-  const addProduct = async (productData: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'userId'>) => {
+  // PRODUCTS
+  const addProduct = async (data: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'userId'>) => {
     if (!user) return;
-    
-    const newProduct: Product = {
-      ...productData,
-      id: Date.now().toString(),
-      userId: user.id,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    
-    await addProductToStorage(newProduct);
-    setProducts([...products, newProduct]);
+    const np: Product = { ...data, id: Date.now().toString(), userId: user.id, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    await addProductToStorage(np);
+    setProducts(prev => [...prev, np]);
+  };
+  const updateProduct = async (id: string, u: Partial<Product>) => {
+    await updateProductInStorage(id, u);
+    setProducts(prev => prev.map(p => p.id === id ? { ...p, ...u } : p));
+  };
+  const deleteProduct = async (id: string) => {
+    await deleteProductFromStorage(id);
+    setProducts(prev => prev.filter(p => p.id !== id));
   };
 
-  const updateProduct = async (productId: string, updates: Partial<Product>) => {
-    await updateProductInStorage(productId, updates);
-    setProducts(products.map(p => p.id === productId ? { ...p, ...updates } : p));
-  };
-
-  const deleteProduct = async (productId: string) => {
-    await deleteProductFromStorage(productId);
-    setProducts(products.filter(p => p.id !== productId));
-  };
-
-  const addSale = async (saleData: Omit<Sale, 'id' | 'createdAt' | 'userId'>) => {
+  // SALES
+  const addSale = async (data: Omit<Sale, 'id' | 'createdAt' | 'userId'>) => {
     if (!user) return;
-    
-    const newSale: Sale = {
-      ...saleData,
-      id: Date.now().toString(),
-      userId: user.id,
-      createdAt: new Date().toISOString(),
-    };
-    
-    await addSaleToStorage(newSale);
-    setSales(prev => [...prev, newSale]);
-    
-    // Update product stock
-    const product = products.find(p => p.id === saleData.productId);
-    if (product) {
-      await updateProduct(product.id, { stock: product.stock - saleData.quantity });
-    }
+    const ns: Sale = { ...data, id: Date.now().toString(), userId: user.id, createdAt: new Date().toISOString() };
+    await addSaleToStorage(ns);
+    setSales(prev => [...prev, ns]);
+    // Update stock
+    const prod = products.find(p => p.id === data.productId);
+    if (prod) await updateProduct(prod.id, { stock: prod.stock - data.quantity });
+  };
+  const updateSale = async (id: string, u: Partial<Sale>) => {
+    await updateSaleInStorage(id, u);
+    setSales(prev => prev.map(s => s.id === id ? { ...s, ...u } : s));
+  };
+  const deleteSale = async (id: string) => {
+    await deleteSaleFromStorage(id);
+    setSales(prev => prev.filter(s => s.id !== id));
   };
 
-  const addExpense = async (expenseData: Omit<Expense, 'id' | 'createdAt' | 'userId'>) => {
+  // EXPENSES
+  const addExpense = async (data: Omit<Expense, 'id' | 'createdAt' | 'userId'>) => {
     if (!user) return;
-    
-    const newExpense: Expense = {
-      ...expenseData,
-      id: Date.now().toString(),
-      userId: user.id,
-      createdAt: new Date().toISOString(),
-    };
-    
-    await addExpenseToStorage(newExpense);
-    setExpenses([...expenses, newExpense]);
+    const ne: Expense = { ...data, id: Date.now().toString(), userId: user.id, createdAt: new Date().toISOString() };
+    await addExpenseToStorage(ne);
+    setExpenses(prev => [...prev, ne]);
+  };
+  const updateExpense = async (id: string, u: Partial<Expense>) => {
+    await updateExpenseInStorage(id, u);
+    setExpenses(prev => prev.map(e => e.id === id ? { ...e, ...u } : e));
+  };
+  const deleteExpense = async (id: string) => {
+    await deleteExpenseFromStorage(id);
+    setExpenses(prev => prev.filter(e => e.id !== id));
   };
 
-  const addDebt = async (debtData: Omit<Debt, 'id' | 'createdAt' | 'userId'>) => {
+  // DEBTS
+  const addDebt = async (data: Omit<Debt, 'id' | 'createdAt' | 'userId'>) => {
     if (!user) return;
-    
-    const newDebt: Debt = {
-      ...debtData,
-      id: Date.now().toString(),
-      userId: user.id,
-      createdAt: new Date().toISOString(),
-    };
-    
-    await addDebtToStorage(newDebt);
-    setDebts([...debts, newDebt]);
+    const nd: Debt = { ...data, id: Date.now().toString(), userId: user.id, createdAt: new Date().toISOString() };
+    await addDebtToStorage(nd);
+    setDebts(prev => [...prev, nd]);
   };
-
-  const updateDebt = async (debtId: string, updates: Partial<Debt>) => {
-    await updateDebtInStorage(debtId, updates);
-    setDebts(debts.map(d => d.id === debtId ? { ...d, ...updates } : d));
+  const updateDebt = async (id: string, u: Partial<Debt>) => {
+    await updateDebtInStorage(id, u);
+    setDebts(prev => prev.map(d => d.id === id ? { ...d, ...u } : d));
   };
-
-  const deleteDebt = async (debtId: string) => {
-    await deleteDebtFromStorage(debtId);
-    setDebts(debts.filter(d => d.id !== debtId));
+  const deleteDebt = async (id: string) => {
+    await deleteDebtFromStorage(id);
+    setDebts(prev => prev.filter(d => d.id !== id));
   };
-
-  // Mark debt as paid AND add amount to revenue
   const markDebtAsPaidWithRevenue = async (debtId: string) => {
     const debt = debts.find(d => d.id === debtId);
     if (!debt || !user) return;
-
-    // Mark debt as paid
     const paidAt = new Date().toISOString();
     await updateDebtInStorage(debtId, { isPaid: true, paidAt });
-    setDebts(debts.map(d => d.id === debtId ? { ...d, isPaid: true, paidAt } : d));
-
-    // Add as revenue (sale) 
-    const revenueSale: Sale = {
-      id: `debt-${Date.now()}`,
-      productId: 'debt-payment',
-      productName: `Dette payee - ${debt.debtorName}`,
-      quantity: 1,
-      price: debt.amount,
-      totalAmount: debt.amount,
-      paymentMethod: 'cash',
-      currency: debt.currency || user.currency || 'USD',
-      userId: user.id,
-      createdAt: paidAt,
-    };
-
-    await addSaleToStorage(revenueSale);
-    setSales(prev => [...prev, revenueSale]);
+    setDebts(prev => prev.map(d => d.id === debtId ? { ...d, isPaid: true, paidAt } : d));
+    const revSale: Sale = { id: `debt-${Date.now()}`, productId: 'debt-payment', productName: `Dette payee - ${debt.debtorName}`, quantity: 1, price: debt.amount, totalAmount: debt.amount, paymentMethod: 'cash', currency: debt.currency || user.currency || 'USD', userId: user.id, createdAt: paidAt };
+    await addSaleToStorage(revSale);
+    setSales(prev => [...prev, revSale]);
   };
 
-  // Purchase operations
-  const addPurchase = async (purchaseData: Omit<Purchase, 'id' | 'createdAt' | 'userId'>) => {
+  // PURCHASES
+  const addPurchase = async (data: Omit<Purchase, 'id' | 'createdAt' | 'userId'>) => {
     if (!user) return;
-    
-    const newPurchase: Purchase = {
-      ...purchaseData,
-      id: Date.now().toString(),
-      userId: user.id,
-      createdAt: new Date().toISOString(),
-    };
-    
-    await addPurchaseToStorage(newPurchase);
-    setPurchases([...purchases, newPurchase]);
+    const np: Purchase = { ...data, id: Date.now().toString(), userId: user.id, createdAt: new Date().toISOString() };
+    await addPurchaseToStorage(np);
+    setPurchases(prev => [...prev, np]);
+  };
+  const updatePurchase = async (id: string, u: Partial<Purchase>) => {
+    await updatePurchaseInStorage(id, u);
+    setPurchases(prev => prev.map(p => p.id === id ? { ...p, ...u } : p));
+  };
+  const deletePurchase = async (id: string) => {
+    await deletePurchaseFromStorage(id);
+    setPurchases(prev => prev.filter(p => p.id !== id));
   };
 
-  const updatePurchase = async (purchaseId: string, updates: Partial<Purchase>) => {
-    await updatePurchaseInStorage(purchaseId, updates);
-    setPurchases(purchases.map(p => p.id === purchaseId ? { ...p, ...updates } : p));
-  };
-
-  const deletePurchase = async (purchaseId: string) => {
-    await deletePurchaseFromStorage(purchaseId);
-    setPurchases(purchases.filter(p => p.id !== purchaseId));
-  };
-
-  const refreshData = async () => {
-    await loadData();
-  };
+  const refreshData = async () => { await loadData(); };
 
   return (
-    <DataContext.Provider
-      value={{
-        products,
-        sales,
-        expenses,
-        debts,
-        purchases,
-        loading,
-        addProduct,
-        updateProduct,
-        deleteProduct,
-        addSale,
-        addExpense,
-        addDebt,
-        updateDebt,
-        deleteDebt,
-        addPurchase,
-        updatePurchase,
-        deletePurchase,
-        markDebtAsPaidWithRevenue,
-        refreshData,
-      }}
-    >
+    <DataContext.Provider value={{
+      products, sales, expenses, debts, purchases, loading,
+      addProduct, updateProduct, deleteProduct,
+      addSale, updateSale, deleteSale,
+      addExpense, updateExpense, deleteExpense,
+      addDebt, updateDebt, deleteDebt,
+      addPurchase, updatePurchase, deletePurchase,
+      markDebtAsPaidWithRevenue, refreshData,
+    }}>
       {children}
     </DataContext.Provider>
   );

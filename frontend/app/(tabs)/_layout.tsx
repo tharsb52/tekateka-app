@@ -15,12 +15,12 @@ export default function TabLayout() {
           backgroundColor: BG,
           borderTopWidth: 1,
           borderTopColor: '#f0d9c0',
-          height: 70,
-          paddingBottom: 10,
-          paddingTop: 10,
+          height: 65,
+          paddingBottom: 8,
+          paddingTop: 8,
         },
         tabBarLabelStyle: {
-          fontSize: 10,
+          fontSize: 11,
           fontWeight: '600',
         },
         headerShown: false,
@@ -55,15 +55,6 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="purchases"
-        options={{
-          title: i18n.t('purchases'),
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="bag-handle" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="expenses"
         options={{
           title: i18n.t('expenses'),
@@ -90,6 +81,7 @@ export default function TabLayout() {
           ),
         }}
       />
+      <Tabs.Screen name="purchases" options={{ href: null }} />
     </Tabs>
   );
 }

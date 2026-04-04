@@ -14,13 +14,17 @@ export interface User {
 export interface Product {
   id: string;
   name: string;
-  price: number;
-  stock: number;
+  purchasePrice: number; // Prix d'achat par unité
+  salePrice: number; // Prix de vente
+  promotionPrice?: number; // Prix promo (optionnel)
+  stock: number; // Quantité en stock
   category: string;
   userId: string;
   createdAt: string;
   updatedAt: string;
   synced?: boolean;
+  // Legacy field - mapped to salePrice for backward compat
+  price?: number;
 }
 
 export interface Sale {
@@ -44,6 +48,8 @@ export interface Expense {
   amount: number;
   currency: string;
   notes?: string;
+  productId?: string; // Lien optionnel vers un produit
+  productName?: string;
   userId: string;
   createdAt: string;
   synced?: boolean;

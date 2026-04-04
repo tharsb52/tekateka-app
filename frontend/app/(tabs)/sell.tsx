@@ -1,399 +1,281 @@
 import React, { useState } from 'react';
 import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  ScrollView,
-  TextInput,
-  Alert,
+  View, Text, TouchableOpacity, StyleSheet, ScrollView,
+  TextInput, Alert, Modal,
 } from 'react-native';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import i18n from '../../utils/i18n';
 import { Ionicons } from '@expo/vector-icons';
 import { formatCurrency, CURRENCIES } from '../../utils/currencies';
+import { format } from 'date-fns';
+import { cardShadow } from '../../utils/shadows';
+
+const BG = '#fef3e7';
 
 export default function SellScreen() {
-  const { products, addSale } = useData();
+  const { products, sales, addSale, updateSale, deleteSale } = useData();
   const { user } = useAuth();
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [quantity, setQuantity] = useState('1');
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'mobileMoney'>('cash');
   const [currency, setCurrency] = useState(user?.currency || 'USD');
+  const [showHistory, setShowHistory] = useState(false);
+  const [editSaleModal, setEditSaleModal] = useState(false);
+  const [editingSale, setEditingSale] = useState<any>(null);
+  const [editQty, setEditQty] = useState('');
 
   const availableProducts = products.filter(p => p.stock > 0);
+  const getEffectivePrice = (p: any) => p.promotionPrice && p.promotionPrice > 0 ? p.promotionPrice : (p.salePrice || p.price || 0);
 
   const handleRecordSale = async () => {
-    if (!selectedProduct) {
-      Alert.alert(i18n.t('error'), i18n.t('selectProduct'));
-      return;
-    }
-
+    if (!selectedProduct) { Alert.alert(i18n.t('error'), i18n.t('selectProduct')); return; }
     const qty = parseInt(quantity);
-    if (isNaN(qty) || qty <= 0) {
-      Alert.alert(i18n.t('error'), 'Invalid quantity');
-      return;
-    }
+    if (isNaN(qty) || qty <= 0) { Alert.alert(i18n.t('error'), 'Quantite invalide'); return; }
+    if (qty > selectedProduct.stock) { Alert.alert(i18n.t('error'), `Stock: ${selectedProduct.stock}`); return; }
 
-    if (qty > selectedProduct.stock) {
-      Alert.alert(i18n.t('error'), `Only ${selectedProduct.stock} in stock`);
-      return;
-    }
-
+    const price = getEffectivePrice(selectedProduct);
     try {
       await addSale({
-        productId: selectedProduct.id,
-        productName: selectedProduct.name,
-        quantity: qty,
-        price: selectedProduct.price,
-        totalAmount: selectedProduct.price * qty,
-        paymentMethod,
-        currency,
+        productId: selectedProduct.id, productName: selectedProduct.name,
+        quantity: qty, price, totalAmount: price * qty, paymentMethod, currency,
       });
-
-      Alert.alert(i18n.t('success'), 'Sale recorded!');
-      setSelectedProduct(null);
-      setQuantity('1');
-    } catch (error) {
-      Alert.alert(i18n.t('error'), 'Failed to record sale');
-    }
+      Alert.alert(i18n.t('success'), `Vente enregistree: ${qty}x ${selectedProduct.name}`);
+      setSelectedProduct(null); setQuantity('1');
+    } catch (err) { Alert.alert(i18n.t('error'), 'Echec'); }
   };
 
-  const totalAmount = selectedProduct ? selectedProduct.price * parseInt(quantity || '0') : 0;
+  const openEditSale = (sale: any) => {
+    setEditingSale(sale); setEditQty(sale.quantity.toString()); setEditSaleModal(true);
+  };
+
+  const handleUpdateSale = async () => {
+    if (!editingSale) return;
+    const qty = parseInt(editQty);
+    if (isNaN(qty) || qty <= 0) { Alert.alert(i18n.t('error'), 'Quantite invalide'); return; }
+    const newTotal = editingSale.price * qty;
+    await updateSale(editingSale.id, { quantity: qty, totalAmount: newTotal });
+    setEditSaleModal(false);
+    Alert.alert(i18n.t('success'), 'Vente modifiee');
+  };
+
+  const handleDeleteSale = (id: string) => {
+    Alert.alert('Supprimer', 'Supprimer cette vente ?', [
+      { text: i18n.t('cancel'), style: 'cancel' },
+      { text: i18n.t('delete'), style: 'destructive', onPress: () => deleteSale(id) },
+    ]);
+  };
+
+  const totalAmount = selectedProduct ? getEffectivePrice(selectedProduct) * parseInt(quantity || '0') : 0;
+  const recentSales = [...sales].filter(s => s.productId !== 'debt-payment').sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
-        <Ionicons name="cart" size={32} color="#2563eb" />
+        <Ionicons name="cart" size={28} color="#2563eb" />
         <Text style={styles.title}>{i18n.t('sell')}</Text>
+        <View style={{ flex: 1 }} />
+        <TouchableOpacity style={styles.historyBtn} onPress={() => setShowHistory(!showHistory)}>
+          <Ionicons name={showHistory ? 'close' : 'time'} size={20} color="#2563eb" />
+          <Text style={styles.historyBtnText}>{showHistory ? 'Fermer' : 'Historique'}</Text>
+        </TouchableOpacity>
       </View>
 
-      {/* Product Selection */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{i18n.t('selectProduct')}</Text>
-        {availableProducts.length === 0 ? (
-          <Text style={styles.noData}>{i18n.t('noData')}</Text>
-        ) : (
-          <View style={styles.productGrid}>
-            {availableProducts.map((product) => (
-              <TouchableOpacity
-                key={product.id}
-                style={[
-                  styles.productCard,
-                  selectedProduct?.id === product.id && styles.productCardSelected,
-                ]}
-                onPress={() => setSelectedProduct(product)}
-              >
-                <Text style={styles.productName}>{product.name}</Text>
-                <Text style={styles.productPrice}>
-                  {formatCurrency(product.price, currency)}
-                </Text>
-                <Text style={styles.productStock}>Stock: {product.stock}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-      </View>
-
-      {selectedProduct && (
-        <>
-          {/* Quantity */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{i18n.t('quantity')}</Text>
-            <View style={styles.quantityContainer}>
-              <TouchableOpacity
-                style={styles.quantityButton}
-                onPress={() => setQuantity(Math.max(1, parseInt(quantity) - 1).toString())}
-              >
-                <Ionicons name="remove" size={24} color="#fff" />
-              </TouchableOpacity>
-              <TextInput
-                style={styles.quantityInput}
-                value={quantity}
-                onChangeText={setQuantity}
-                keyboardType="number-pad"
-              />
-              <TouchableOpacity
-                style={styles.quantityButton}
-                onPress={() => setQuantity((parseInt(quantity) + 1).toString())}
-              >
-                <Ionicons name="add" size={24} color="#fff" />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Currency Selection */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{i18n.t('currency')}</Text>
-            <View style={styles.currencyRow}>
-              {CURRENCIES.map((curr) => (
-                <TouchableOpacity
-                  key={curr.code}
-                  style={[
-                    styles.currencyButton,
-                    currency === curr.code && styles.currencyButtonSelected,
-                  ]}
-                  onPress={() => setCurrency(curr.code)}
-                >
-                  <Text
-                    style={[
-                      styles.currencyText,
-                      currency === curr.code && styles.currencyTextSelected,
-                    ]}
-                  >
-                    {curr.code}
+      {showHistory ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Historique des ventes ({recentSales.length})</Text>
+          {recentSales.length === 0 ? (
+            <Text style={styles.noData}>Aucune vente</Text>
+          ) : (
+            recentSales.slice(0, 30).map((sale) => (
+              <View key={sale.id} style={styles.saleCard}>
+                <View style={styles.saleInfo}>
+                  <Text style={styles.saleName}>{sale.productName}</Text>
+                  <Text style={styles.saleDate}>
+                    {(() => { try { return format(new Date(sale.createdAt), 'dd/MM/yyyy HH:mm'); } catch { return sale.createdAt; }})()}
                   </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          {/* Payment Method */}
+                  <Text style={styles.saleDetail}>{sale.quantity}x {formatCurrency(sale.price, sale.currency)}</Text>
+                </View>
+                <View style={styles.saleRight}>
+                  <Text style={styles.saleTotal}>{formatCurrency(sale.totalAmount, sale.currency)}</Text>
+                  <View style={styles.saleActions}>
+                    <TouchableOpacity onPress={() => openEditSale(sale)} hitSlop={{top:10,bottom:10,left:10,right:10}}>
+                      <Ionicons name="pencil" size={16} color="#2563eb" />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleDeleteSale(sale.id)} hitSlop={{top:10,bottom:10,left:10,right:10}}>
+                      <Ionicons name="trash" size={16} color="#dc2626" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            ))
+          )}
+        </View>
+      ) : (
+        <>
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{i18n.t('paymentMethod')}</Text>
-            <View style={styles.paymentRow}>
-              <TouchableOpacity
-                style={[
-                  styles.paymentButton,
-                  paymentMethod === 'cash' && styles.paymentButtonSelected,
-                ]}
-                onPress={() => setPaymentMethod('cash')}
-              >
-                <Ionicons
-                  name="cash"
-                  size={24}
-                  color={paymentMethod === 'cash' ? '#fff' : '#2563eb'}
-                />
-                <Text
-                  style={[
-                    styles.paymentText,
-                    paymentMethod === 'cash' && styles.paymentTextSelected,
-                  ]}
-                >
-                  {i18n.t('cash')}
-                </Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={[
-                  styles.paymentButton,
-                  paymentMethod === 'mobileMoney' && styles.paymentButtonSelected,
-                ]}
-                onPress={() => setPaymentMethod('mobileMoney')}
-              >
-                <Ionicons
-                  name="phone-portrait"
-                  size={24}
-                  color={paymentMethod === 'mobileMoney' ? '#fff' : '#2563eb'}
-                />
-                <Text
-                  style={[
-                    styles.paymentText,
-                    paymentMethod === 'mobileMoney' && styles.paymentTextSelected,
-                  ]}
-                >
-                  {i18n.t('mobileMoney')}
-                </Text>
-              </TouchableOpacity>
-            </View>
+            <Text style={styles.sectionTitle}>{i18n.t('selectProduct')}</Text>
+            {availableProducts.length === 0 ? (
+              <Text style={styles.noData}>{i18n.t('noData')}</Text>
+            ) : (
+              <View style={styles.productGrid}>
+                {availableProducts.map((product) => {
+                  const effPrice = getEffectivePrice(product);
+                  const hasPromo = product.promotionPrice && product.promotionPrice > 0;
+                  return (
+                    <TouchableOpacity key={product.id}
+                      style={[styles.productCard, selectedProduct?.id === product.id && styles.productCardSelected]}
+                      onPress={() => setSelectedProduct(product)}>
+                      <Text style={styles.productName}>{product.name}</Text>
+                      <Text style={styles.productPrice}>{formatCurrency(effPrice, currency)}</Text>
+                      {hasPromo ? <Text style={styles.promoLabel}>Promo!</Text> : null}
+                      <Text style={styles.productStock}>Stock: {product.stock}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
           </View>
 
-          {/* Total Amount */}
-          <View style={styles.totalCard}>
-            <Text style={styles.totalLabel}>{i18n.t('totalAmount')}</Text>
-            <Text style={styles.totalAmount}>{formatCurrency(totalAmount, currency)}</Text>
-          </View>
+          {selectedProduct && (
+            <>
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>{i18n.t('quantity')}</Text>
+                <View style={styles.quantityContainer}>
+                  <TouchableOpacity style={styles.quantityButton}
+                    onPress={() => setQuantity(Math.max(1, parseInt(quantity) - 1).toString())}>
+                    <Ionicons name="remove" size={24} color="#fff" />
+                  </TouchableOpacity>
+                  <TextInput style={styles.quantityInput} value={quantity}
+                    onChangeText={setQuantity} keyboardType="number-pad" />
+                  <TouchableOpacity style={styles.quantityButton}
+                    onPress={() => setQuantity((parseInt(quantity) + 1).toString())}>
+                    <Ionicons name="add" size={24} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              </View>
 
-          {/* Record Sale Button */}
-          <TouchableOpacity style={styles.recordButton} onPress={handleRecordSale}>
-            <Ionicons name="checkmark-circle" size={24} color="#fff" />
-            <Text style={styles.recordButtonText}>{i18n.t('recordSale')}</Text>
-          </TouchableOpacity>
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>{i18n.t('paymentMethod')}</Text>
+                <View style={styles.paymentRow}>
+                  {(['cash', 'mobileMoney'] as const).map((m) => (
+                    <TouchableOpacity key={m}
+                      style={[styles.paymentButton, paymentMethod === m && styles.paymentButtonSelected]}
+                      onPress={() => setPaymentMethod(m)}>
+                      <Ionicons name={m === 'cash' ? 'cash' : 'phone-portrait'} size={22}
+                        color={paymentMethod === m ? '#fff' : '#2563eb'} />
+                      <Text style={[styles.paymentText, paymentMethod === m && styles.paymentTextSelected]}>
+                        {i18n.t(m)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              <View style={styles.totalCard}>
+                <Text style={styles.totalLabel}>{i18n.t('totalAmount')}</Text>
+                <Text style={styles.totalAmount}>{formatCurrency(totalAmount, currency)}</Text>
+              </View>
+
+              <TouchableOpacity style={styles.recordButton} onPress={handleRecordSale}>
+                <Ionicons name="checkmark-circle" size={24} color="#fff" />
+                <Text style={styles.recordButtonText}>{i18n.t('recordSale')}</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </>
       )}
 
       <View style={{ height: 40 }} />
+
+      {/* Edit Sale Modal */}
+      <Modal visible={editSaleModal} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Modifier la vente</Text>
+              <TouchableOpacity onPress={() => setEditSaleModal(false)}>
+                <Ionicons name="close" size={28} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+            {editingSale && (
+              <View style={{ padding: 20 }}>
+                <Text style={styles.editLabel}>Produit: {editingSale.productName}</Text>
+                <Text style={styles.editLabel}>Prix unitaire: {formatCurrency(editingSale.price, editingSale.currency)}</Text>
+                <Text style={styles.editLabel}>Date: {(() => { try { return format(new Date(editingSale.createdAt), 'dd/MM/yyyy HH:mm'); } catch { return ''; }})()}</Text>
+                <Text style={[styles.label, { marginTop: 16 }]}>Nouvelle quantite</Text>
+                <TextInput style={styles.input} value={editQty}
+                  onChangeText={setEditQty} keyboardType="number-pad" />
+                {editQty && (
+                  <Text style={styles.editTotal}>Nouveau total: {formatCurrency(editingSale.price * (parseInt(editQty) || 0), editingSale.currency)}</Text>
+                )}
+              </View>
+            )}
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.cancelButton} onPress={() => setEditSaleModal(false)}>
+                <Text style={styles.cancelButtonText}>{i18n.t('cancel')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.saveButton} onPress={handleUpdateSale}>
+                <Text style={styles.saveButtonText}>{i18n.t('save')}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fef3e7',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#fef3e7',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0d9c0',
-    gap: 12,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1e293b',
-  },
-  section: {
-    padding: 20,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#334155',
-    marginBottom: 12,
-  },
-  productGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  productCard: {
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#e2e8f0',
-    width: '48%',
-    minHeight: 100,
-  },
-  productCardSelected: {
-    borderColor: '#2563eb',
-    backgroundColor: '#eff6ff',
-  },
-  productName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1e293b',
-    marginBottom: 4,
-  },
-  productPrice: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2563eb',
-    marginBottom: 4,
-  },
-  productStock: {
-    fontSize: 12,
-    color: '#64748b',
-  },
-  quantityContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 16,
-  },
-  quantityButton: {
-    backgroundColor: '#2563eb',
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  quantityInput: {
-    backgroundColor: '#fff',
-    borderWidth: 2,
-    borderColor: '#e2e8f0',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 24,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    minWidth: 100,
-  },
-  currencyRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  currencyButton: {
-    flex: 1,
-    backgroundColor: '#fff',
-    borderWidth: 2,
-    borderColor: '#e2e8f0',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-  },
-  currencyButtonSelected: {
-    backgroundColor: '#2563eb',
-    borderColor: '#2563eb',
-  },
-  currencyText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#64748b',
-  },
-  currencyTextSelected: {
-    color: '#fff',
-  },
-  paymentRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  paymentButton: {
-    flex: 1,
-    backgroundColor: '#fff',
-    borderWidth: 2,
-    borderColor: '#e2e8f0',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    gap: 8,
-  },
-  paymentButtonSelected: {
-    backgroundColor: '#2563eb',
-    borderColor: '#2563eb',
-  },
-  paymentText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#64748b',
-  },
-  paymentTextSelected: {
-    color: '#fff',
-  },
-  totalCard: {
-    backgroundColor: '#fff',
-    margin: 20,
-    padding: 24,
-    borderRadius: 16,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#2563eb',
-  },
-  totalLabel: {
-    fontSize: 16,
-    color: '#64748b',
-    marginBottom: 8,
-  },
-  totalAmount: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#2563eb',
-  },
-  recordButton: {
-    backgroundColor: '#10b981',
-    margin: 20,
-    padding: 20,
-    borderRadius: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-  },
-  recordButtonText: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  noData: {
-    textAlign: 'center',
-    color: '#94a3b8',
-    fontSize: 16,
-    marginTop: 20,
-  },
+  container: { flex: 1, backgroundColor: BG },
+  header: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: BG, borderBottomWidth: 1, borderBottomColor: '#f0d9c0', gap: 10 },
+  title: { fontSize: 22, fontWeight: 'bold', color: '#1e293b' },
+  historyBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#eff6ff', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
+  historyBtnText: { fontSize: 13, color: '#2563eb', fontWeight: '600' },
+  section: { padding: 16 },
+  sectionTitle: { fontSize: 16, fontWeight: '600', color: '#334155', marginBottom: 12 },
+  productGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  productCard: { backgroundColor: '#fff', padding: 14, borderRadius: 12, borderWidth: 2, borderColor: '#e2e8f0', width: '48%', minHeight: 90 },
+  productCardSelected: { borderColor: '#2563eb', backgroundColor: '#eff6ff' },
+  productName: { fontSize: 15, fontWeight: '600', color: '#1e293b', marginBottom: 4 },
+  productPrice: { fontSize: 17, fontWeight: 'bold', color: '#2563eb', marginBottom: 2 },
+  promoLabel: { fontSize: 11, color: '#92400e', fontWeight: '700', backgroundColor: '#fef3c7', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, alignSelf: 'flex-start', marginBottom: 2 },
+  productStock: { fontSize: 12, color: '#64748b' },
+  quantityContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16 },
+  quantityButton: { backgroundColor: '#2563eb', width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  quantityInput: { backgroundColor: '#fff', borderWidth: 2, borderColor: '#e2e8f0', borderRadius: 12, padding: 14, fontSize: 24, fontWeight: 'bold', textAlign: 'center', minWidth: 90 },
+  paymentRow: { flexDirection: 'row', gap: 12 },
+  paymentButton: { flex: 1, backgroundColor: '#fff', borderWidth: 2, borderColor: '#e2e8f0', borderRadius: 12, padding: 14, alignItems: 'center', gap: 6 },
+  paymentButtonSelected: { backgroundColor: '#2563eb', borderColor: '#2563eb' },
+  paymentText: { fontSize: 14, fontWeight: '600', color: '#64748b' },
+  paymentTextSelected: { color: '#fff' },
+  totalCard: { backgroundColor: '#fff', margin: 16, padding: 20, borderRadius: 16, alignItems: 'center', borderWidth: 2, borderColor: '#2563eb' },
+  totalLabel: { fontSize: 14, color: '#64748b', marginBottom: 6 },
+  totalAmount: { fontSize: 30, fontWeight: 'bold', color: '#2563eb' },
+  recordButton: { backgroundColor: '#10b981', margin: 16, padding: 18, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  recordButtonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+  noData: { textAlign: 'center', color: '#94a3b8', fontSize: 15, marginTop: 20 },
+  // Sales history
+  saleCard: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: '#ede0d4', ...cardShadow },
+  saleInfo: { flex: 1 },
+  saleName: { fontSize: 15, fontWeight: '600', color: '#1e293b' },
+  saleDate: { fontSize: 12, color: '#2563eb', fontWeight: '500', marginTop: 2 },
+  saleDetail: { fontSize: 12, color: '#64748b', marginTop: 2 },
+  saleRight: { alignItems: 'flex-end', justifyContent: 'space-between' },
+  saleTotal: { fontSize: 17, fontWeight: 'bold', color: '#10b981' },
+  saleActions: { flexDirection: 'row', gap: 10, marginTop: 6 },
+  // Modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#e2e8f0' },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#1e293b' },
+  label: { fontSize: 14, fontWeight: '600', color: '#334155', marginBottom: 6, marginTop: 10 },
+  input: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 14, fontSize: 16 },
+  editLabel: { fontSize: 15, color: '#475569', marginBottom: 4 },
+  editTotal: { fontSize: 18, fontWeight: 'bold', color: '#2563eb', marginTop: 12, textAlign: 'center' },
+  modalActions: { flexDirection: 'row', padding: 20, gap: 12, borderTopWidth: 1, borderTopColor: '#e2e8f0' },
+  cancelButton: { flex: 1, padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', alignItems: 'center' },
+  cancelButtonText: { fontSize: 16, fontWeight: '600', color: '#64748b' },
+  saveButton: { flex: 1, padding: 16, borderRadius: 12, backgroundColor: '#2563eb', alignItems: 'center' },
+  saveButtonText: { fontSize: 16, fontWeight: '600', color: '#fff' },
 });

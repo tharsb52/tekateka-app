@@ -27,7 +27,7 @@ export default function DashboardScreen() {
     const totalSales = sales.reduce((sum, sale) => sum + sale.totalAmount, 0);
     const totalExpenses = expenses.reduce((sum, exp) => sum + exp.amount, 0);
     const totalDebts = debts.filter(d => !d.isPaid).reduce((sum, debt) => sum + debt.amount, 0);
-    const totalPurchases = purchases.reduce((sum, p) => sum + p.totalCost, 0);
+    const totalPurchases = products.reduce((sum, p) => sum + (p.purchasePrice || 0) * p.stock, 0);
     const netProfit = totalSales - totalExpenses;
     const realProfit = totalSales - totalExpenses - totalPurchases;
 
@@ -63,6 +63,11 @@ export default function DashboardScreen() {
         <View>
           <Text style={styles.greeting}>TekaTeka</Text>
           <Text style={styles.slogan}>{i18n.t('slogan')}</Text>
+          <Text style={styles.dateTime}>
+            {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+            {'  '}
+            {new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+          </Text>
         </View>
         {/* Subscription Badge */}
         {isSubActive ? (
@@ -281,6 +286,11 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontWeight: '600',
     fontStyle: 'italic',
+  },
+  dateTime: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 4,
   },
   trialBadge: {
     backgroundColor: '#fef3c7',

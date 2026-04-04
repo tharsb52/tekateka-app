@@ -72,6 +72,21 @@ export const addSale = async (sale: Sale): Promise<void> => {
   await saveSales(sales);
 };
 
+export const updateSale = async (saleId: string, updates: Partial<Sale>): Promise<void> => {
+  const sales = await getSales();
+  const index = sales.findIndex(s => s.id === saleId);
+  if (index !== -1) {
+    sales[index] = { ...sales[index], ...updates, synced: false };
+    await saveSales(sales);
+  }
+};
+
+export const deleteSale = async (saleId: string): Promise<void> => {
+  const sales = await getSales();
+  const filtered = sales.filter(s => s.id !== saleId);
+  await saveSales(filtered);
+};
+
 // Expenses operations
 export const saveExpenses = async (expenses: Expense[]): Promise<void> => {
   await AsyncStorage.setItem(KEYS.EXPENSES, JSON.stringify(expenses));
@@ -86,6 +101,21 @@ export const addExpense = async (expense: Expense): Promise<void> => {
   const expenses = await getExpenses();
   expenses.push({ ...expense, synced: false });
   await saveExpenses(expenses);
+};
+
+export const updateExpense = async (expenseId: string, updates: Partial<Expense>): Promise<void> => {
+  const expenses = await getExpenses();
+  const index = expenses.findIndex(e => e.id === expenseId);
+  if (index !== -1) {
+    expenses[index] = { ...expenses[index], ...updates, synced: false };
+    await saveExpenses(expenses);
+  }
+};
+
+export const deleteExpense = async (expenseId: string): Promise<void> => {
+  const expenses = await getExpenses();
+  const filtered = expenses.filter(e => e.id !== expenseId);
+  await saveExpenses(filtered);
 };
 
 // Debts operations

@@ -1,13 +1,7 @@
 import React, { useState } from 'react';
 import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  ScrollView,
-  TextInput,
-  Alert,
-  Modal,
+  View, Text, TouchableOpacity, StyleSheet, ScrollView,
+  TextInput, Alert, Modal,
 } from 'react-native';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
@@ -16,80 +10,88 @@ import { Ionicons } from '@expo/vector-icons';
 import { formatCurrency } from '../../utils/currencies';
 import { ExpenseCategoryType } from '../../types';
 import { format } from 'date-fns';
+import { cardShadow } from '../../utils/shadows';
 
+const BG = '#fef3e7';
 const EXPENSE_CATEGORIES: ExpenseCategoryType[] = [
-  'inventory',
-  'transport',
-  'rent',
-  'electricity',
-  'water',
-  'internet',
-  'salaries',
-  'mobileMoneyFees',
-  'taxes',
-  'maintenance',
-  'supplies',
-  'miscellaneous',
+  'inventory', 'transport', 'rent', 'electricity', 'water', 'internet',
+  'salaries', 'mobileMoneyFees', 'taxes', 'maintenance', 'supplies', 'miscellaneous',
 ];
 
 export default function ExpensesScreen() {
-  const { expenses, addExpense } = useData();
+  const { expenses, products, addExpense, updateExpense, deleteExpense } = useData();
   const { user } = useAuth();
   const [modalVisible, setModalVisible] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<any>(null);
   const [formData, setFormData] = useState({
     category: 'inventory' as ExpenseCategoryType,
-    customCategory: '',
-    amount: '',
-    notes: '',
+    customCategory: '', amount: '', notes: '', productId: '',
   });
 
-  const handleSave = async () => {
-    if (!formData.amount) {
-      Alert.alert(i18n.t('error'), 'Please enter amount');
-      return;
-    }
+  const currency = user?.currency || 'USD';
+  const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
 
-    const amount = parseFloat(formData.amount);
-    if (isNaN(amount) || amount <= 0) {
-      Alert.alert(i18n.t('error'), 'Invalid amount');
-      return;
-    }
-
-    if (formData.category === 'custom' && !formData.customCategory) {
-      Alert.alert(i18n.t('error'), 'Please enter custom category');
-      return;
-    }
-
-    try {
-      await addExpense({
-        category: formData.category,
-        customCategory: formData.category === 'custom' ? formData.customCategory : undefined,
-        amount,
-        currency: user?.currency || 'CFA',
-        notes: formData.notes,
-      });
-      setModalVisible(false);
-      setFormData({ category: 'inventory', customCategory: '', amount: '', notes: '' });
-    } catch (error) {
-      Alert.alert(i18n.t('error'), 'Failed to save expense');
-    }
+  const openAddModal = () => {
+    setEditingExpense(null);
+    setFormData({ category: 'inventory', customCategory: '', amount: '', notes: '', productId: '' });
+    setModalVisible(true);
   };
 
-  const totalExpenses = expenses.reduce((sum, exp) => sum + exp.amount, 0);
+  const openEditModal = (exp: any) => {
+    setEditingExpense(exp);
+    setFormData({
+      category: exp.category || 'inventory',
+      customCategory: exp.customCategory || '',
+      amount: exp.amount.toString(),
+      notes: exp.notes || '',
+      productId: exp.productId || '',
+    });
+    setModalVisible(true);
+  };
+
+  const handleSave = async () => {
+    if (!formData.amount) { Alert.alert(i18n.t('error'), 'Montant requis'); return; }
+    const amount = parseFloat(formData.amount);
+    if (isNaN(amount) || amount <= 0) { Alert.alert(i18n.t('error'), 'Montant invalide'); return; }
+    if (formData.category === 'custom' && !formData.customCategory) { Alert.alert(i18n.t('error'), 'Nom de categorie requis'); return; }
+
+    const linkedProduct = products.find(p => p.id === formData.productId);
+    try {
+      const data = {
+        category: formData.category,
+        customCategory: formData.category === 'custom' ? formData.customCategory : undefined,
+        amount, currency,
+        notes: formData.notes,
+        productId: formData.productId || undefined,
+        productName: linkedProduct?.name || undefined,
+      };
+      if (editingExpense) {
+        await updateExpense(editingExpense.id, data);
+      } else {
+        await addExpense(data);
+      }
+      setModalVisible(false);
+    } catch (err) { Alert.alert(i18n.t('error'), 'Echec'); }
+  };
+
+  const handleDelete = (id: string) => {
+    Alert.alert('Supprimer', 'Supprimer cette charge ?', [
+      { text: i18n.t('cancel'), style: 'cancel' },
+      { text: i18n.t('delete'), style: 'destructive', onPress: () => deleteExpense(id) },
+    ]);
+  };
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Ionicons name="wallet" size={32} color="#dc2626" />
+          <Ionicons name="wallet" size={28} color="#dc2626" />
           <View>
             <Text style={styles.title}>{i18n.t('expenses')}</Text>
-            <Text style={styles.totalText}>
-              {formatCurrency(totalExpenses, user?.currency || 'CFA')}
-            </Text>
+            <Text style={styles.totalText}>{formatCurrency(totalExpenses, currency)}</Text>
           </View>
         </View>
-        <TouchableOpacity style={styles.addButton} onPress={() => setModalVisible(true)}>
+        <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
           <Ionicons name="add" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
@@ -99,7 +101,7 @@ export default function ExpensesScreen() {
           <View style={styles.emptyState}>
             <Ionicons name="wallet-outline" size={64} color="#cbd5e1" />
             <Text style={styles.emptyText}>{i18n.t('noData')}</Text>
-            <Text style={styles.emptySubtext}>Tap + to record your first expense</Text>
+            <Text style={styles.emptySubtext}>Appuyez + pour enregistrer une charge</Text>
           </View>
         ) : (
           expenses
@@ -109,115 +111,103 @@ export default function ExpensesScreen() {
                 <View style={styles.expenseHeader}>
                   <View style={styles.expenseInfo}>
                     <Text style={styles.expenseName}>
-                      {expense.category === 'custom'
-                        ? expense.customCategory
-                        : i18n.t(expense.category)}
+                      {expense.category === 'custom' ? expense.customCategory : i18n.t(expense.category)}
                     </Text>
+                    {expense.productName ? (
+                      <Text style={styles.linkedProduct}>
+                        <Ionicons name="link" size={11} color="#7c3aed" /> {expense.productName}
+                      </Text>
+                    ) : null}
                     <Text style={styles.expenseDate}>
-                      {format(new Date(expense.createdAt), 'dd MMM yyyy, HH:mm')}
+                      {(() => { try { return format(new Date(expense.createdAt), 'dd/MM/yyyy HH:mm'); } catch { return ''; }})()}
                     </Text>
                   </View>
-                  <Text style={styles.expenseAmount}>
-                    {formatCurrency(expense.amount, expense.currency)}
-                  </Text>
+                  <View style={styles.expenseRight}>
+                    <Text style={styles.expenseAmount}>{formatCurrency(expense.amount, expense.currency)}</Text>
+                    <View style={styles.expenseActions}>
+                      <TouchableOpacity onPress={() => openEditModal(expense)} hitSlop={{top:10,bottom:10,left:10,right:10}}>
+                        <Ionicons name="pencil" size={16} color="#2563eb" />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => handleDelete(expense.id)} hitSlop={{top:10,bottom:10,left:10,right:10}}>
+                        <Ionicons name="trash" size={16} color="#dc2626" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
                 </View>
-                {expense.notes && (
-                  <Text style={styles.expenseNotes}>{expense.notes}</Text>
-                )}
+                {expense.notes ? <Text style={styles.expenseNotes}>{expense.notes}</Text> : null}
               </View>
             ))
         )}
         <View style={{ height: 80 }} />
       </ScrollView>
 
-      {/* Add Expense Modal */}
+      {/* Add/Edit Modal */}
       <Modal visible={modalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{i18n.t('addExpense')}</Text>
+              <Text style={styles.modalTitle}>{editingExpense ? 'Modifier Charge' : i18n.t('addExpense')}</Text>
               <TouchableOpacity onPress={() => setModalVisible(false)}>
                 <Ionicons name="close" size={28} color="#64748b" />
               </TouchableOpacity>
             </View>
 
             <ScrollView style={styles.modalForm}>
-              <Text style={styles.label}>{i18n.t('expenseCategory')}</Text>
+              <Text style={styles.label}>Categorie</Text>
               <View style={styles.categoryGrid}>
                 {EXPENSE_CATEGORIES.map((cat) => (
-                  <TouchableOpacity
-                    key={cat}
-                    style={[
-                      styles.categoryButton,
-                      formData.category === cat && styles.categoryButtonSelected,
-                    ]}
-                    onPress={() => setFormData({ ...formData, category: cat })}
-                  >
-                    <Text
-                      style={[
-                        styles.categoryText,
-                        formData.category === cat && styles.categoryTextSelected,
-                      ]}
-                    >
+                  <TouchableOpacity key={cat}
+                    style={[styles.categoryButton, formData.category === cat && styles.categoryButtonSelected]}
+                    onPress={() => setFormData({ ...formData, category: cat })}>
+                    <Text style={[styles.categoryText, formData.category === cat && styles.categoryTextSelected]}>
                       {i18n.t(cat)}
                     </Text>
                   </TouchableOpacity>
                 ))}
                 <TouchableOpacity
-                  style={[
-                    styles.categoryButton,
-                    formData.category === 'custom' && styles.categoryButtonSelected,
-                  ]}
-                  onPress={() => setFormData({ ...formData, category: 'custom' })}
-                >
-                  <Text
-                    style={[
-                      styles.categoryText,
-                      formData.category === 'custom' && styles.categoryTextSelected,
-                    ]}
-                  >
+                  style={[styles.categoryButton, formData.category === 'custom' && styles.categoryButtonSelected]}
+                  onPress={() => setFormData({ ...formData, category: 'custom' })}>
+                  <Text style={[styles.categoryText, formData.category === 'custom' && styles.categoryTextSelected]}>
                     {i18n.t('customExpense')}
                   </Text>
                 </TouchableOpacity>
               </View>
 
               {formData.category === 'custom' && (
-                <>
-                  <Text style={styles.label}>Custom Category Name</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={formData.customCategory}
-                    onChangeText={(text) => setFormData({ ...formData, customCategory: text })}
-                    placeholder="e.g., Marketing"
-                  />
-                </>
+                <><Text style={styles.label}>Nom de la categorie</Text>
+                <TextInput style={styles.input} value={formData.customCategory}
+                  onChangeText={(t) => setFormData({ ...formData, customCategory: t })} placeholder="Ex: Marketing" /></>
               )}
 
-              <Text style={styles.label}>{i18n.t('expenseAmount')}</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.amount}
-                onChangeText={(text) => setFormData({ ...formData, amount: text })}
-                keyboardType="decimal-pad"
-                placeholder="0"
-              />
+              <Text style={styles.label}>Montant *</Text>
+              <TextInput style={styles.input} value={formData.amount}
+                onChangeText={(t) => setFormData({ ...formData, amount: t })}
+                keyboardType="decimal-pad" placeholder="0" />
 
-              <Text style={styles.label}>Notes (optional)</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                value={formData.notes}
-                onChangeText={(text) => setFormData({ ...formData, notes: text })}
-                placeholder="Add notes..."
-                multiline
-                numberOfLines={3}
-              />
+              <Text style={styles.label}>Produit lie (optionnel)</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+                <TouchableOpacity
+                  style={[styles.productChip, !formData.productId && styles.productChipSelected]}
+                  onPress={() => setFormData({ ...formData, productId: '' })}>
+                  <Text style={[styles.productChipText, !formData.productId && styles.productChipTextSelected]}>Aucun</Text>
+                </TouchableOpacity>
+                {products.map((p) => (
+                  <TouchableOpacity key={p.id}
+                    style={[styles.productChip, formData.productId === p.id && styles.productChipSelected]}
+                    onPress={() => setFormData({ ...formData, productId: p.id })}>
+                    <Text style={[styles.productChipText, formData.productId === p.id && styles.productChipTextSelected]}>{p.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <Text style={styles.label}>Notes (optionnel)</Text>
+              <TextInput style={[styles.input, styles.textArea]} value={formData.notes}
+                onChangeText={(t) => setFormData({ ...formData, notes: t })}
+                placeholder="Notes..." multiline numberOfLines={3} />
             </ScrollView>
 
             <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={() => setModalVisible(false)}
-              >
+              <TouchableOpacity style={styles.cancelButton} onPress={() => setModalVisible(false)}>
                 <Text style={styles.cancelButtonText}>{i18n.t('cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
@@ -232,200 +222,47 @@ export default function ExpensesScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fef3e7',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 20,
-    backgroundColor: '#fef3e7',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0d9c0',
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1e293b',
-  },
-  totalText: {
-    fontSize: 16,
-    color: '#dc2626',
-    fontWeight: '600',
-    marginTop: 4,
-  },
-  addButton: {
-    backgroundColor: '#dc2626',
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  content: {
-    flex: 1,
-    padding: 16,
-  },
-  emptyState: {
-    alignItems: 'center',
-    marginTop: 80,
-  },
-  emptyText: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#94a3b8',
-    marginTop: 16,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#cbd5e1',
-    marginTop: 8,
-  },
-  expenseCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  expenseHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  expenseInfo: {
-    flex: 1,
-  },
-  expenseName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1e293b',
-    marginBottom: 4,
-  },
-  expenseDate: {
-    fontSize: 12,
-    color: '#64748b',
-  },
-  expenseAmount: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#dc2626',
-  },
-  expenseNotes: {
-    fontSize: 14,
-    color: '#64748b',
-    marginTop: 8,
-    fontStyle: 'italic',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '90%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1e293b',
-  },
-  modalForm: {
-    padding: 20,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#334155',
-    marginBottom: 8,
-    marginTop: 12,
-  },
-  input: {
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 16,
-  },
-  textArea: {
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
-  categoryGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  categoryButton: {
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-  },
-  categoryButtonSelected: {
-    backgroundColor: '#dc2626',
-    borderColor: '#dc2626',
-  },
-  categoryText: {
-    fontSize: 13,
-    color: '#64748b',
-  },
-  categoryTextSelected: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  modalActions: {
-    flexDirection: 'row',
-    padding: 20,
-    gap: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
-  },
-  cancelButton: {
-    flex: 1,
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#64748b',
-  },
-  saveButton: {
-    flex: 1,
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: '#dc2626',
-    alignItems: 'center',
-  },
-  saveButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-  },
+  container: { flex: 1, backgroundColor: BG },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, backgroundColor: BG, borderBottomWidth: 1, borderBottomColor: '#f0d9c0' },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  title: { fontSize: 22, fontWeight: 'bold', color: '#1e293b' },
+  totalText: { fontSize: 14, color: '#dc2626', fontWeight: '600', marginTop: 2 },
+  addButton: { backgroundColor: '#dc2626', width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  content: { flex: 1, padding: 12 },
+  emptyState: { alignItems: 'center', marginTop: 80 },
+  emptyText: { fontSize: 20, fontWeight: '600', color: '#94a3b8', marginTop: 16 },
+  emptySubtext: { fontSize: 14, color: '#cbd5e1', marginTop: 8 },
+  expenseCard: { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: '#ede0d4', ...cardShadow },
+  expenseHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  expenseInfo: { flex: 1 },
+  expenseName: { fontSize: 15, fontWeight: '600', color: '#1e293b', marginBottom: 2 },
+  linkedProduct: { fontSize: 12, color: '#7c3aed', marginBottom: 2 },
+  expenseDate: { fontSize: 12, color: '#64748b' },
+  expenseRight: { alignItems: 'flex-end' },
+  expenseAmount: { fontSize: 17, fontWeight: 'bold', color: '#dc2626' },
+  expenseActions: { flexDirection: 'row', gap: 10, marginTop: 6 },
+  expenseNotes: { fontSize: 13, color: '#64748b', marginTop: 6, fontStyle: 'italic' },
+  // Modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '92%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#e2e8f0' },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#1e293b' },
+  modalForm: { padding: 20 },
+  label: { fontSize: 14, fontWeight: '600', color: '#334155', marginBottom: 6, marginTop: 10 },
+  input: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 14, fontSize: 16 },
+  textArea: { minHeight: 80, textAlignVertical: 'top' },
+  categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  categoryButton: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 14 },
+  categoryButtonSelected: { backgroundColor: '#dc2626', borderColor: '#dc2626' },
+  categoryText: { fontSize: 13, color: '#64748b' },
+  categoryTextSelected: { color: '#fff', fontWeight: '600' },
+  productChip: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 20, paddingVertical: 8, paddingHorizontal: 14, marginRight: 8 },
+  productChipSelected: { backgroundColor: '#7c3aed', borderColor: '#7c3aed' },
+  productChipText: { fontSize: 13, color: '#64748b' },
+  productChipTextSelected: { color: '#fff', fontWeight: '600' },
+  modalActions: { flexDirection: 'row', padding: 20, gap: 12, borderTopWidth: 1, borderTopColor: '#e2e8f0' },
+  cancelButton: { flex: 1, padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', alignItems: 'center' },
+  cancelButtonText: { fontSize: 16, fontWeight: '600', color: '#64748b' },
+  saveButton: { flex: 1, padding: 16, borderRadius: 12, backgroundColor: '#dc2626', alignItems: 'center' },
+  saveButtonText: { fontSize: 16, fontWeight: '600', color: '#fff' },
 });
