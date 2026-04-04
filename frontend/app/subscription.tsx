@@ -13,6 +13,7 @@ import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { SUBSCRIPTION_PRICES, SubscriptionPlan } from '../types/subscription';
 import { formatCurrency } from '../utils/currencies';
+import { processPayment, getPaymentProviderInfo } from '../services/paymentService';
 
 const BG = '#fef3e7';
 
@@ -27,6 +28,7 @@ export default function SubscriptionScreen() {
   const subDaysLeft = getSubscriptionDaysRemaining();
   const trialDays = getDaysRemaining();
   const needsRenewal = showExpiryReminder();
+  const paymentProviderInfo = getPaymentProviderInfo();
 
   const plans = [
     {
@@ -64,12 +66,22 @@ export default function SubscriptionScreen() {
   const handleSubscribe = async () => {
     setLoading(true);
     
-    // Simulate payment delay (MOCKED - no real payment gateway)
-    setTimeout(async () => {
-      try {
+    const plan = plans.find(p => p.id === selectedPlan);
+    
+    try {
+      // Process payment via payment service
+      const paymentResult = await processPayment({
+        amount: plan?.price || 0,
+        currency,
+        phoneNumber: user?.phoneNumber || '',
+        plan: selectedPlan,
+        description: `Abonnement TekaTeka ${plan?.name}`,
+      });
+
+      if (paymentResult.success) {
+        // Activate subscription
         await subscribe(selectedPlan);
 
-        const plan = plans.find(p => p.id === selectedPlan);
         const endDate = new Date();
         if (selectedPlan === 'monthly') endDate.setMonth(endDate.getMonth() + 1);
         if (selectedPlan === 'quarterly') endDate.setMonth(endDate.getMonth() + 3);
@@ -77,7 +89,7 @@ export default function SubscriptionScreen() {
 
         Alert.alert(
           'Abonnement Activé !',
-          `Plan ${plan?.name} actif jusqu'au ${endDate.toLocaleDateString('fr-FR')}.\n\nMerci de votre confiance !`,
+          `Plan ${plan?.name} actif jusqu'au ${endDate.toLocaleDateString('fr-FR')}.\n\n${paymentProviderInfo.isMock ? '(Paiement simulé - mode test)' : `Transaction: ${paymentResult.transactionId}`}`,
           [
             {
               text: 'Continuer',
@@ -85,12 +97,14 @@ export default function SubscriptionScreen() {
             },
           ]
         );
-      } catch (error) {
-        Alert.alert('Erreur', 'Échec de l\'activation. Veuillez réessayer.');
-      } finally {
-        setLoading(false);
+      } else {
+        Alert.alert('Échec du paiement', paymentResult.message);
       }
-    }, 1500);
+    } catch (error) {
+      Alert.alert('Erreur', 'Échec de l\'activation. Veuillez réessayer.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

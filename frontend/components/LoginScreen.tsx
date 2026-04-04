@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,9 @@ import {
 import { useAuth } from '../context/AuthContext';
 import i18n from '../utils/i18n';
 import { Ionicons } from '@expo/vector-icons';
+import { sendOTP, verifyOTP, getOTPProviderInfo } from '../services/otpService';
+
+const BG = '#fef3e7';
 
 export default function LoginScreen() {
   const { login } = useAuth();
@@ -22,39 +25,51 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [mockOtp, setMockOtp] = useState('');
 
-  const handleSendOTP = () => {
+  const otpInfo = getOTPProviderInfo();
+
+  const handleSendOTP = async () => {
     if (phoneNumber.length < 8) {
-      Alert.alert(i18n.t('error'), 'Please enter a valid phone number');
-      return;
-    }
-
-    // Generate mock OTP
-    const generatedOtp = Math.floor(1000 + Math.random() * 9000).toString();
-    setMockOtp(generatedOtp);
-    console.log('\n======================');
-    console.log('MOCK OTP CODE:', generatedOtp);
-    console.log('Phone:', phoneNumber);
-    console.log('======================\n');
-    
-    setOtpSent(true);
-    Alert.alert(
-      i18n.t('success'),
-      `Mock OTP sent! Check console.\nCode: ${generatedOtp}`,
-      [{ text: 'OK' }]
-    );
-  };
-
-  const handleVerifyOTP = async () => {
-    if (otp.length !== 4) {
-      Alert.alert(i18n.t('error'), 'Please enter 4-digit code');
+      Alert.alert(i18n.t('error'), 'Veuillez entrer un numéro valide');
       return;
     }
 
     setLoading(true);
     try {
-      await login(phoneNumber, otp);
+      const result = await sendOTP(phoneNumber);
+
+      if (result.success) {
+        setOtpSent(true);
+        if (result.otp) {
+          setMockOtp(result.otp);
+        }
+        Alert.alert(i18n.t('success'), result.message);
+      } else {
+        Alert.alert(i18n.t('error'), result.message);
+      }
     } catch (error) {
-      Alert.alert(i18n.t('error'), 'Verification failed');
+      Alert.alert(i18n.t('error'), "Échec de l'envoi du code");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOTP = async () => {
+    if (otp.length !== 4) {
+      Alert.alert(i18n.t('error'), 'Entrez le code à 4 chiffres');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await verifyOTP(phoneNumber, otp);
+
+      if (result.success) {
+        await login(phoneNumber, otp);
+      } else {
+        Alert.alert(i18n.t('error'), result.message);
+      }
+    } catch (error) {
+      Alert.alert(i18n.t('error'), 'Vérification échouée');
     } finally {
       setLoading(false);
     }
@@ -86,10 +101,15 @@ export default function LoginScreen() {
                 autoFocus
               />
               <TouchableOpacity
-                style={styles.button}
+                style={[styles.button, loading && styles.buttonDisabled]}
                 onPress={handleSendOTP}
+                disabled={loading}
               >
-                <Text style={styles.buttonText}>{i18n.t('sendOTP')}</Text>
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.buttonText}>{i18n.t('sendOTP')}</Text>
+                )}
               </TouchableOpacity>
             </>
           ) : (
@@ -107,12 +127,12 @@ export default function LoginScreen() {
                 autoFocus
               />
               
-              {mockOtp && (
+              {mockOtp && otpInfo.isMock ? (
                 <View style={styles.mockOtpBox}>
-                  <Text style={styles.mockOtpLabel}>Mock OTP (for testing):</Text>
+                  <Text style={styles.mockOtpLabel}>Code test ({otpInfo.name}) :</Text>
                   <Text style={styles.mockOtpText}>{mockOtp}</Text>
                 </View>
-              )}
+              ) : null}
               
               <TouchableOpacity
                 style={[styles.button, loading && styles.buttonDisabled]}
@@ -128,13 +148,22 @@ export default function LoginScreen() {
               
               <TouchableOpacity
                 style={styles.backButton}
-                onPress={() => setOtpSent(false)}
+                onPress={() => { setOtpSent(false); setOtp(''); setMockOtp(''); }}
               >
-                <Text style={styles.backButtonText}>Change number</Text>
+                <Ionicons name="arrow-back" size={16} color="#64748b" />
+                <Text style={styles.backButtonText}>Changer de numéro</Text>
               </TouchableOpacity>
             </>
           )}
         </View>
+
+        {/* Provider indicator */}
+        {otpInfo.isMock && (
+          <View style={styles.providerBadge}>
+            <Ionicons name="flask" size={14} color="#92400e" />
+            <Text style={styles.providerText}>{otpInfo.name}</Text>
+          </View>
+        )}
       </View>
     </KeyboardAvoidingView>
   );
@@ -143,7 +172,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fef3e7',
+    backgroundColor: BG,
   },
   content: {
     flex: 1,
@@ -229,9 +258,28 @@ const styles = StyleSheet.create({
   backButton: {
     padding: 12,
     alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
   },
   backButtonText: {
     color: '#64748b',
     fontSize: 16,
+  },
+  providerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 24,
+    padding: 8,
+    backgroundColor: '#fef3c7',
+    borderRadius: 8,
+    alignSelf: 'center',
+  },
+  providerText: {
+    fontSize: 12,
+    color: '#92400e',
+    fontWeight: '500',
   },
 });
