@@ -4,12 +4,22 @@ import { AuthProvider } from '../context/AuthContext';
 import { DataProvider } from '../context/DataContext';
 import { loadLocale } from '../utils/i18n';
 import { ActivityIndicator, View } from 'react-native';
+import * as Font from 'expo-font';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function RootLayout() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const init = async () => {
+      try {
+        // Load fonts with error handling to prevent timeout crash
+        await Font.loadAsync({
+          ...Ionicons.font,
+        });
+      } catch (e) {
+        console.warn('Font loading failed, continuing with system fonts:', e);
+      }
       await loadLocale();
       setLoading(false);
     };

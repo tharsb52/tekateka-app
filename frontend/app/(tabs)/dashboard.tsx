@@ -14,6 +14,8 @@ import i18n from '../../utils/i18n';
 import { Ionicons } from '@expo/vector-icons';
 import { formatCurrency } from '../../utils/currencies';
 
+import { cardShadow } from '../../utils/shadows';
+
 const BG = '#fef3e7';
 
 export default function DashboardScreen() {
@@ -377,11 +379,7 @@ const styles = StyleSheet.create({
     padding: 20,
     borderLeftWidth: 4,
     position: 'relative',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
+    ...cardShadow,
   },
   salesCard: {
     borderLeftColor: '#10b981',
@@ -458,11 +456,7 @@ const styles = StyleSheet.create({
     marginTop: 0,
     borderRadius: 16,
     padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
+    ...cardShadow,
   },
   sectionTitle: {
     fontSize: 18,

@@ -18,6 +18,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { formatCurrency } from '../../utils/currencies';
 import { format } from 'date-fns';
 
+import { cardShadow } from '../../utils/shadows';
+
 const BG = '#fef3e7';
 
 export default function DebtsScreen() {
@@ -396,11 +398,7 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 12,
     borderWidth: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
+    ...cardShadow,
   },
   unpaidCard: {
     borderColor: '#fbbf24',

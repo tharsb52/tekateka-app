@@ -16,6 +16,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { formatCurrency } from '../../utils/currencies';
 import { format } from 'date-fns';
 
+import { cardShadow } from '../../utils/shadows';
+
 const BG = '#fef3e7';
 
 export default function PurchasesScreen() {
@@ -337,11 +339,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
     borderColor: '#ede0d4',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
+    ...cardShadow,
   },
   purchaseHeader: {
     flexDirection: 'row',
