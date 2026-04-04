@@ -10,6 +10,8 @@ from typing import List
 import uuid
 from datetime import datetime
 
+# Import reporting router
+from reporting import router as reporting_router
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -79,6 +81,9 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Include reporting router
+app.include_router(reporting_router, prefix="/api/reports", tags=["reports"])
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

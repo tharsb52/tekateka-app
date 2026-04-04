@@ -8,7 +8,9 @@ import {
   TextInput,
   Alert,
   Modal,
+  Platform,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import i18n from '../../utils/i18n';
@@ -20,11 +22,12 @@ export default function DebtsScreen() {
   const { debts, addDebt, updateDebt, deleteDebt } = useData();
   const { user } = useAuth();
   const [modalVisible, setModalVisible] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [formData, setFormData] = useState({
     debtorName: '',
     amount: '',
     description: '',
-    dueDate: '',
+    dueDate: new Date(),
   });
 
   const unpaidDebts = debts.filter(d => !d.isPaid);
@@ -49,13 +52,20 @@ export default function DebtsScreen() {
         amount,
         currency: user?.currency || 'USD',
         description: formData.description,
-        dueDate: formData.dueDate || undefined,
+        dueDate: formData.dueDate.toISOString(),
         isPaid: false,
       });
       setModalVisible(false);
-      setFormData({ debtorName: '', amount: '', description: '', dueDate: '' });
+      setFormData({ debtorName: '', amount: '', description: '', dueDate: new Date() });
     } catch (error) {
       Alert.alert(i18n.t('error'), 'Échec de l\'enregistrement');
+    }
+  };
+
+  const onDateChange = (event: any, selectedDate?: Date) => {
+    setShowDatePicker(Platform.OS === 'ios');
+    if (selectedDate) {
+      setFormData({ ...formData, dueDate: selectedDate });
     }
   };
 
@@ -229,13 +239,26 @@ export default function DebtsScreen() {
                 numberOfLines={3}
               />
 
-              <Text style={styles.label}>{i18n.t('dueDate')} (Optionnel)</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.dueDate}
-                onChangeText={(text) => setFormData({ ...formData, dueDate: text })}
-                placeholder="JJ/MM/AAAA"
-              />
+              <Text style={styles.label}>{i18n.t('dueDate')}</Text>
+              <TouchableOpacity
+                style={styles.datePickerButton}
+                onPress={() => setShowDatePicker(true)}
+              >
+                <Ionicons name="calendar-outline" size={20} color="#2563eb" />
+                <Text style={styles.dateText}>
+                  {format(formData.dueDate, 'dd/MM/yyyy')}
+                </Text>
+              </TouchableOpacity>
+              
+              {showDatePicker && (
+                <DateTimePicker
+                  value={formData.dueDate}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={onDateChange}
+                  minimumDate={new Date()}
+                />
+              )}
             </ScrollView>
 
             <View style={styles.modalActions}>
@@ -442,6 +465,21 @@ const styles = StyleSheet.create({
   textArea: {
     minHeight: 80,
     textAlignVertical: 'top',
+  },
+  datePickerButton: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  dateText: {
+    fontSize: 16,
+    color: '#1e293b',
+    fontWeight: '500',
   },
   modalActions: {
     flexDirection: 'row',
