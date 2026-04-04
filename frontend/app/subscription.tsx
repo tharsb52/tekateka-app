@@ -6,49 +6,57 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
-import i18n from '../utils/i18n';
 import { SUBSCRIPTION_PRICES, SubscriptionPlan } from '../types/subscription';
 import { formatCurrency } from '../utils/currencies';
 
+const BG = '#fef3e7';
+
 export default function SubscriptionScreen() {
   const router = useRouter();
-  const { user, updateUser } = useAuth();
+  const { user, subscribe, isSubscriptionActive, getSubscriptionDaysRemaining, getDaysRemaining, showExpiryReminder } = useAuth();
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan>('yearly');
   const [loading, setLoading] = useState(false);
 
   const currency = user?.currency || 'USD';
+  const isActive = isSubscriptionActive();
+  const subDaysLeft = getSubscriptionDaysRemaining();
+  const trialDays = getDaysRemaining();
+  const needsRenewal = showExpiryReminder();
 
   const plans = [
     {
       id: 'monthly' as SubscriptionPlan,
       name: 'Mensuel',
-      price: SUBSCRIPTION_PRICES.monthly[currency],
+      price: SUBSCRIPTION_PRICES.monthly[currency as keyof typeof SUBSCRIPTION_PRICES.monthly] || 8,
       duration: '1 mois',
-      icon: 'calendar-outline',
+      icon: 'calendar-outline' as const,
       color: '#3b82f6',
       savings: '',
+      popular: false,
     },
     {
       id: 'quarterly' as SubscriptionPlan,
       name: 'Trimestriel',
-      price: SUBSCRIPTION_PRICES.quarterly[currency],
+      price: SUBSCRIPTION_PRICES.quarterly[currency as keyof typeof SUBSCRIPTION_PRICES.quarterly] || 20,
       duration: '3 mois',
-      icon: 'calendar',
+      icon: 'calendar' as const,
       color: '#8b5cf6',
-      savings: 'Économisez 17%',
+      savings: '17%',
+      popular: false,
     },
     {
       id: 'yearly' as SubscriptionPlan,
       name: 'Annuel',
-      price: SUBSCRIPTION_PRICES.yearly[currency],
+      price: SUBSCRIPTION_PRICES.yearly[currency as keyof typeof SUBSCRIPTION_PRICES.yearly] || 78,
       duration: '12 mois',
-      icon: 'star',
+      icon: 'star' as const,
       color: '#10b981',
-      savings: 'Économisez 19% - Meilleur Prix!',
+      savings: '19%',
       popular: true,
     },
   ];
@@ -56,41 +64,29 @@ export default function SubscriptionScreen() {
   const handleSubscribe = async () => {
     setLoading(true);
     
-    // Simulate payment process
+    // Simulate payment delay (MOCKED - no real payment gateway)
     setTimeout(async () => {
       try {
-        const now = new Date();
-        let endDate = new Date();
-        
-        switch (selectedPlan) {
-          case 'monthly':
-            endDate.setMonth(now.getMonth() + 1);
-            break;
-          case 'quarterly':
-            endDate.setMonth(now.getMonth() + 3);
-            break;
-          case 'yearly':
-            endDate.setFullYear(now.getFullYear() + 1);
-            break;
-        }
+        await subscribe(selectedPlan);
 
-        await updateUser({
-          isSubscribed: true,
-          trialStartDate: now.toISOString(),
-        });
+        const plan = plans.find(p => p.id === selectedPlan);
+        const endDate = new Date();
+        if (selectedPlan === 'monthly') endDate.setMonth(endDate.getMonth() + 1);
+        if (selectedPlan === 'quarterly') endDate.setMonth(endDate.getMonth() + 3);
+        if (selectedPlan === 'yearly') endDate.setFullYear(endDate.getFullYear() + 1);
 
         Alert.alert(
-          '✅ Abonnement Activé!',
-          `Votre abonnement ${plans.find(p => p.id === selectedPlan)?.name} est maintenant actif jusqu'au ${endDate.toLocaleDateString('fr-FR')}.`,
+          'Abonnement Activé !',
+          `Plan ${plan?.name} actif jusqu'au ${endDate.toLocaleDateString('fr-FR')}.\n\nMerci de votre confiance !`,
           [
             {
-              text: 'Commencer',
+              text: 'Continuer',
               onPress: () => router.replace('/(tabs)/dashboard'),
             },
           ]
         );
       } catch (error) {
-        Alert.alert('Erreur', 'Échec de l\'activation de l\'abonnement');
+        Alert.alert('Erreur', 'Échec de l\'activation. Veuillez réessayer.');
       } finally {
         setLoading(false);
       }
@@ -99,23 +95,98 @@ export default function SubscriptionScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Back Button */}
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.back()}
+        >
+          <Ionicons name="arrow-back" size={24} color="#1e293b" />
+        </TouchableOpacity>
+
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
-            <Ionicons name="arrow-back" size={24} color="#1e293b" />
-          </TouchableOpacity>
-          <View style={styles.headerContent}>
-            <Ionicons name="rocket" size={48} color="#2563eb" />
-            <Text style={styles.headerTitle}>Choisissez Votre Plan</Text>
-            <Text style={styles.headerSubtitle}>
-              Transformez votre business avec TekaTeka
-            </Text>
-          </View>
+          <Ionicons name="rocket" size={48} color="#2563eb" />
+          <Text style={styles.headerTitle}>
+            {isActive ? 'Mon Abonnement' : 'Choisissez Votre Plan'}
+          </Text>
+          <Text style={styles.headerSubtitle}>
+            Transformez votre business avec TekaTeka
+          </Text>
         </View>
+
+        {/* Current Subscription Status */}
+        {isActive && (
+          <View style={styles.activeSubCard}>
+            <View style={styles.activeSubHeader}>
+              <Ionicons name="shield-checkmark" size={28} color="#10b981" />
+              <Text style={styles.activeSubTitle}>Abonnement Actif</Text>
+            </View>
+            <View style={styles.activeSubDetails}>
+              <View style={styles.activeSubRow}>
+                <Text style={styles.activeSubLabel}>Plan</Text>
+                <Text style={styles.activeSubValue}>
+                  {user?.subscriptionPlan === 'monthly' ? 'Mensuel' : 
+                   user?.subscriptionPlan === 'quarterly' ? 'Trimestriel' : 'Annuel'}
+                </Text>
+              </View>
+              <View style={styles.activeSubRow}>
+                <Text style={styles.activeSubLabel}>Expire dans</Text>
+                <Text style={[styles.activeSubValue, needsRenewal && { color: '#f59e0b' }]}>
+                  {subDaysLeft} jours
+                </Text>
+              </View>
+              {user?.subscriptionEndDate && (
+                <View style={styles.activeSubRow}>
+                  <Text style={styles.activeSubLabel}>Date d'expiration</Text>
+                  <Text style={styles.activeSubValue}>
+                    {new Date(user.subscriptionEndDate).toLocaleDateString('fr-FR')}
+                  </Text>
+                </View>
+              )}
+            </View>
+            {needsRenewal && (
+              <View style={styles.renewalWarning}>
+                <Ionicons name="warning" size={18} color="#f59e0b" />
+                <Text style={styles.renewalWarningText}>
+                  Votre abonnement expire bientôt ! Renouvelez maintenant.
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Trial Banner */}
+        {!isActive && !user?.isSubscribed && trialDays > 0 && (
+          <View style={styles.trialBanner}>
+            <Ionicons name="time-outline" size={24} color="#92400e" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.trialBannerTitle}>Période d'essai</Text>
+              <Text style={styles.trialBannerText}>
+                Il vous reste {trialDays} jour{trialDays > 1 ? 's' : ''} d'essai gratuit
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Trial Expired Banner */}
+        {!isActive && !user?.isSubscribed && trialDays === 0 && (
+          <View style={styles.expiredBanner}>
+            <Ionicons name="alert-circle" size={24} color="#dc2626" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.expiredBannerTitle}>Essai terminé</Text>
+              <Text style={styles.expiredBannerText}>
+                Abonnez-vous pour continuer à utiliser TekaTeka
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Section Title */}
+        <Text style={styles.sectionTitle}>
+          {isActive && needsRenewal ? 'Renouveler mon abonnement' : 
+           isActive ? 'Changer de plan' : 'Nos offres'}
+        </Text>
 
         {/* Plans */}
         <View style={styles.plansContainer}>
@@ -125,95 +196,61 @@ export default function SubscriptionScreen() {
               style={[
                 styles.planCard,
                 selectedPlan === plan.id && styles.planCardSelected,
-                plan.popular && styles.planCardPopular,
+                plan.popular && selectedPlan !== plan.id && styles.planCardPopular,
               ]}
               onPress={() => setSelectedPlan(plan.id)}
+              activeOpacity={0.7}
             >
               {plan.popular && (
                 <View style={styles.popularBadge}>
-                  <Text style={styles.popularText}>POPULAIRE</Text>
+                  <Text style={styles.popularText}>MEILLEUR PRIX</Text>
                 </View>
               )}
               
-              <View style={styles.planHeader}>
+              <View style={styles.planRow}>
                 <View style={[styles.planIcon, { backgroundColor: plan.color + '20' }]}>
-                  <Ionicons name={plan.icon} size={32} color={plan.color} />
+                  <Ionicons name={plan.icon} size={28} color={plan.color} />
                 </View>
-                <Text style={styles.planName}>{plan.name}</Text>
-              </View>
-
-              <Text style={styles.planPrice}>
-                {formatCurrency(plan.price, currency)}
-              </Text>
-              <Text style={styles.planDuration}>pour {plan.duration}</Text>
-
-              {plan.savings && (
-                <View style={styles.savingsBadge}>
-                  <Text style={styles.savingsText}>{plan.savings}</Text>
+                <View style={styles.planInfo}>
+                  <Text style={styles.planName}>{plan.name}</Text>
+                  <Text style={styles.planDuration}>{plan.duration}</Text>
                 </View>
-              )}
-
-              <View style={styles.planFeatures}>
-                <View style={styles.featureItem}>
-                  <Ionicons name="checkmark-circle" size={20} color="#10b981" />
-                  <Text style={styles.featureText}>Produits illimités</Text>
+                <View style={styles.planPriceContainer}>
+                  <Text style={[styles.planPrice, selectedPlan === plan.id && { color: '#2563eb' }]}>
+                    {formatCurrency(plan.price, currency)}
+                  </Text>
+                  {plan.savings ? (
+                    <View style={styles.savingsBadge}>
+                      <Text style={styles.savingsText}>-{plan.savings}</Text>
+                    </View>
+                  ) : null}
                 </View>
-                <View style={styles.featureItem}>
-                  <Ionicons name="checkmark-circle" size={20} color="#10b981" />
-                  <Text style={styles.featureText}>Ventes illimitées</Text>
-                </View>
-                <View style={styles.featureItem}>
-                  <Ionicons name="checkmark-circle" size={20} color="#10b981" />
-                  <Text style={styles.featureText}>Gestion des dettes</Text>
-                </View>
-                <View style={styles.featureItem}>
-                  <Ionicons name="checkmark-circle" size={20} color="#10b981" />
-                  <Text style={styles.featureText}>Sauvegarde cloud</Text>
-                </View>
-                <View style={styles.featureItem}>
-                  <Ionicons name="checkmark-circle" size={20} color="#10b981" />
-                  <Text style={styles.featureText}>Support prioritaire</Text>
-                </View>
-              </View>
-
-              {selectedPlan === plan.id && (
-                <View style={styles.selectedIndicator}>
+                {selectedPlan === plan.id && (
                   <Ionicons name="checkmark-circle" size={24} color="#2563eb" />
-                </View>
-              )}
+                )}
+              </View>
             </TouchableOpacity>
           ))}
         </View>
 
-        {/* Benefits */}
-        <View style={styles.benefitsSection}>
-          <Text style={styles.benefitsTitle}>Pourquoi TekaTeka?</Text>
-          <View style={styles.benefitsList}>
-            <View style={styles.benefitItem}>
-              <Ionicons name="phone-portrait" size={24} color="#2563eb" />
-              <Text style={styles.benefitText}>
-                Fonctionne hors ligne - pas besoin d'internet constant
-              </Text>
+        {/* Features */}
+        <View style={styles.featuresCard}>
+          <Text style={styles.featuresTitle}>Tout inclus</Text>
+          {[
+            { icon: 'cube', text: 'Produits illimités', color: '#3b82f6' },
+            { icon: 'cart', text: 'Ventes illimitées', color: '#10b981' },
+            { icon: 'receipt', text: 'Gestion des dettes', color: '#f59e0b' },
+            { icon: 'bag-handle', text: 'Suivi des achats fournisseurs', color: '#7c3aed' },
+            { icon: 'stats-chart', text: 'Tableau de bord complet', color: '#ec4899' },
+            { icon: 'cloud-upload', text: 'Sauvegarde automatique', color: '#06b6d4' },
+          ].map((feature, index) => (
+            <View key={index} style={styles.featureItem}>
+              <View style={[styles.featureIcon, { backgroundColor: feature.color + '15' }]}>
+                <Ionicons name={feature.icon as any} size={20} color={feature.color} />
+              </View>
+              <Text style={styles.featureText}>{feature.text}</Text>
             </View>
-            <View style={styles.benefitItem}>
-              <Ionicons name="shield-checkmark" size={24} color="#10b981" />
-              <Text style={styles.benefitText}>
-                Données sécurisées et sauvegardées automatiquement
-              </Text>
-            </View>
-            <View style={styles.benefitItem}>
-              <Ionicons name="trending-up" size={24} color="#8b5cf6" />
-              <Text style={styles.benefitText}>
-                Augmentez vos bénéfices jusqu'à 30%
-              </Text>
-            </View>
-            <View style={styles.benefitItem}>
-              <Ionicons name="time" size={24} color="#f59e0b" />
-              <Text style={styles.benefitText}>
-                Gagnez 2 heures par jour sur votre gestion
-              </Text>
-            </View>
-          </View>
+          ))}
         </View>
 
         {/* Subscribe Button */}
@@ -221,16 +258,41 @@ export default function SubscriptionScreen() {
           style={[styles.subscribeButton, loading && styles.subscribeButtonDisabled]}
           onPress={handleSubscribe}
           disabled={loading}
+          activeOpacity={0.8}
         >
-          <Text style={styles.subscribeButtonText}>
-            {loading ? 'Traitement...' : `S'abonner - ${formatCurrency(SUBSCRIPTION_PRICES[selectedPlan][currency], currency)}`}
-          </Text>
-          <Ionicons name="arrow-forward" size={20} color="#fff" />
+          {loading ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <>
+              <Text style={styles.subscribeButtonText}>
+                {isActive ? 'Renouveler' : "S'abonner"} - {formatCurrency(
+                  plans.find(p => p.id === selectedPlan)?.price || 0, currency
+                )}
+              </Text>
+              <Ionicons name="arrow-forward" size={20} color="#fff" />
+            </>
+          )}
         </TouchableOpacity>
 
         <Text style={styles.disclaimer}>
-          💳 Paiement sécurisé • ❌ Annulation à tout moment • 🔄 Renouvellement automatique
+          Paiement sécurisé • Annulation à tout moment
         </Text>
+
+        {/* Why TekaTeka */}
+        <View style={styles.whySection}>
+          <Text style={styles.whyTitle}>Pourquoi TekaTeka ?</Text>
+          {[
+            { icon: 'phone-portrait', text: 'Fonctionne hors ligne', color: '#2563eb' },
+            { icon: 'shield-checkmark', text: 'Données sécurisées', color: '#10b981' },
+            { icon: 'trending-up', text: '+30% de bénéfices en moyenne', color: '#8b5cf6' },
+            { icon: 'time', text: '2h gagnées par jour', color: '#f59e0b' },
+          ].map((item, index) => (
+            <View key={index} style={styles.whyItem}>
+              <Ionicons name={item.icon as any} size={22} color={item.color} />
+              <Text style={styles.whyText}>{item.text}</Text>
+            </View>
+          ))}
+        </View>
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -241,48 +303,149 @@ export default function SubscriptionScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: BG,
   },
   content: {
     padding: 20,
   },
-  header: {
-    marginBottom: 32,
-  },
   backButton: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 20,
+    marginBottom: 8,
   },
-  headerContent: {
+  header: {
     alignItems: 'center',
+    marginBottom: 24,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: 'bold',
     color: '#1e293b',
-    marginTop: 16,
+    marginTop: 12,
     textAlign: 'center',
   },
   headerSubtitle: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#64748b',
-    marginTop: 8,
+    marginTop: 6,
     textAlign: 'center',
   },
+  // Active subscription card
+  activeSubCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: '#10b981',
+  },
+  activeSubHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 16,
+  },
+  activeSubTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#10b981',
+  },
+  activeSubDetails: {
+    gap: 10,
+  },
+  activeSubRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  activeSubLabel: {
+    fontSize: 14,
+    color: '#64748b',
+  },
+  activeSubValue: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1e293b',
+  },
+  renewalWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 14,
+    backgroundColor: '#fef3c7',
+    padding: 12,
+    borderRadius: 10,
+  },
+  renewalWarningText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#92400e',
+    fontWeight: '500',
+  },
+  // Trial banners
+  trialBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#fef3c7',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#fbbf24',
+  },
+  trialBannerTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#92400e',
+  },
+  trialBannerText: {
+    fontSize: 13,
+    color: '#92400e',
+    marginTop: 2,
+  },
+  expiredBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#fef2f2',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+  },
+  expiredBannerTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#dc2626',
+  },
+  expiredBannerText: {
+    fontSize: 13,
+    color: '#dc2626',
+    marginTop: 2,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1e293b',
+    marginBottom: 14,
+  },
+  // Plans
   plansContainer: {
-    gap: 16,
-    marginBottom: 32,
+    gap: 12,
+    marginBottom: 24,
   },
   planCard: {
     backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 24,
-    borderWidth: 3,
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 2,
     borderColor: '#e2e8f0',
     position: 'relative',
+    overflow: 'hidden',
   },
   planCardSelected: {
     borderColor: '#2563eb',
@@ -293,125 +456,141 @@ const styles = StyleSheet.create({
   },
   popularBadge: {
     position: 'absolute',
-    top: -12,
-    right: 20,
+    top: 0,
+    right: 0,
     backgroundColor: '#10b981',
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderBottomLeftRadius: 10,
   },
   popularText: {
     color: '#fff',
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: 'bold',
   },
-  planHeader: {
+  planRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
-    gap: 12,
+    gap: 14,
   },
   planIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  planInfo: {
+    flex: 1,
+  },
   planName: {
-    fontSize: 22,
+    fontSize: 17,
     fontWeight: 'bold',
     color: '#1e293b',
   },
-  planPrice: {
-    fontSize: 36,
-    fontWeight: 'bold',
-    color: '#2563eb',
-    marginBottom: 4,
-  },
   planDuration: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#64748b',
-    marginBottom: 12,
+    marginTop: 2,
+  },
+  planPriceContainer: {
+    alignItems: 'flex-end',
+  },
+  planPrice: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1e293b',
   },
   savingsBadge: {
-    backgroundColor: '#fef3c7',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-    marginBottom: 16,
+    backgroundColor: '#dcfce7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginTop: 4,
   },
   savingsText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#92400e',
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#16a34a',
   },
-  planFeatures: {
-    gap: 12,
+  // Features
+  featuresCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
+    gap: 14,
+  },
+  featuresTitle: {
+    fontSize: 17,
+    fontWeight: 'bold',
+    color: '#1e293b',
+    marginBottom: 4,
   },
   featureItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 12,
+  },
+  featureIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   featureText: {
     fontSize: 14,
     color: '#475569',
-  },
-  selectedIndicator: {
-    position: 'absolute',
-    top: 20,
-    right: 20,
-  },
-  benefitsSection: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 24,
-    marginBottom: 24,
-  },
-  benefitsTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1e293b',
-    marginBottom: 16,
-  },
-  benefitsList: {
-    gap: 16,
-  },
-  benefitItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  benefitText: {
     flex: 1,
-    fontSize: 14,
-    color: '#475569',
-    lineHeight: 20,
   },
+  // Subscribe
   subscribeButton: {
     backgroundColor: '#2563eb',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 20,
-    borderRadius: 16,
+    padding: 18,
+    borderRadius: 14,
     gap: 8,
+    minHeight: 56,
   },
   subscribeButtonDisabled: {
     backgroundColor: '#94a3b8',
   },
   subscribeButtonText: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: 'bold',
   },
   disclaimer: {
     textAlign: 'center',
     fontSize: 12,
-    color: '#64748b',
-    marginTop: 16,
-    lineHeight: 18,
+    color: '#94a3b8',
+    marginTop: 12,
+    marginBottom: 24,
+  },
+  // Why section
+  whySection: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    gap: 14,
+  },
+  whyTitle: {
+    fontSize: 17,
+    fontWeight: 'bold',
+    color: '#1e293b',
+    marginBottom: 4,
+  },
+  whyItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  whyText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#475569',
   },
 });

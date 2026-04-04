@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { User } from '../types';
 import { getUser, saveUser, clearUser } from '../utils/storage';
 import { changeLocale } from '../utils/i18n';
+import { SubscriptionPlan } from '../types/subscription';
 
 interface AuthContextType {
   user: User | null;
@@ -11,6 +12,11 @@ interface AuthContextType {
   updateUser: (updates: Partial<User>) => Promise<void>;
   isTrialExpired: () => boolean;
   getDaysRemaining: () => number;
+  isSubscriptionActive: () => boolean;
+  getSubscriptionDaysRemaining: () => number;
+  subscribe: (plan: SubscriptionPlan) => Promise<void>;
+  needsSubscription: () => boolean;
+  showExpiryReminder: () => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -50,31 +56,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const login = async (phoneNumber: string, otp: string) => {
-    // Mock OTP verification - in production, verify with backend
     console.log(`Mock OTP Verification: ${phoneNumber} - ${otp}`);
     
-    // For MVP, accept any 4-digit OTP
     if (otp.length !== 4) {
       throw new Error('Invalid OTP');
     }
 
-    // Create or load user
     const newUser: User = {
       id: phoneNumber,
       phoneNumber,
       createdAt: new Date().toISOString(),
       trialStartDate: new Date().toISOString(),
       isSubscribed: false,
-      currency: 'USD', // Dollar Américain par défaut
+      currency: 'USD',
       language: 'fr',
     };
 
     await saveUser(newUser);
     
-    // Initialize sample data for new users
     const { initializeSampleData } = await import('../utils/sampleData');
     await initializeSampleData(phoneNumber);
-    console.log('✅ Sample data initialized for demo');
+    console.log('Sample data initialized for demo');
     
     setUser(newUser);
   };
@@ -96,8 +98,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  // Trial: 7 days free
   const isTrialExpired = (): boolean => {
-    if (!user || user.isSubscribed) return false;
+    if (!user) return false;
+    if (user.isSubscribed) return false;
     
     const trialStart = new Date(user.trialStartDate);
     const now = new Date();
@@ -107,13 +111,82 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const getDaysRemaining = (): number => {
-    if (!user || user.isSubscribed) return 0;
+    if (!user) return 0;
     
+    // If subscribed, show subscription days
+    if (user.isSubscribed && user.subscriptionEndDate) {
+      return getSubscriptionDaysRemaining();
+    }
+    
+    // Otherwise show trial days
     const trialStart = new Date(user.trialStartDate);
     const now = new Date();
     const daysPassed = Math.floor((now.getTime() - trialStart.getTime()) / (1000 * 60 * 60 * 24));
     
     return Math.max(0, 7 - daysPassed);
+  };
+
+  // Subscription logic
+  const isSubscriptionActive = (): boolean => {
+    if (!user) return false;
+    if (!user.isSubscribed) return false;
+    if (!user.subscriptionEndDate) return false;
+    
+    const endDate = new Date(user.subscriptionEndDate);
+    const now = new Date();
+    return now < endDate;
+  };
+
+  const getSubscriptionDaysRemaining = (): number => {
+    if (!user || !user.subscriptionEndDate) return 0;
+    
+    const endDate = new Date(user.subscriptionEndDate);
+    const now = new Date();
+    const diff = endDate.getTime() - now.getTime();
+    
+    return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+  };
+
+  // Subscribe to a plan
+  const subscribe = async (plan: SubscriptionPlan) => {
+    if (!user) return;
+
+    const now = new Date();
+    const endDate = new Date();
+    
+    switch (plan) {
+      case 'monthly':
+        endDate.setMonth(now.getMonth() + 1);
+        break;
+      case 'quarterly':
+        endDate.setMonth(now.getMonth() + 3);
+        break;
+      case 'yearly':
+        endDate.setFullYear(now.getFullYear() + 1);
+        break;
+    }
+
+    await updateUser({
+      isSubscribed: true,
+      subscriptionPlan: plan,
+      subscriptionStartDate: now.toISOString(),
+      subscriptionEndDate: endDate.toISOString(),
+    });
+  };
+
+  // Check if user needs to subscribe (trial expired + no active subscription)
+  const needsSubscription = (): boolean => {
+    if (!user) return false;
+    if (isSubscriptionActive()) return false;
+    return isTrialExpired();
+  };
+
+  // Show expiry reminder: 14 days before subscription ends
+  const showExpiryReminder = (): boolean => {
+    if (!user || !user.isSubscribed || !user.subscriptionEndDate) return false;
+    
+    const daysRemaining = getSubscriptionDaysRemaining();
+    return daysRemaining > 0 && daysRemaining <= 14;
   };
 
   return (
@@ -126,6 +199,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         updateUser,
         isTrialExpired,
         getDaysRemaining,
+        isSubscriptionActive,
+        getSubscriptionDaysRemaining,
+        subscribe,
+        needsSubscription,
+        showExpiryReminder,
       }}
     >
       {children}

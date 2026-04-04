@@ -4,6 +4,9 @@ export interface User {
   createdAt: string;
   trialStartDate: string;
   isSubscribed: boolean;
+  subscriptionPlan?: 'monthly' | 'quarterly' | 'yearly';
+  subscriptionStartDate?: string;
+  subscriptionEndDate?: string;
   currency: string;
   language: string;
 }

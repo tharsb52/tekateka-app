@@ -18,7 +18,7 @@ const BG = '#fef3e7';
 
 export default function DashboardScreen() {
   const { sales, expenses, products, debts, purchases } = useData();
-  const { user, getDaysRemaining } = useAuth();
+  const { user, getDaysRemaining, isSubscriptionActive, showExpiryReminder, getSubscriptionDaysRemaining, needsSubscription } = useAuth();
   const router = useRouter();
 
   const stats = useMemo(() => {
@@ -50,6 +50,9 @@ export default function DashboardScreen() {
 
   const isProfit = stats.realProfit >= 0;
   const daysRemaining = getDaysRemaining();
+  const isSubActive = isSubscriptionActive();
+  const expiryReminder = showExpiryReminder();
+  const subDaysLeft = getSubscriptionDaysRemaining();
 
   return (
     <ScrollView style={styles.container}>
@@ -59,17 +62,40 @@ export default function DashboardScreen() {
           <Text style={styles.greeting}>TekaTeka</Text>
           <Text style={styles.slogan}>{i18n.t('slogan')}</Text>
         </View>
-        {!user?.isSubscribed && daysRemaining > 0 && (
+        {/* Subscription Badge */}
+        {isSubActive ? (
+          <TouchableOpacity
+            style={[styles.trialBadge, expiryReminder ? styles.warningBadge : styles.activeBadge]}
+            onPress={() => router.push('/subscription')}
+          >
+            <Ionicons 
+              name={expiryReminder ? "warning" : "shield-checkmark"} 
+              size={14} 
+              color={expiryReminder ? "#92400e" : "#065f46"} 
+            />
+            <Text style={[styles.trialText, expiryReminder ? {} : styles.activeText]}>
+              {expiryReminder ? `${subDaysLeft}j restants` : 'Abonné'}
+            </Text>
+          </TouchableOpacity>
+        ) : !user?.isSubscribed && daysRemaining > 0 ? (
           <TouchableOpacity
             style={styles.trialBadge}
             onPress={() => router.push('/subscription')}
           >
             <Text style={styles.trialText}>
-              {daysRemaining} {i18n.t('trialDaysLeft')}
+              {daysRemaining}j essai
             </Text>
-            <Ionicons name="chevron-forward" size={16} color="#92400e" />
+            <Ionicons name="chevron-forward" size={14} color="#92400e" />
           </TouchableOpacity>
-        )}
+        ) : !isSubActive ? (
+          <TouchableOpacity
+            style={[styles.trialBadge, styles.expiredBadge]}
+            onPress={() => router.push('/subscription')}
+          >
+            <Ionicons name="alert-circle" size={14} color="#dc2626" />
+            <Text style={styles.expiredText}>S'abonner</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       {/* Success Stories with Photos */}
@@ -269,6 +295,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#92400e',
+  },
+  activeBadge: {
+    backgroundColor: '#d1fae5',
+    borderColor: '#10b981',
+  },
+  activeText: {
+    color: '#065f46',
+  },
+  warningBadge: {
+    backgroundColor: '#fef3c7',
+    borderColor: '#fbbf24',
+  },
+  expiredBadge: {
+    backgroundColor: '#fef2f2',
+    borderColor: '#fca5a5',
+  },
+  expiredText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#dc2626',
   },
   storiesSection: {
     backgroundColor: BG,
