@@ -1,14 +1,18 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Product, Sale, Expense } from '../types';
+import { Product, Sale, Expense, Debt } from '../types';
 import {
   getProducts,
   getSales,
   getExpenses,
+  getDebts,
   addProduct as addProductToStorage,
   updateProduct as updateProductInStorage,
   deleteProduct as deleteProductFromStorage,
   addSale as addSaleToStorage,
   addExpense as addExpenseToStorage,
+  addDebt as addDebtToStorage,
+  updateDebt as updateDebtInStorage,
+  deleteDebt as deleteDebtFromStorage,
 } from '../utils/storage';
 import { useAuth } from './AuthContext';
 
@@ -16,12 +20,16 @@ interface DataContextType {
   products: Product[];
   sales: Sale[];
   expenses: Expense[];
+  debts: Debt[];
   loading: boolean;
   addProduct: (product: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'userId'>) => Promise<void>;
   updateProduct: (productId: string, updates: Partial<Product>) => Promise<void>;
   deleteProduct: (productId: string) => Promise<void>;
   addSale: (sale: Omit<Sale, 'id' | 'createdAt' | 'userId'>) => Promise<void>;
   addExpense: (expense: Omit<Expense, 'id' | 'createdAt' | 'userId'>) => Promise<void>;
+  addDebt: (debt: Omit<Debt, 'id' | 'createdAt' | 'userId'>) => Promise<void>;
+  updateDebt: (debtId: string, updates: Partial<Debt>) => Promise<void>;
+  deleteDebt: (debtId: string) => Promise<void>;
   refreshData: () => Promise<void>;
 }
 
@@ -44,6 +52,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [debts, setDebts] = useState<Debt[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -54,15 +63,17 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
 
   const loadData = async () => {
     try {
-      const [loadedProducts, loadedSales, loadedExpenses] = await Promise.all([
+      const [loadedProducts, loadedSales, loadedExpenses, loadedDebts] = await Promise.all([
         getProducts(),
         getSales(),
         getExpenses(),
+        getDebts(),
       ]);
       
       setProducts(loadedProducts);
       setSales(loadedSales);
       setExpenses(loadedExpenses);
+      setDebts(loadedDebts);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -129,6 +140,30 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     setExpenses([...expenses, newExpense]);
   };
 
+  const addDebt = async (debtData: Omit<Debt, 'id' | 'createdAt' | 'userId'>) => {
+    if (!user) return;
+    
+    const newDebt: Debt = {
+      ...debtData,
+      id: Date.now().toString(),
+      userId: user.id,
+      createdAt: new Date().toISOString(),
+    };
+    
+    await addDebtToStorage(newDebt);
+    setDebts([...debts, newDebt]);
+  };
+
+  const updateDebt = async (debtId: string, updates: Partial<Debt>) => {
+    await updateDebtInStorage(debtId, updates);
+    setDebts(debts.map(d => d.id === debtId ? { ...d, ...updates } : d));
+  };
+
+  const deleteDebt = async (debtId: string) => {
+    await deleteDebtFromStorage(debtId);
+    setDebts(debts.filter(d => d.id !== debtId));
+  };
+
   const refreshData = async () => {
     await loadData();
   };
@@ -139,12 +174,16 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
         products,
         sales,
         expenses,
+        debts,
         loading,
         addProduct,
         updateProduct,
         deleteProduct,
         addSale,
         addExpense,
+        addDebt,
+        updateDebt,
+        deleteDebt,
         refreshData,
       }}
     >

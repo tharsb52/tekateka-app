@@ -326,15 +326,18 @@ export const generateSampleExpenses = (userId: string): Expense[] => {
 };
 
 export const initializeSampleData = async (userId: string) => {
-  const { saveProducts, saveSales, saveExpenses } = await import('./storage');
+  const { saveProducts, saveSales, saveExpenses, saveDebts } = await import('./storage');
+  const { generateSampleDebts } = await import('./sampleDebts');
   
   const products = generateSampleProducts(userId);
   const sales = generateSampleSales(userId);
   const expenses = generateSampleExpenses(userId);
+  const debts = generateSampleDebts(userId);
   
   await saveProducts(products);
   await saveSales(sales);
   await saveExpenses(expenses);
+  await saveDebts(debts);
   
-  return { products, sales, expenses };
+  return { products, sales, expenses, debts };
 };

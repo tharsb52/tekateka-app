@@ -60,6 +60,15 @@ export default function TabLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="debts"
+        options={{
+          title: i18n.t('debts'),
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="receipt" size={size} color={color} />
+          ),
+        }}
+      />
     </Tabs>
   );
 }
