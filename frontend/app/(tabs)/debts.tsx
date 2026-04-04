@@ -133,7 +133,14 @@ export default function DebtsScreen() {
                     {debt.dueDate && (
                       <Text style={styles.dueDate}>
                         <Ionicons name="calendar-outline" size={12} color="#64748b" /> 
-                        {' '}Échéance: {format(new Date(debt.dueDate), 'dd/MM/yyyy')}
+                        {' '}Échéance: {(() => {
+                          try {
+                            const date = new Date(debt.dueDate);
+                            return !isNaN(date.getTime()) ? format(date, 'dd/MM/yyyy') : 'Date invalide';
+                          } catch {
+                            return 'Date invalide';
+                          }
+                        })()}
                       </Text>
                     )}
                   </View>
@@ -176,7 +183,14 @@ export default function DebtsScreen() {
                     {debt.paidAt && (
                       <Text style={styles.paidDate}>
                         <Ionicons name="checkmark-done" size={12} color="#10b981" /> 
-                        {' '}Payé le {format(new Date(debt.paidAt), 'dd/MM/yyyy')}
+                        {' '}Payé le {(() => {
+                          try {
+                            const date = new Date(debt.paidAt);
+                            return !isNaN(date.getTime()) ? format(date, 'dd/MM/yyyy') : 'Date invalide';
+                          } catch {
+                            return 'Date invalide';
+                          }
+                        })()}
                       </Text>
                     )}
                   </View>
