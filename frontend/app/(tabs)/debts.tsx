@@ -19,10 +19,11 @@ import { formatCurrency } from '../../utils/currencies';
 import { format } from 'date-fns';
 
 export default function DebtsScreen() {
-  const { debts, addDebt, updateDebt, deleteDebt } = useData();
+  const { debts, addDebt, updateDebt, deleteDebt, addSale } = useData();
   const { user } = useAuth();
   const [modalVisible, setModalVisible] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [editingDebt, setEditingDebt] = useState<any>(null);
   const [formData, setFormData] = useState({
     debtorName: '',
     amount: '',
