@@ -1,11 +1,33 @@
 import React from 'react';
-import { Tabs } from 'expo-router';
+import { Tabs, Redirect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { View, ActivityIndicator } from 'react-native';
+import { useAuth } from '../../context/AuthContext';
 import i18n from '../../utils/i18n';
 
 const BG = '#fef3e7';
 
 export default function TabLayout() {
+  const { user, loading, hasAccess } = useAuth();
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: BG }}>
+        <ActivityIndicator size="large" color="#2563eb" />
+      </View>
+    );
+  }
+
+  // Si pas connecté, retour à l'accueil
+  if (!user) {
+    return <Redirect href="/" />;
+  }
+
+  // Si pas d'accès (essai expiré + pas d'abonnement), forcer vers abonnement
+  if (!hasAccess()) {
+    return <Redirect href="/subscription" />;
+  }
+
   return (
     <Tabs
       screenOptions={{

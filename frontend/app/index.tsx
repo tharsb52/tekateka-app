@@ -5,12 +5,16 @@ import { useAuth } from '../context/AuthContext';
 import LoginScreen from '../components/LoginScreen';
 
 export default function Index() {
-  const { user, loading } = useAuth();
+  const { user, loading, hasAccess } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (!loading && user) {
-      router.replace('/(tabs)/dashboard');
+      if (hasAccess()) {
+        router.replace('/(tabs)/dashboard');
+      } else {
+        router.replace('/subscription');
+      }
     }
   }, [user, loading]);
 

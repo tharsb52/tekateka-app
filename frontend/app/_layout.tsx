@@ -39,6 +39,7 @@ export default function RootLayout() {
       <DataProvider>
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="index" />
+          <Stack.Screen name="subscription" options={{ gestureEnabled: false }} />
           <Stack.Screen name="(tabs)" />
         </Stack>
       </DataProvider>

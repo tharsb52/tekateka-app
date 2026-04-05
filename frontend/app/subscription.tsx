@@ -19,7 +19,7 @@ const BG = '#fef3e7';
 
 export default function SubscriptionScreen() {
   const router = useRouter();
-  const { user, subscribe, isSubscriptionActive, getSubscriptionDaysRemaining, getDaysRemaining, showExpiryReminder } = useAuth();
+  const { user, subscribe, isSubscriptionActive, getSubscriptionDaysRemaining, getDaysRemaining, showExpiryReminder, hasAccess, logout } = useAuth();
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan>('yearly');
   const [loading, setLoading] = useState(false);
 
@@ -29,6 +29,8 @@ export default function SubscriptionScreen() {
   const trialDays = getDaysRemaining();
   const needsRenewal = showExpiryReminder();
   const paymentProviderInfo = getPaymentProviderInfo();
+  const userHasAccess = hasAccess();
+  const trialExpired = !isActive && !user?.isSubscribed && trialDays === 0;
 
   const plans = [
     {
@@ -110,13 +112,45 @@ export default function SubscriptionScreen() {
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Back Button */}
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <Ionicons name="arrow-back" size={24} color="#1e293b" />
-        </TouchableOpacity>
+        {/* Navigation Header */}
+        {trialExpired ? (
+          <TouchableOpacity
+            style={styles.logoutButton}
+            onPress={() => {
+              Alert.alert(
+                'Déconnexion',
+                'Voulez-vous vous déconnecter ?',
+                [
+                  { text: 'Annuler', style: 'cancel' },
+                  {
+                    text: 'Déconnexion',
+                    style: 'destructive',
+                    onPress: async () => {
+                      await logout();
+                      router.replace('/');
+                    },
+                  },
+                ]
+              );
+            }}
+          >
+            <Ionicons name="log-out-outline" size={20} color="#dc2626" />
+            <Text style={styles.logoutButtonText}>Déconnexion</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => {
+              if (userHasAccess) {
+                router.replace('/(tabs)/dashboard');
+              } else {
+                router.back();
+              }
+            }}
+          >
+            <Ionicons name="arrow-back" size={24} color="#1e293b" />
+          </TouchableOpacity>
+        )}
 
         {/* Header */}
         <View style={styles.header}>
@@ -328,6 +362,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    padding: 10,
+    marginBottom: 8,
+    backgroundColor: '#fef2f2',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+  },
+  logoutButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#dc2626',
   },
   header: {
     alignItems: 'center',
