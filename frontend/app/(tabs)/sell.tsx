@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { formatCurrency, CURRENCIES } from '../../utils/currencies';
 import { format } from 'date-fns';
 import { cardShadow } from '../../utils/shadows';
+import { VoiceInputButton } from '../../components/VoiceInputButton';
 
 const BG = '#fef3e7';
 
@@ -204,8 +205,11 @@ export default function SellScreen() {
                 <Text style={styles.editLabel}>Prix unitaire: {formatCurrency(editingSale.price, editingSale.currency)}</Text>
                 <Text style={styles.editLabel}>Date: {(() => { try { return format(new Date(editingSale.createdAt), 'dd/MM/yyyy HH:mm'); } catch { return ''; }})()}</Text>
                 <Text style={[styles.label, { marginTop: 16 }]}>Nouvelle quantite</Text>
-                <TextInput style={styles.input} value={editQty}
-                  onChangeText={setEditQty} keyboardType="number-pad" />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <TextInput style={[styles.input, { flex: 1 }]} value={editQty}
+                    onChangeText={setEditQty} keyboardType="number-pad" />
+                  <VoiceInputButton onTranscript={(t) => { const n = t.replace(/[^0-9]/g, ''); if (n) setEditQty(n); }} />
+                </View>
                 {editQty && (
                   <Text style={styles.editTotal}>Nouveau total: {formatCurrency(editingSale.price * (parseInt(editQty) || 0), editingSale.currency)}</Text>
                 )}

@@ -11,6 +11,7 @@ import { formatCurrency } from '../../utils/currencies';
 import { ExpenseCategoryType } from '../../types';
 import { format } from 'date-fns';
 import { cardShadow } from '../../utils/shadows';
+import { VoiceInputButton } from '../../components/VoiceInputButton';
 
 const BG = '#fef3e7';
 const EXPENSE_CATEGORIES: ExpenseCategoryType[] = [
@@ -179,7 +180,10 @@ export default function ExpensesScreen() {
                   onChangeText={(t) => setFormData({ ...formData, customCategory: t })} placeholder="Ex: Marketing" /></>
               )}
 
-              <Text style={styles.label}>Montant *</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+                <Text style={styles.label}>Montant *</Text>
+                <VoiceInputButton onTranscript={(t) => { const n = t.replace(/[^0-9.,]/g, '').replace(',', '.'); setFormData({ ...formData, amount: n }); }} />
+              </View>
               <TextInput style={styles.input} value={formData.amount}
                 onChangeText={(t) => setFormData({ ...formData, amount: t })}
                 keyboardType="decimal-pad" placeholder="0" />

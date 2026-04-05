@@ -19,6 +19,7 @@ import { formatCurrency } from '../../utils/currencies';
 import { format } from 'date-fns';
 
 import { cardShadow } from '../../utils/shadows';
+import { VoiceInputButton } from '../../components/VoiceInputButton';
 
 const BG = '#fef3e7';
 
@@ -274,7 +275,10 @@ export default function DebtsScreen() {
             </View>
 
             <ScrollView style={styles.modalForm}>
-              <Text style={styles.label}>{i18n.t('debtorName')} *</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+                <Text style={styles.label}>{i18n.t('debtorName')} *</Text>
+                <VoiceInputButton onTranscript={(t) => setFormData({ ...formData, debtorName: t })} />
+              </View>
               <TextInput
                 style={styles.input}
                 value={formData.debtorName}
@@ -282,7 +286,10 @@ export default function DebtsScreen() {
                 placeholder="Nom du client"
               />
 
-              <Text style={styles.label}>{i18n.t('debtAmount')} *</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+                <Text style={styles.label}>{i18n.t('debtAmount')} *</Text>
+                <VoiceInputButton onTranscript={(t) => { const n = t.replace(/[^0-9.,]/g, '').replace(',', '.'); setFormData({ ...formData, amount: n }); }} />
+              </View>
               <TextInput
                 style={styles.input}
                 value={formData.amount}

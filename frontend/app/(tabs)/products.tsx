@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  TextInput, Alert, Modal, Switch,
+  TextInput, Alert, Modal, Switch, ActivityIndicator,
 } from 'react-native';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
@@ -10,12 +10,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { formatCurrency } from '../../utils/currencies';
 import { CategoryType } from '../../types';
 import { cardShadow } from '../../utils/shadows';
+import { VoiceInputButton } from '../../components/VoiceInputButton';
 
 const BG = '#fef3e7';
 const CATEGORIES: CategoryType[] = ['food', 'drinks', 'clothes', 'cosmetics', 'electronics', 'other'];
 
 export default function ProductsScreen() {
-  const { products, addProduct, updateProduct, deleteProduct } = useData();
+  const { products, addProduct, updateProduct, deleteProduct, loading } = useData();
   const { user } = useAuth();
   const [modalVisible, setModalVisible] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
@@ -123,7 +124,12 @@ export default function ProductsScreen() {
       )}
 
       <ScrollView style={styles.content}>
-        {products.length === 0 ? (
+        {loading ? (
+          <View style={styles.emptyState}>
+            <ActivityIndicator size="large" color="#2563eb" />
+            <Text style={styles.emptySubtext}>Chargement...</Text>
+          </View>
+        ) : products.length === 0 ? (
           <View style={styles.emptyState}>
             <Ionicons name="cube-outline" size={64} color="#cbd5e1" />
             <Text style={styles.emptyText}>{i18n.t('noData')}</Text>
@@ -193,11 +199,17 @@ export default function ProductsScreen() {
             </View>
 
             <ScrollView style={styles.modalForm}>
-              <Text style={styles.label}>Nom du produit *</Text>
+              <View style={styles.fieldRow}>
+                <Text style={styles.label}>Nom du produit *</Text>
+                <VoiceInputButton onTranscript={(t) => setFormData({ ...formData, name: t })} />
+              </View>
               <TextInput style={styles.input} value={formData.name}
                 onChangeText={(t) => setFormData({ ...formData, name: t })} placeholder="Ex: Coca Cola 50cl" />
 
-              <Text style={styles.label}>Prix d'achat / unite *</Text>
+              <View style={styles.fieldRow}>
+                <Text style={styles.label}>Prix d'achat / unite *</Text>
+                <VoiceInputButton onTranscript={(t) => { const n = t.replace(/[^0-9.,]/g, '').replace(',', '.'); setFormData({ ...formData, purchasePrice: n }); }} />
+              </View>
               <TextInput style={styles.input} value={formData.purchasePrice}
                 onChangeText={(t) => setFormData({ ...formData, purchasePrice: t })}
                 keyboardType="decimal-pad" placeholder="0" />
@@ -295,6 +307,7 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#1e293b' },
   modalForm: { padding: 20 },
   label: { fontSize: 14, fontWeight: '600', color: '#334155', marginBottom: 6, marginTop: 10 },
+  fieldRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 },
   input: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 14, fontSize: 16 },
   totalPreview: { backgroundColor: '#eff6ff', borderRadius: 12, padding: 14, marginTop: 12, alignItems: 'center', borderWidth: 1, borderColor: '#bfdbfe' },
   totalPreviewLabel: { fontSize: 12, color: '#2563eb' },
