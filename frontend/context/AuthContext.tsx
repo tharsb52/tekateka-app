@@ -17,6 +17,7 @@ interface AuthContextType {
   subscribe: (plan: SubscriptionPlan) => Promise<void>;
   needsSubscription: () => boolean;
   showExpiryReminder: () => boolean;
+  hasAccess: () => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -189,6 +190,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return daysRemaining > 0 && daysRemaining <= 14;
   };
 
+  // Has access: trial active OR subscription active
+  const hasAccess = (): boolean => {
+    if (!user) return false;
+    if (isSubscriptionActive()) return true;
+    return !isTrialExpired(); // Trial still valid
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -204,6 +212,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         subscribe,
         needsSubscription,
         showExpiryReminder,
+        hasAccess,
       }}
     >
       {children}
