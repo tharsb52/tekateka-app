@@ -3,6 +3,7 @@ import { User } from '../types';
 import { getUser, saveUser, clearUser } from '../utils/storage';
 import { changeLocale } from '../utils/i18n';
 import { SubscriptionPlan } from '../types/subscription';
+import { scheduleExpiryReminders, cancelAllReminders } from '../services/notificationService';
 
 interface AuthContextType {
   user: User | null;
@@ -79,10 +80,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     await initializeSampleData(phoneNumber);
     console.log('Sample data initialized for demo');
     
+    // Schedule trial expiry reminders
+    const trialEnd = new Date();
+    trialEnd.setDate(trialEnd.getDate() + 7);
+    scheduleExpiryReminders(trialEnd.toISOString(), true).catch(() => {});
+    
     setUser(newUser);
   };
 
   const logout = async () => {
+    await cancelAllReminders();
     await clearUser();
     setUser(null);
   };
@@ -173,6 +180,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       subscriptionStartDate: now.toISOString(),
       subscriptionEndDate: endDate.toISOString(),
     });
+
+    // Schedule subscription expiry reminders
+    scheduleExpiryReminders(endDate.toISOString(), false).catch(() => {});
   };
 
   // Check if user needs to subscribe (trial expired + no active subscription)

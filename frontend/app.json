@@ -40,7 +40,14 @@
         }
       ],
       "@react-native-community/datetimepicker",
-      "expo-speech-recognition"
+      "expo-speech-recognition",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#2563eb"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

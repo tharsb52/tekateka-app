@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   ScrollView,
   Image,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
@@ -13,6 +14,7 @@ import { useRouter } from 'expo-router';
 import i18n from '../../utils/i18n';
 import { Ionicons } from '@expo/vector-icons';
 import { formatCurrency } from '../../utils/currencies';
+import { getUrgencyLevel, getUrgencyColor, shouldShowInAppAlert, markAlertShown } from '../../services/notificationService';
 
 import { cardShadow } from '../../utils/shadows';
 
@@ -55,6 +57,30 @@ export default function DashboardScreen() {
   const isSubActive = isSubscriptionActive();
   const expiryReminder = showExpiryReminder();
   const subDaysLeft = getSubscriptionDaysRemaining();
+
+  // Determine urgency for trial or subscription
+  const urgencyDays = isSubActive ? subDaysLeft : daysRemaining;
+  const urgencyLevel = getUrgencyLevel(urgencyDays);
+  const urgencyColors = getUrgencyColor(urgencyLevel);
+  const showBanner = (daysRemaining <= 7 && daysRemaining > 0 && !isSubActive) || (expiryReminder && isSubActive);
+
+  // In-app alert on dashboard open for critical urgency
+  useEffect(() => {
+    if (urgencyLevel === 'critical' || urgencyLevel === 'warning') {
+      shouldShowInAppAlert().then(shouldShow => {
+        if (shouldShow) {
+          const label = isSubActive ? 'abonnement' : 'essai gratuit';
+          Alert.alert(
+            `${urgencyDays <= 1 ? 'Urgent' : 'Rappel'} - ${label}`,
+            urgencyDays <= 1
+              ? `Votre ${label} expire ${urgencyDays === 0 ? "aujourd'hui" : 'demain'} ! Renouvelez maintenant pour ne pas perdre l'acces.`
+              : `Plus que ${urgencyDays} jours sur votre ${label}. Pensez a renouveler !`
+          );
+          markAlertShown();
+        }
+      });
+    }
+  }, [urgencyLevel]);
 
   return (
     <ScrollView style={styles.container}>
@@ -104,6 +130,43 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         ) : null}
       </View>
+
+      {/* Expiry Reminder Banner */}
+      {showBanner && (
+        <TouchableOpacity
+          style={[styles.expiryBanner, {
+            backgroundColor: urgencyColors.bg,
+            borderColor: urgencyColors.border,
+          }]}
+          onPress={() => router.push('/subscription')}
+          activeOpacity={0.8}
+        >
+          <View style={styles.expiryBannerLeft}>
+            <Ionicons
+              name={urgencyLevel === 'critical' ? 'warning' : urgencyLevel === 'warning' ? 'time' : 'information-circle'}
+              size={24}
+              color={urgencyColors.icon}
+            />
+            <View style={styles.expiryBannerText}>
+              <Text style={[styles.expiryBannerTitle, { color: urgencyColors.text }]}>
+                {urgencyLevel === 'critical'
+                  ? (urgencyDays === 0 ? "Expire aujourd'hui !" : 'Expire demain !')
+                  : urgencyLevel === 'warning'
+                  ? `${urgencyDays} jours restants`
+                  : `${urgencyDays} jours restants`}
+              </Text>
+              <Text style={[styles.expiryBannerSub, { color: urgencyColors.text }]}>
+                {isSubActive ? 'Renouvelez votre abonnement' : 'Passez a un abonnement'}
+              </Text>
+            </View>
+          </View>
+          <View style={[styles.expiryBannerBtn, { backgroundColor: urgencyColors.icon }]}>
+            <Text style={styles.expiryBannerBtnText}>
+              {isSubActive ? 'Renouveler' : "S'abonner"}
+            </Text>
+          </View>
+        </TouchableOpacity>
+      )}
 
       {/* Success Stories with Photos */}
       <View style={styles.storiesSection}>
@@ -360,6 +423,47 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#dc2626',
+  },
+  // Expiry reminder banner
+  expiryBanner: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    ...cardShadow,
+  },
+  expiryBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 10,
+  },
+  expiryBannerText: {
+    flex: 1,
+  },
+  expiryBannerTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  expiryBannerSub: {
+    fontSize: 12,
+    marginTop: 2,
+    opacity: 0.8,
+  },
+  expiryBannerBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginLeft: 8,
+  },
+  expiryBannerBtnText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
   },
   storiesSection: {
     backgroundColor: BG,
