@@ -131,6 +131,39 @@ export default function DashboardScreen() {
               <Text style={styles.storyQuote}>"Gestion simplifiée de ma pharmacie"</Text>
             </View>
           </View>
+          <View style={styles.storyCard}>
+            <Image
+              source={{ uri: 'https://images.pexels.com/photos/7835689/pexels-photo-7835689.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940' }}
+              style={styles.storyImage}
+            />
+            <View style={styles.storyOverlay}>
+              <Text style={styles.storyName}>Mama Cécile</Text>
+              <Text style={styles.storyLocation}>Lubumbashi, RDC</Text>
+              <Text style={styles.storyQuote}>"Je suis mes ventes de pain chaque jour!"</Text>
+            </View>
+          </View>
+          <View style={styles.storyCard}>
+            <Image
+              source={{ uri: 'https://images.unsplash.com/photo-1581470686066-773e689d5715?w=400' }}
+              style={styles.storyImage}
+            />
+            <View style={styles.storyOverlay}>
+              <Text style={styles.storyName}>Patrick M.</Text>
+              <Text style={styles.storyLocation}>Douala, Cameroun</Text>
+              <Text style={styles.storyQuote}>"Je gère mes courses taxi facilement!"</Text>
+            </View>
+          </View>
+          <View style={styles.storyCard}>
+            <Image
+              source={{ uri: 'https://images.unsplash.com/photo-1649399044617-a9b212467213?w=400' }}
+              style={styles.storyImage}
+            />
+            <View style={styles.storyOverlay}>
+              <Text style={styles.storyName}>Aminata D.</Text>
+              <Text style={styles.storyLocation}>Dakar, Sénégal</Text>
+              <Text style={styles.storyQuote}>"Ma boutique est mieux organisée!"</Text>
+            </View>
+          </View>
         </ScrollView>
       </View>
 
