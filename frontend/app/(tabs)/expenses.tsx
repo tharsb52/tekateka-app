@@ -76,10 +76,8 @@ export default function ExpensesScreen() {
   };
 
   const handleDelete = (id: string) => {
-    Alert.alert('Supprimer', 'Supprimer cette charge ?', [
-      { text: i18n.t('cancel'), style: 'cancel' },
-      { text: i18n.t('delete'), style: 'destructive', onPress: () => deleteExpense(id) },
-    ]);
+    deleteExpense(id);
+    Alert.alert(i18n.t('success'), 'Charge supprimée');
   };
 
   return (

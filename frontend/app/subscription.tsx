@@ -116,22 +116,9 @@ export default function SubscriptionScreen() {
         {trialExpired ? (
           <TouchableOpacity
             style={styles.logoutButton}
-            onPress={() => {
-              Alert.alert(
-                'Déconnexion',
-                'Voulez-vous vous déconnecter ?',
-                [
-                  { text: 'Annuler', style: 'cancel' },
-                  {
-                    text: 'Déconnexion',
-                    style: 'destructive',
-                    onPress: async () => {
-                      await logout();
-                      router.replace('/');
-                    },
-                  },
-                ]
-              );
+            onPress={async () => {
+              await logout();
+              router.replace('/');
             }}
           >
             <Ionicons name="log-out-outline" size={20} color="#dc2626" />

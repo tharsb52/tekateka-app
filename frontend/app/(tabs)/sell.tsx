@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   TextInput, Alert, Modal,
@@ -8,7 +8,8 @@ import { useAuth } from '../../context/AuthContext';
 import i18n from '../../utils/i18n';
 import { Ionicons } from '@expo/vector-icons';
 import { formatCurrency, CURRENCIES } from '../../utils/currencies';
-import { format } from 'date-fns';
+import { format, isToday, isYesterday, parseISO } from 'date-fns';
+import { fr } from 'date-fns/locale';
 import { cardShadow } from '../../utils/shadows';
 import { VoiceInputButton } from '../../components/VoiceInputButton';
 
@@ -28,6 +29,52 @@ export default function SellScreen() {
 
   const availableProducts = products.filter(p => p.stock > 0);
   const getEffectivePrice = (p: any) => p.promotionPrice && p.promotionPrice > 0 ? p.promotionPrice : (p.salePrice || p.price || 0);
+
+  // Group sales by day
+  const salesByDay = useMemo(() => {
+    const filtered = [...sales]
+      .filter(s => s.productId !== 'debt-payment')
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    
+    const groups: { label: string; date: string; sales: typeof filtered; total: number }[] = [];
+    const dayMap = new Map<string, typeof filtered>();
+    
+    filtered.forEach(sale => {
+      try {
+        const dateKey = format(new Date(sale.createdAt), 'yyyy-MM-dd');
+        if (!dayMap.has(dateKey)) dayMap.set(dateKey, []);
+        dayMap.get(dateKey)!.push(sale);
+      } catch {
+        // skip invalid dates
+      }
+    });
+    
+    dayMap.forEach((daySales, dateKey) => {
+      const date = new Date(dateKey);
+      let label: string;
+      if (isToday(date)) {
+        label = "Aujourd'hui";
+      } else if (isYesterday(date)) {
+        label = 'Hier';
+      } else {
+        try {
+          label = format(date, 'EEEE dd MMMM yyyy', { locale: fr });
+          label = label.charAt(0).toUpperCase() + label.slice(1);
+        } catch {
+          label = dateKey;
+        }
+      }
+      const total = daySales.reduce((s, sale) => s + sale.totalAmount, 0);
+      groups.push({ label, date: dateKey, sales: daySales, total });
+    });
+    
+    return groups;
+  }, [sales]);
+
+  // Debt payments (shown separately)
+  const debtPayments = [...sales]
+    .filter(s => s.productId === 'debt-payment')
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   const handleRecordSale = async () => {
     if (!selectedProduct) { Alert.alert(i18n.t('error'), i18n.t('selectProduct')); return; }
@@ -61,14 +108,11 @@ export default function SellScreen() {
   };
 
   const handleDeleteSale = (id: string) => {
-    Alert.alert('Supprimer', 'Supprimer cette vente ?', [
-      { text: i18n.t('cancel'), style: 'cancel' },
-      { text: i18n.t('delete'), style: 'destructive', onPress: () => deleteSale(id) },
-    ]);
+    deleteSale(id);
+    Alert.alert(i18n.t('success'), 'Vente supprimée');
   };
 
   const totalAmount = selectedProduct ? getEffectivePrice(selectedProduct) * parseInt(quantity || '0') : 0;
-  const recentSales = [...sales].filter(s => s.productId !== 'debt-payment').sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   return (
     <ScrollView style={styles.container}>
@@ -84,32 +128,68 @@ export default function SellScreen() {
 
       {showHistory ? (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Historique des ventes ({recentSales.length})</Text>
-          {recentSales.length === 0 ? (
+          <Text style={styles.sectionTitle}>Historique des ventes ({sales.filter(s => s.productId !== 'debt-payment').length})</Text>
+          {salesByDay.length === 0 ? (
             <Text style={styles.noData}>Aucune vente</Text>
           ) : (
-            recentSales.slice(0, 30).map((sale) => (
-              <View key={sale.id} style={styles.saleCard}>
-                <View style={styles.saleInfo}>
-                  <Text style={styles.saleName}>{sale.productName}</Text>
-                  <Text style={styles.saleDate}>
-                    {(() => { try { return format(new Date(sale.createdAt), 'dd/MM/yyyy HH:mm'); } catch { return sale.createdAt; }})()}
-                  </Text>
-                  <Text style={styles.saleDetail}>{sale.quantity}x {formatCurrency(sale.price, sale.currency)}</Text>
-                </View>
-                <View style={styles.saleRight}>
-                  <Text style={styles.saleTotal}>{formatCurrency(sale.totalAmount, sale.currency)}</Text>
-                  <View style={styles.saleActions}>
-                    <TouchableOpacity onPress={() => openEditSale(sale)} hitSlop={{top:10,bottom:10,left:10,right:10}}>
-                      <Ionicons name="pencil" size={16} color="#2563eb" />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => handleDeleteSale(sale.id)} hitSlop={{top:10,bottom:10,left:10,right:10}}>
-                      <Ionicons name="trash" size={16} color="#dc2626" />
-                    </TouchableOpacity>
+            salesByDay.map((dayGroup) => (
+              <View key={dayGroup.date} style={styles.dayGroup}>
+                <View style={styles.dayHeader}>
+                  <View style={styles.dayLabelRow}>
+                    <Ionicons name="calendar-outline" size={16} color="#2563eb" />
+                    <Text style={styles.dayLabel}>{dayGroup.label}</Text>
                   </View>
+                  <Text style={styles.dayTotal}>{formatCurrency(dayGroup.total, currency)}</Text>
                 </View>
+                {dayGroup.sales.map((sale) => (
+                  <View key={sale.id} style={styles.saleCard}>
+                    <View style={styles.saleInfo}>
+                      <Text style={styles.saleName}>{sale.productName}</Text>
+                      <Text style={styles.saleDate}>
+                        {(() => { try { return format(new Date(sale.createdAt), 'HH:mm'); } catch { return ''; }})()}
+                      </Text>
+                      <Text style={styles.saleDetail}>{sale.quantity}x {formatCurrency(sale.price, sale.currency)}</Text>
+                    </View>
+                    <View style={styles.saleRight}>
+                      <Text style={styles.saleTotal}>{formatCurrency(sale.totalAmount, sale.currency)}</Text>
+                      <View style={styles.saleActions}>
+                        <TouchableOpacity onPress={() => openEditSale(sale)} hitSlop={{top:10,bottom:10,left:10,right:10}}>
+                          <Ionicons name="pencil" size={16} color="#2563eb" />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => handleDeleteSale(sale.id)} hitSlop={{top:10,bottom:10,left:10,right:10}}>
+                          <Ionicons name="trash" size={16} color="#dc2626" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                ))}
               </View>
             ))
+          )}
+          {/* Debt payments section */}
+          {debtPayments.length > 0 && (
+            <View style={styles.dayGroup}>
+              <View style={styles.dayHeader}>
+                <View style={styles.dayLabelRow}>
+                  <Ionicons name="receipt-outline" size={16} color="#10b981" />
+                  <Text style={[styles.dayLabel, { color: '#10b981' }]}>Dettes payées</Text>
+                </View>
+                <Text style={[styles.dayTotal, { color: '#10b981' }]}>
+                  {formatCurrency(debtPayments.reduce((s, p) => s + p.totalAmount, 0), currency)}
+                </Text>
+              </View>
+              {debtPayments.map((sale) => (
+                <View key={sale.id} style={[styles.saleCard, { borderLeftWidth: 3, borderLeftColor: '#10b981' }]}>
+                  <View style={styles.saleInfo}>
+                    <Text style={styles.saleName}>{sale.productName}</Text>
+                    <Text style={styles.saleDate}>
+                      {(() => { try { return format(new Date(sale.createdAt), 'dd/MM/yyyy HH:mm'); } catch { return ''; }})()}
+                    </Text>
+                  </View>
+                  <Text style={[styles.saleTotal, { color: '#10b981' }]}>{formatCurrency(sale.totalAmount, sale.currency)}</Text>
+                </View>
+              ))}
+            </View>
           )}
         </View>
       ) : (
@@ -268,6 +348,12 @@ const styles = StyleSheet.create({
   saleRight: { alignItems: 'flex-end', justifyContent: 'space-between' },
   saleTotal: { fontSize: 17, fontWeight: 'bold', color: '#10b981' },
   saleActions: { flexDirection: 'row', gap: 10, marginTop: 6 },
+  // Day grouping
+  dayGroup: { marginBottom: 20, backgroundColor: '#fff', borderRadius: 16, padding: 12, borderWidth: 1, borderColor: '#ede0d4', ...cardShadow },
+  dayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 10, marginBottom: 10, borderBottomWidth: 1, borderBottomColor: '#f1e5d8' },
+  dayLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  dayLabel: { fontSize: 15, fontWeight: '700', color: '#2563eb' },
+  dayTotal: { fontSize: 16, fontWeight: '800', color: '#1e293b', backgroundColor: '#f0fdf4', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   // Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24 },

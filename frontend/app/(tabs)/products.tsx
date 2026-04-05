@@ -81,10 +81,8 @@ export default function ProductsScreen() {
   };
 
   const handleDelete = (id: string, name: string) => {
-    Alert.alert(i18n.t('delete'), `Supprimer "${name}" ?`, [
-      { text: i18n.t('cancel'), style: 'cancel' },
-      { text: i18n.t('delete'), style: 'destructive', onPress: () => deleteProduct(id) },
-    ]);
+    deleteProduct(id);
+    Alert.alert(i18n.t('success'), `"${name}" supprimé`);
   };
 
   const getEffectivePrice = (p: any) => p.promotionPrice && p.promotionPrice > 0 ? p.promotionPrice : (p.salePrice || p.price || 0);

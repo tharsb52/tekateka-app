@@ -102,39 +102,21 @@ export default function DebtsScreen() {
     }
   };
 
-  const handleMarkAsPaid = (debtId: string, debtorName: string, amount: number) => {
-    Alert.alert(
-      i18n.t('markAsPaid'),
-      `Marquer la dette de "${debtorName}" (${formatCurrency(amount, user?.currency || 'USD')}) comme payée ?\n\nLe montant sera ajouté à votre chiffre d'affaires.`,
-      [
-        { text: i18n.t('cancel'), style: 'cancel' },
-        {
-          text: i18n.t('confirm'),
-          onPress: async () => {
-            await markDebtAsPaidWithRevenue(debtId);
-            Alert.alert(
-              i18n.t('success'),
-              `${formatCurrency(amount, user?.currency || 'USD')} ajouté au chiffre d'affaires !`
-            );
-          },
-        },
-      ]
-    );
+  const handleMarkAsPaid = async (debtId: string, debtorName: string, amount: number) => {
+    try {
+      await markDebtAsPaidWithRevenue(debtId);
+      Alert.alert(
+        i18n.t('success'),
+        `${formatCurrency(amount, user?.currency || 'USD')} de "${debtorName}" ajouté au chiffre d'affaires !`
+      );
+    } catch (error) {
+      Alert.alert(i18n.t('error'), 'Échec de la mise à jour');
+    }
   };
 
   const handleDelete = (debtId: string, debtorName: string) => {
-    Alert.alert(
-      i18n.t('delete'),
-      `Supprimer la dette de "${debtorName}" ?`,
-      [
-        { text: i18n.t('cancel'), style: 'cancel' },
-        {
-          text: i18n.t('delete'),
-          style: 'destructive',
-          onPress: () => deleteDebt(debtId),
-        },
-      ]
-    );
+    deleteDebt(debtId);
+    Alert.alert(i18n.t('success'), `Dette de "${debtorName}" supprimée`);
   };
 
   return (

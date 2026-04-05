@@ -48,19 +48,8 @@ export default function SettingsScreen() {
     setCurrencyModalVisible(false);
   };
 
-  const handleLogout = () => {
-    Alert.alert(
-      'Déconnexion',
-      'Êtes-vous sûr de vouloir vous déconnecter ?',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Déconnexion',
-          style: 'destructive',
-          onPress: () => logout(),
-        },
-      ]
-    );
+  const handleLogout = async () => {
+    await logout();
   };
 
   return (

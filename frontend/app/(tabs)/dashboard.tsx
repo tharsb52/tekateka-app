@@ -133,13 +133,13 @@ export default function DashboardScreen() {
           </View>
           <View style={styles.storyCard}>
             <Image
-              source={{ uri: 'https://images.pexels.com/photos/7835689/pexels-photo-7835689.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940' }}
+              source={{ uri: 'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=400' }}
               style={styles.storyImage}
             />
             <View style={styles.storyOverlay}>
-              <Text style={styles.storyName}>Mama Cécile</Text>
+              <Text style={styles.storyName}>Sifa M.</Text>
               <Text style={styles.storyLocation}>Lubumbashi, RDC</Text>
-              <Text style={styles.storyQuote}>"Je suis mes ventes de pain chaque jour!"</Text>
+              <Text style={styles.storyQuote}>"Ma pharmacie est mieux gérée!"</Text>
             </View>
           </View>
           <View style={styles.storyCard}>
