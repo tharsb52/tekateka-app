@@ -59,7 +59,7 @@ export default function SettingsScreen() {
 
   return (
     <View style={styles.container}>
-      <AppHeader title="Paramètres" />
+      <AppHeader />
 
       <ScrollView style={styles.content}>
         {/* Profile Section */}

@@ -117,7 +117,7 @@ export default function SellScreen() {
 
   return (
     <ScrollView style={styles.container}>
-      <AppHeader title="Vendre" />
+      <AppHeader />
       <View style={styles.header}>
         <Text style={styles.title}>{i18n.t('sell')}</Text>
         <View style={{ flex: 1 }} />

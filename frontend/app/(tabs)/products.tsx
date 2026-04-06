@@ -11,6 +11,7 @@ import { formatCurrency } from '../../utils/currencies';
 import { CategoryType } from '../../types';
 import { cardShadow } from '../../utils/shadows';
 import AppHeader from '../../components/AppHeader';
+import CurrencyAmountInput from '../../components/CurrencyAmountInput';
 import { VoiceInputButton } from '../../components/VoiceInputButton';
 
 const BG = '#fef3e7';
@@ -25,6 +26,7 @@ export default function ProductsScreen() {
   const [formData, setFormData] = useState({
     name: '', purchasePrice: '', salePrice: '', promotionPrice: '', stock: '', category: 'food' as CategoryType,
   });
+  const [formCurrency, setFormCurrency] = useState(user?.currency || 'USD');
 
   const currency = user?.currency || 'USD';
   const totalInventoryValue = products.reduce((s, p) => s + (p.purchasePrice || 0) * p.stock, 0);
@@ -33,6 +35,7 @@ export default function ProductsScreen() {
     setEditingProduct(null);
     setHasPromo(false);
     setFormData({ name: '', purchasePrice: '', salePrice: '', promotionPrice: '', stock: '', category: 'food' });
+    setFormCurrency(currency);
     setModalVisible(true);
   };
 
@@ -99,7 +102,7 @@ export default function ProductsScreen() {
 
   return (
     <View style={styles.container}>
-      <AppHeader title="Produits" />
+      <AppHeader />
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>{i18n.t('products')}</Text>
@@ -203,13 +206,14 @@ export default function ProductsScreen() {
               <TextInput style={styles.input} value={formData.name}
                 onChangeText={(t) => setFormData({ ...formData, name: t })} placeholder="Ex: Coca Cola 50cl" />
 
-              <View style={styles.fieldRow}>
-                <Text style={styles.label}>Prix d'achat / unite *</Text>
-                <VoiceInputButton onTranscript={(t) => { const n = t.replace(/[^0-9.,]/g, '').replace(',', '.'); setFormData({ ...formData, purchasePrice: n }); }} />
-              </View>
-              <TextInput style={styles.input} value={formData.purchasePrice}
-                onChangeText={(t) => setFormData({ ...formData, purchasePrice: t })}
-                keyboardType="decimal-pad" placeholder="0" />
+              <CurrencyAmountInput
+                label="Prix d'achat / unite *"
+                value={formData.purchasePrice}
+                currency={formCurrency}
+                onChangeAmount={(t) => setFormData({ ...formData, purchasePrice: t })}
+                onChangeCurrency={setFormCurrency}
+                voiceButton={<VoiceInputButton onTranscript={(t) => { const n = t.replace(/[^0-9.,]/g, '').replace(',', '.'); setFormData({ ...formData, purchasePrice: n }); }} />}
+              />
 
               <Text style={styles.label}>Quantite *</Text>
               <TextInput style={styles.input} value={formData.stock}
@@ -223,22 +227,26 @@ export default function ProductsScreen() {
                 </View>
               )}
 
-              <Text style={styles.label}>Prix de vente *</Text>
-              <TextInput style={styles.input} value={formData.salePrice}
-                onChangeText={(t) => setFormData({ ...formData, salePrice: t })}
-                keyboardType="decimal-pad" placeholder="0" />
+              <CurrencyAmountInput
+                label="Prix de vente *"
+                value={formData.salePrice}
+                currency={formCurrency}
+                onChangeAmount={(t) => setFormData({ ...formData, salePrice: t })}
+                onChangeCurrency={setFormCurrency}
+              />
 
               <View style={styles.promoRow}>
                 <Text style={styles.label}>Promotion ?</Text>
                 <Switch value={hasPromo} onValueChange={setHasPromo} trackColor={{ true: '#2563eb' }} />
               </View>
               {hasPromo && (
-                <>
-                  <Text style={styles.label}>Prix promo</Text>
-                  <TextInput style={styles.input} value={formData.promotionPrice}
-                    onChangeText={(t) => setFormData({ ...formData, promotionPrice: t })}
-                    keyboardType="decimal-pad" placeholder="0" />
-                </>
+                <CurrencyAmountInput
+                  label="Prix promo"
+                  value={formData.promotionPrice}
+                  currency={formCurrency}
+                  onChangeAmount={(t) => setFormData({ ...formData, promotionPrice: t })}
+                  onChangeCurrency={setFormCurrency}
+                />
               )}
 
               <Text style={styles.label}>Categorie</Text>

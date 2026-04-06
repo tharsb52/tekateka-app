@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { formatCurrency } from '../../utils/currencies';
 import { format } from 'date-fns';
 import AppHeader from '../../components/AppHeader';
+import CurrencyAmountInput from '../../components/CurrencyAmountInput';
 
 import { cardShadow } from '../../utils/shadows';
 import { VoiceInputButton } from '../../components/VoiceInputButton';
@@ -39,6 +40,7 @@ export default function DebtsScreen() {
     description: '',
     dueDate: new Date(),
   });
+  const [formCurrency, setFormCurrency] = useState(user?.currency || 'USD');
 
   const unpaidDebts = debts.filter(d => !d.isPaid);
   const paidDebts = debts.filter(d => d.isPaid);
@@ -47,6 +49,7 @@ export default function DebtsScreen() {
   const openAddModal = () => {
     setEditingDebt(null);
     setFormData({ debtorName: '', amount: '', description: '', dueDate: new Date() });
+    setFormCurrency(user?.currency || 'USD');
     setModalVisible(true);
   };
 
@@ -58,6 +61,7 @@ export default function DebtsScreen() {
       description: debt.description || '',
       dueDate: debt.dueDate ? new Date(debt.dueDate) : new Date(),
     });
+    setFormCurrency(debt.currency || user?.currency || 'USD');
     setModalVisible(true);
   };
 
@@ -85,7 +89,7 @@ export default function DebtsScreen() {
         await addDebt({
           debtorName: formData.debtorName,
           amount,
-          currency: user?.currency || 'USD',
+          currency: formCurrency,
           description: formData.description,
           dueDate: formData.dueDate.toISOString(),
           isPaid: false,
@@ -141,7 +145,7 @@ export default function DebtsScreen() {
 
   return (
     <View style={styles.container}>
-      <AppHeader title="Dettes" />
+      <AppHeader />
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <View>
@@ -304,16 +308,13 @@ export default function DebtsScreen() {
                 placeholder="Nom du client"
               />
 
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
-                <Text style={styles.label}>{i18n.t('debtAmount')} *</Text>
-                <VoiceInputButton onTranscript={(t) => { const n = t.replace(/[^0-9.,]/g, '').replace(',', '.'); setFormData({ ...formData, amount: n }); }} />
-              </View>
-              <TextInput
-                style={styles.input}
+              <CurrencyAmountInput
+                label={`${i18n.t('debtAmount')} *`}
                 value={formData.amount}
-                onChangeText={(text) => setFormData({ ...formData, amount: text })}
-                keyboardType="decimal-pad"
-                placeholder="0"
+                currency={formCurrency}
+                onChangeAmount={(text) => setFormData({ ...formData, amount: text })}
+                onChangeCurrency={setFormCurrency}
+                voiceButton={<VoiceInputButton onTranscript={(t) => { const n = t.replace(/[^0-9.,]/g, '').replace(',', '.'); setFormData({ ...formData, amount: n }); }} />}
               />
 
               <Text style={styles.label}>{i18n.t('debtDescription')}</Text>

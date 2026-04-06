@@ -4,16 +4,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useRouter } from 'expo-router';
 import { getCountryFromPhone } from '../utils/countryFlags';
-import { cardShadow } from '../utils/shadows';
 
-const BG = '#fef3e7';
+const HEADER_BG = '#1a2744';
 
 interface AppHeaderProps {
-  title?: string;
   showSubscription?: boolean;
 }
 
-export default function AppHeader({ title, showSubscription = false }: AppHeaderProps) {
+export default function AppHeader({ showSubscription = false }: AppHeaderProps) {
   const { user, isSubscriptionActive, getSubscriptionDaysRemaining, getDaysRemaining, showExpiryReminder } = useAuth();
   const router = useRouter();
   const country = getCountryFromPhone(user?.phoneNumber || '');
@@ -24,15 +22,10 @@ export default function AppHeader({ title, showSubscription = false }: AppHeader
 
   return (
     <View style={styles.header}>
-      <View style={styles.headerLeft}>
-        <View style={styles.logoRow}>
-          <Image source={require('../assets/images/tk-logo-transparent.png')} style={styles.logoImage} />
-          <Text style={styles.appName}>TekaTeka</Text>
-          <Text style={styles.flagEmoji}>{country.flag}</Text>
-        </View>
-        {title ? (
-          <Text style={styles.pageTitle}>{title}</Text>
-        ) : null}
+      <View style={styles.logoRow}>
+        <Image source={require('../assets/images/tk-logo-transparent.png')} style={styles.logoImage} />
+        <Text style={styles.appName}>TekaTeka</Text>
+        <Text style={styles.flagEmoji}>{country.flag}</Text>
       </View>
       {showSubscription && (
         <TouchableOpacity
@@ -53,8 +46,8 @@ export default function AppHeader({ title, showSubscription = false }: AppHeader
             size={14}
             color={
               isSubActive
-                ? (expiryReminder ? '#92400e' : '#065f46')
-                : (daysRemaining > 0 ? '#1e40af' : '#dc2626')
+                ? (expiryReminder ? '#fcd34d' : '#6ee7b7')
+                : (daysRemaining > 0 ? '#93c5fd' : '#fca5a5')
             }
           />
           <Text style={[
@@ -75,43 +68,33 @@ export default function AppHeader({ title, showSubscription = false }: AppHeader
 
 const styles = StyleSheet.create({
   header: {
-    backgroundColor: BG,
+    backgroundColor: HEADER_BG,
     paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
+    paddingTop: 14,
+    paddingBottom: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#ede0d4',
-  },
-  headerLeft: {
-    flex: 1,
   },
   logoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
   },
   logoImage: {
-    width: 32,
-    height: 32,
+    width: 34,
+    height: 34,
     resizeMode: 'contain',
   },
   appName: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '800',
-    color: '#1e293b',
+    color: '#ffffff',
+    letterSpacing: 0.5,
   },
   flagEmoji: {
-    fontSize: 18,
+    fontSize: 20,
     marginLeft: 4,
-  },
-  pageTitle: {
-    fontSize: 13,
-    color: '#64748b',
-    fontWeight: '600',
-    marginTop: 2,
   },
   badge: {
     flexDirection: 'row',
@@ -126,12 +109,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  trialBadge: { backgroundColor: '#eff6ff', borderColor: '#93c5fd' },
-  trialText: { color: '#1e40af' },
-  activeBadge: { backgroundColor: '#ecfdf5', borderColor: '#6ee7b7' },
-  activeText: { color: '#065f46' },
-  warningBadge: { backgroundColor: '#fffbeb', borderColor: '#fcd34d' },
-  warningText: { color: '#92400e' },
-  expiredBadge: { backgroundColor: '#fef2f2', borderColor: '#fca5a5' },
-  expiredText: { color: '#dc2626' },
+  trialBadge: { backgroundColor: 'rgba(59,130,246,0.2)', borderColor: 'rgba(147,197,253,0.5)' },
+  trialText: { color: '#93c5fd' },
+  activeBadge: { backgroundColor: 'rgba(16,185,129,0.2)', borderColor: 'rgba(110,231,183,0.5)' },
+  activeText: { color: '#6ee7b7' },
+  warningBadge: { backgroundColor: 'rgba(245,158,11,0.2)', borderColor: 'rgba(252,211,77,0.5)' },
+  warningText: { color: '#fcd34d' },
+  expiredBadge: { backgroundColor: 'rgba(220,38,38,0.2)', borderColor: 'rgba(252,165,165,0.5)' },
+  expiredText: { color: '#fca5a5' },
 });

@@ -13,6 +13,7 @@ import { format } from 'date-fns';
 import { cardShadow } from '../../utils/shadows';
 import { VoiceInputButton } from '../../components/VoiceInputButton';
 import AppHeader from '../../components/AppHeader';
+import CurrencyAmountInput from '../../components/CurrencyAmountInput';
 
 const BG = '#fef3e7';
 const EXPENSE_CATEGORIES: ExpenseCategoryType[] = [
@@ -29,6 +30,7 @@ export default function ExpensesScreen() {
     category: 'transport' as ExpenseCategoryType,
     customCategory: '', amount: '', notes: '', productId: '',
   });
+  const [formCurrency, setFormCurrency] = useState(user?.currency || 'USD');
 
   const currency = user?.currency || 'USD';
   const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
@@ -36,6 +38,7 @@ export default function ExpensesScreen() {
   const openAddModal = () => {
     setEditingExpense(null);
     setFormData({ category: 'inventory', customCategory: '', amount: '', notes: '', productId: '' });
+    setFormCurrency(currency);
     setModalVisible(true);
   };
 
@@ -48,6 +51,7 @@ export default function ExpensesScreen() {
       notes: exp.notes || '',
       productId: exp.productId || '',
     });
+    setFormCurrency(exp.currency || currency);
     setModalVisible(true);
   };
 
@@ -62,7 +66,7 @@ export default function ExpensesScreen() {
       const data = {
         category: formData.category,
         customCategory: formData.category === 'custom' ? formData.customCategory : undefined,
-        amount, currency,
+        amount, currency: formCurrency,
         notes: formData.notes,
         productId: formData.productId || undefined,
         productName: linkedProduct?.name || undefined,
@@ -83,7 +87,7 @@ export default function ExpensesScreen() {
 
   return (
     <View style={styles.container}>
-      <AppHeader title="Charges" />
+      <AppHeader />
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>{i18n.t('expenses')}</Text>
@@ -177,13 +181,14 @@ export default function ExpensesScreen() {
                   onChangeText={(t) => setFormData({ ...formData, customCategory: t })} placeholder="Ex: Marketing" /></>
               )}
 
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
-                <Text style={styles.label}>Montant *</Text>
-                <VoiceInputButton onTranscript={(t) => { const n = t.replace(/[^0-9.,]/g, '').replace(',', '.'); setFormData({ ...formData, amount: n }); }} />
-              </View>
-              <TextInput style={styles.input} value={formData.amount}
-                onChangeText={(t) => setFormData({ ...formData, amount: t })}
-                keyboardType="decimal-pad" placeholder="0" />
+              <CurrencyAmountInput
+                label="Montant *"
+                value={formData.amount}
+                currency={formCurrency}
+                onChangeAmount={(t) => setFormData({ ...formData, amount: t })}
+                onChangeCurrency={setFormCurrency}
+                voiceButton={<VoiceInputButton onTranscript={(t) => { const n = t.replace(/[^0-9.,]/g, '').replace(',', '.'); setFormData({ ...formData, amount: n }); }} />}
+              />
 
               <Text style={styles.label}>Produit lie (optionnel)</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>

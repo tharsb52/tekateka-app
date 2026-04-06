@@ -22,6 +22,7 @@ import { exportSalesToPDF, exportSalesToExcel } from '../../utils/exportService'
 import { format, subDays } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
+import AppHeader from '../../components/AppHeader';
 import { cardShadow } from '../../utils/shadows';
 
 const BG = '#fef3e7';
@@ -145,55 +146,17 @@ export default function DashboardScreen() {
 
   return (
     <ScrollView style={styles.container}>
-      {/* Header with Logo, Flag, and Slogan */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <View style={styles.logoRow}>
-            <Image source={require('../../assets/images/tk-logo-transparent.png')} style={styles.logoImage} />
-            <Text style={styles.greeting}>TekaTeka</Text>
-            <Text style={styles.flagEmoji}>{country.flag}</Text>
-          </View>
-          <Text style={styles.slogan}>{i18n.t('slogan')}</Text>
-          <Text style={styles.dateTime}>
-            {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-            {'  '}
-            {new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-          </Text>
-        </View>
-        {/* Subscription Badge */}
-        {isSubActive ? (
-          <TouchableOpacity
-            style={[styles.trialBadge, expiryReminder ? styles.warningBadge : styles.activeBadge]}
-            onPress={() => router.push('/subscription')}
-          >
-            <Ionicons 
-              name={expiryReminder ? "warning" : "shield-checkmark"} 
-              size={14} 
-              color={expiryReminder ? "#92400e" : "#065f46"} 
-            />
-            <Text style={[styles.trialText, expiryReminder ? {} : styles.activeText]}>
-              {expiryReminder ? `${subDaysLeft}j restants` : 'Abonné'}
-            </Text>
-          </TouchableOpacity>
-        ) : !user?.isSubscribed && daysRemaining > 0 ? (
-          <TouchableOpacity
-            style={styles.trialBadge}
-            onPress={() => router.push('/subscription')}
-          >
-            <Text style={styles.trialText}>
-              {daysRemaining}j essai
-            </Text>
-            <Ionicons name="chevron-forward" size={14} color="#92400e" />
-          </TouchableOpacity>
-        ) : !isSubActive ? (
-          <TouchableOpacity
-            style={[styles.trialBadge, styles.expiredBadge]}
-            onPress={() => router.push('/subscription')}
-          >
-            <Ionicons name="alert-circle" size={14} color="#dc2626" />
-            <Text style={styles.expiredText}>S'abonner</Text>
-          </TouchableOpacity>
-        ) : null}
+      {/* Unified Dark Header */}
+      <AppHeader showSubscription />
+
+      {/* Date & Slogan row */}
+      <View style={styles.subHeader}>
+        <Text style={styles.slogan}>{i18n.t('slogan')}</Text>
+        <Text style={styles.dateTime}>
+          {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          {'  '}
+          {new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+        </Text>
       </View>
 
       {/* Expiry Reminder Banner */}
@@ -555,9 +518,14 @@ const styles = StyleSheet.create({
   slogan: {
     fontSize: 14,
     color: '#2563eb',
-    marginTop: 4,
     fontWeight: '600',
     fontStyle: 'italic',
+  },
+  subHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 4,
+    backgroundColor: BG,
   },
   dateTime: {
     fontSize: 12,
