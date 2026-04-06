@@ -8,7 +8,7 @@ import i18n from '../../utils/i18n';
 const BG = '#fef3e7';
 
 export default function TabLayout() {
-  const { user, loading, hasAccess } = useAuth();
+  const { user, loading, hasAccess, hasPin, pinVerified } = useAuth();
 
   if (loading) {
     return (
@@ -20,6 +20,11 @@ export default function TabLayout() {
 
   // Si pas connecté, retour à l'accueil
   if (!user) {
+    return <Redirect href="/" />;
+  }
+
+  // Si PIN non vérifié, retour à index pour montrer PinScreen
+  if (hasPin && !pinVerified) {
     return <Redirect href="/" />;
   }
 

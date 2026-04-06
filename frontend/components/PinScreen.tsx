@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TextInput, TouchableOpacity, Image, Animated, Alert,
+  View, Text, StyleSheet, TouchableOpacity, Image, Animated, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -10,34 +10,30 @@ const PIN_LENGTH = 4;
 
 interface PinScreenProps {
   userId: string;
+  mode: 'verify' | 'setup' | 'change';
   onSuccess: () => void;
-  onLogout: () => void;
+  onLogout?: () => void;
+  onCancel?: () => void;
 }
 
-export default function PinScreen({ userId, onSuccess, onLogout }: PinScreenProps) {
+export default function PinScreen({ userId, mode, onSuccess, onLogout, onCancel }: PinScreenProps) {
   const [pin, setPin] = useState('');
-  const [isSetup, setIsSetup] = useState(false);
+  const [step, setStep] = useState<'enter' | 'setup' | 'confirm' | 'old'>('enter');
   const [confirmPin, setConfirmPin] = useState('');
-  const [step, setStep] = useState<'check' | 'setup' | 'confirm'>('check');
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
   const [attempts, setAttempts] = useState(0);
   const shakeAnim = useRef(new Animated.Value(0)).current;
-  const inputRef = useRef<TextInput>(null);
 
   useEffect(() => {
-    checkPinExists();
-  }, []);
-
-  const checkPinExists = async () => {
-    const savedPin = await AsyncStorage.getItem(`@tekateka:${userId}:pin`);
-    if (savedPin) {
-      setStep('check');
-      setIsSetup(true);
-    } else {
+    if (mode === 'setup') {
       setStep('setup');
-      setIsSetup(false);
+    } else if (mode === 'change') {
+      setStep('old');
+    } else {
+      setStep('enter');
     }
-  };
+  }, [mode]);
 
   const shake = () => {
     Animated.sequence([
@@ -48,50 +44,94 @@ export default function PinScreen({ userId, onSuccess, onLogout }: PinScreenProp
     ]).start();
   };
 
-  const handlePinChange = async (value: string) => {
-    if (value.length > PIN_LENGTH) return;
-    setPin(value);
+  const handleDigit = async (digit: string) => {
+    if (pin.length >= PIN_LENGTH) return;
+    const newPin = pin + digit;
+    setPin(newPin);
     setError('');
 
-    if (value.length === PIN_LENGTH) {
-      if (step === 'setup') {
-        setConfirmPin(value);
+    if (newPin.length === PIN_LENGTH) {
+      // Process after a small delay for visual feedback
+      setTimeout(() => processPin(newPin), 150);
+    }
+  };
+
+  const handleDelete = () => {
+    setPin(prev => prev.slice(0, -1));
+    setError('');
+  };
+
+  const processPin = async (value: string) => {
+    if (step === 'old') {
+      // Verify old PIN before allowing change
+      const savedPin = await AsyncStorage.getItem(`@tekateka:${userId}:pin`);
+      if (value === savedPin) {
         setPin('');
-        setStep('confirm');
-        return;
+        setStep('setup');
+      } else {
+        shake();
+        setPin('');
+        setError('Code actuel incorrect');
       }
+      return;
+    }
 
-      if (step === 'confirm') {
-        if (value === confirmPin) {
-          await AsyncStorage.setItem(`@tekateka:${userId}:pin`, value);
-          Alert.alert('Code PIN créé', 'Votre code PIN a été configuré avec succès !');
-          onSuccess();
-        } else {
-          shake();
-          setError('Les codes ne correspondent pas');
-          setPin('');
-          setStep('setup');
-          setConfirmPin('');
-        }
-        return;
-      }
+    if (step === 'setup') {
+      setConfirmPin(value);
+      setPin('');
+      setStep('confirm');
+      return;
+    }
 
-      if (step === 'check') {
-        const savedPin = await AsyncStorage.getItem(`@tekateka:${userId}:pin`);
-        if (value === savedPin) {
-          onSuccess();
+    if (step === 'confirm') {
+      if (value === confirmPin) {
+        await AsyncStorage.setItem(`@tekateka:${userId}:pin`, value);
+        setSuccessMsg('Code PIN configuré !');
+        setTimeout(() => onSuccess(), 800);
+      } else {
+        shake();
+        setError('Les codes ne correspondent pas');
+        setPin('');
+        setStep('setup');
+        setConfirmPin('');
+      }
+      return;
+    }
+
+    if (step === 'enter') {
+      const savedPin = await AsyncStorage.getItem(`@tekateka:${userId}:pin`);
+      if (value === savedPin) {
+        onSuccess();
+      } else {
+        shake();
+        const newAttempts = attempts + 1;
+        setAttempts(newAttempts);
+        setPin('');
+        if (newAttempts >= 5) {
+          setError('Trop de tentatives');
         } else {
-          shake();
-          const newAttempts = attempts + 1;
-          setAttempts(newAttempts);
-          setPin('');
-          if (newAttempts >= 5) {
-            setError('Trop de tentatives. Veuillez vous reconnecter.');
-          } else {
-            setError(`Code incorrect (${newAttempts}/5)`);
-          }
+          setError(`Code incorrect (${newAttempts}/5)`);
         }
       }
+    }
+  };
+
+  const getTitle = () => {
+    switch (step) {
+      case 'old': return 'Entrez votre code actuel';
+      case 'setup': return 'Créez votre code PIN';
+      case 'confirm': return 'Confirmez votre code PIN';
+      case 'enter': return 'Entrez votre code PIN';
+    }
+  };
+
+  const getIcon = () => {
+    switch (step) {
+      case 'setup':
+      case 'confirm':
+        return 'key';
+      default:
+        return 'lock-closed';
     }
   };
 
@@ -99,53 +139,94 @@ export default function PinScreen({ userId, onSuccess, onLogout }: PinScreenProp
     <View key={i} style={[styles.dot, i < pin.length && styles.dotFilled]} />
   ));
 
+  const numpadKeys = [
+    ['1', '2', '3'],
+    ['4', '5', '6'],
+    ['7', '8', '9'],
+    ['', '0', 'del'],
+  ];
+
+  if (successMsg) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.successCircle}>
+          <Ionicons name="checkmark-circle" size={64} color="#10b981" />
+        </View>
+        <Text style={styles.successText}>{successMsg}</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
+      {/* Logo & Title */}
       <Image source={require('../assets/images/tk-logo-transparent.png')} style={styles.logo} />
-      <Text style={styles.title}>TekaTeka</Text>
+      <Text style={styles.appName}>TekaTeka</Text>
 
-      <View style={styles.lockIcon}>
-        <Ionicons name="lock-closed" size={40} color="#2563eb" />
+      <View style={[styles.lockIcon, step === 'setup' || step === 'confirm' ? styles.lockIconSetup : null]}>
+        <Ionicons name={getIcon()} size={32} color={step === 'setup' || step === 'confirm' ? '#f59e0b' : '#2563eb'} />
       </View>
 
-      <Text style={styles.subtitle}>
-        {step === 'setup' ? 'Créez votre code PIN' :
-         step === 'confirm' ? 'Confirmez votre code PIN' :
-         'Entrez votre code PIN'}
-      </Text>
+      <Text style={styles.subtitle}>{getTitle()}</Text>
 
+      {/* PIN Dots */}
       <Animated.View style={[styles.dotsRow, { transform: [{ translateX: shakeAnim }] }]}>
         {dots}
       </Animated.View>
 
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+      {error ? <Text style={styles.errorText}>{error}</Text> : <View style={{ height: 22 }} />}
 
-      <TextInput
-        ref={inputRef}
-        style={styles.hiddenInput}
-        value={pin}
-        onChangeText={handlePinChange}
-        keyboardType="number-pad"
-        maxLength={PIN_LENGTH}
-        autoFocus
-        secureTextEntry
-      />
+      {/* Custom Numpad */}
+      <View style={styles.numpad}>
+        {numpadKeys.map((row, ri) => (
+          <View key={ri} style={styles.numpadRow}>
+            {row.map((key, ki) => {
+              if (key === '') {
+                return <View key={ki} style={styles.numpadKeyEmpty} />;
+              }
+              if (key === 'del') {
+                return (
+                  <TouchableOpacity key={ki} style={styles.numpadKey} onPress={handleDelete}>
+                    <Ionicons name="backspace-outline" size={26} color="#64748b" />
+                  </TouchableOpacity>
+                );
+              }
+              return (
+                <TouchableOpacity
+                  key={ki}
+                  style={styles.numpadKey}
+                  onPress={() => handleDigit(key)}
+                  activeOpacity={0.6}
+                >
+                  <Text style={styles.numpadKeyText}>{key}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        ))}
+      </View>
 
-      <TouchableOpacity style={styles.inputArea} onPress={() => inputRef.current?.focus()}>
-        <Text style={styles.tapText}>Tapez ici pour saisir</Text>
-      </TouchableOpacity>
+      {/* Bottom actions */}
+      <View style={styles.bottomActions}>
+        {attempts >= 5 && onLogout ? (
+          <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
+            <Ionicons name="log-out-outline" size={20} color="#dc2626" />
+            <Text style={[styles.actionText, { color: '#dc2626' }]}>Déconnexion</Text>
+          </TouchableOpacity>
+        ) : onLogout && step === 'enter' ? (
+          <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
+            <Ionicons name="swap-horizontal-outline" size={18} color="#64748b" />
+            <Text style={[styles.actionText, { color: '#64748b' }]}>Changer de compte</Text>
+          </TouchableOpacity>
+        ) : null}
 
-      {attempts >= 5 ? (
-        <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
-          <Ionicons name="log-out-outline" size={20} color="#dc2626" />
-          <Text style={styles.logoutText}>Déconnexion</Text>
-        </TouchableOpacity>
-      ) : (
-        <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
-          <Ionicons name="log-out-outline" size={18} color="#64748b" />
-          <Text style={[styles.logoutText, { color: '#64748b' }]}>Changer de compte</Text>
-        </TouchableOpacity>
-      )}
+        {onCancel && (
+          <TouchableOpacity style={styles.logoutBtn} onPress={onCancel}>
+            <Ionicons name="close-outline" size={20} color="#64748b" />
+            <Text style={[styles.actionText, { color: '#64748b' }]}>Annuler</Text>
+          </TouchableOpacity>
+        )}
+      </View>
     </View>
   );
 }
@@ -156,41 +237,47 @@ const styles = StyleSheet.create({
     backgroundColor: BG,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 32,
+    paddingHorizontal: 32,
+    paddingTop: 40,
   },
   logo: {
-    width: 80,
-    height: 80,
+    width: 60,
+    height: 60,
     resizeMode: 'contain',
-    marginBottom: 8,
+    marginBottom: 4,
   },
-  title: {
-    fontSize: 28,
+  appName: {
+    fontSize: 22,
     fontWeight: '800',
     color: '#1e293b',
-    marginBottom: 24,
+    marginBottom: 16,
   },
   lockIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: '#eff6ff',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
     borderWidth: 2,
     borderColor: '#93c5fd',
   },
+  lockIconSetup: {
+    backgroundColor: '#fffbeb',
+    borderColor: '#fcd34d',
+  },
   subtitle: {
     fontSize: 16,
-    color: '#64748b',
+    color: '#475569',
     fontWeight: '600',
-    marginBottom: 24,
+    marginBottom: 20,
+    textAlign: 'center',
   },
   dotsRow: {
     flexDirection: 'row',
-    gap: 16,
-    marginBottom: 16,
+    gap: 18,
+    marginBottom: 12,
   },
   dot: {
     width: 20,
@@ -207,28 +294,52 @@ const styles = StyleSheet.create({
     color: '#dc2626',
     fontSize: 14,
     fontWeight: '600',
-    marginBottom: 8,
+    height: 22,
+    textAlign: 'center',
   },
-  hiddenInput: {
-    position: 'absolute',
-    opacity: 0,
-    height: 0,
-    width: 0,
+  successCircle: {
+    marginBottom: 16,
   },
-  inputArea: {
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 12,
+  successText: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#10b981',
+  },
+  // Custom numpad
+  numpad: {
+    width: '100%',
+    maxWidth: 300,
+    marginTop: 8,
+  },
+  numpadRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  numpadKey: {
+    width: 72,
+    height: 56,
+    borderRadius: 16,
     backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 8,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    marginTop: 8,
-    marginBottom: 24,
   },
-  tapText: {
-    color: '#94a3b8',
-    fontSize: 14,
-    fontWeight: '500',
+  numpadKeyEmpty: {
+    width: 72,
+    height: 56,
+    marginHorizontal: 8,
+  },
+  numpadKeyText: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  bottomActions: {
+    marginTop: 16,
+    alignItems: 'center',
   },
   logoutBtn: {
     flexDirection: 'row',
@@ -236,9 +347,8 @@ const styles = StyleSheet.create({
     gap: 6,
     padding: 12,
   },
-  logoutText: {
+  actionText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#dc2626',
   },
 });

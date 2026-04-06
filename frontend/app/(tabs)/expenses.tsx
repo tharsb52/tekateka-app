@@ -85,10 +85,9 @@ export default function ExpensesScreen() {
     <View style={styles.container}>
       <AppHeader title="Charges" />
       <View style={styles.header}>
-          <View>
-            <Text style={styles.title}>{i18n.t('expenses')}</Text>
-            <Text style={styles.totalText}>{formatCurrency(totalExpenses, currency)}</Text>
-          </View>
+        <View>
+          <Text style={styles.title}>{i18n.t('expenses')}</Text>
+          <Text style={styles.totalText}>{formatCurrency(totalExpenses, currency)}</Text>
         </View>
         <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
           <Ionicons name="add" size={24} color="#fff" />

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User } from '../types';
 import { getUser, saveUser, clearUser } from '../utils/storage';
 import { changeLocale } from '../utils/i18n';
@@ -8,9 +9,14 @@ import { scheduleExpiryReminders, cancelAllReminders } from '../services/notific
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  pinVerified: boolean;
+  hasPin: boolean;
   login: (phoneNumber: string, otp: string) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (updates: Partial<User>) => Promise<void>;
+  setPinVerified: (v: boolean) => void;
+  checkHasPin: () => Promise<boolean>;
+  removePin: () => Promise<void>;
   isTrialExpired: () => boolean;
   getDaysRemaining: () => number;
   isSubscriptionActive: () => boolean;
@@ -38,10 +44,22 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pinVerified, setPinVerified] = useState(false);
+  const [hasPin, setHasPin] = useState(false);
 
   useEffect(() => {
     loadUser();
   }, []);
+
+  // Re-check PIN existence whenever user changes
+  useEffect(() => {
+    if (user) {
+      checkHasPin();
+    } else {
+      setHasPin(false);
+      setPinVerified(false);
+    }
+  }, [user?.id]);
 
   const loadUser = async () => {
     try {
@@ -49,12 +67,30 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (savedUser) {
         setUser(savedUser);
         await changeLocale(savedUser.language);
+        // Check if this user has a PIN configured
+        const savedPin = await AsyncStorage.getItem(`@tekateka:${savedUser.id}:pin`);
+        setHasPin(!!savedPin);
       }
     } catch (error) {
       console.error('Error loading user:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const checkHasPin = async (): Promise<boolean> => {
+    if (!user) return false;
+    const savedPin = await AsyncStorage.getItem(`@tekateka:${user.id}:pin`);
+    const result = !!savedPin;
+    setHasPin(result);
+    return result;
+  };
+
+  const removePin = async () => {
+    if (!user) return;
+    await AsyncStorage.removeItem(`@tekateka:${user.id}:pin`);
+    setHasPin(false);
+    setPinVerified(true);
   };
 
   const login = async (phoneNumber: string, otp: string) => {
@@ -106,6 +142,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     await cancelAllReminders();
     await clearUser();
     setUser(null);
+    setPinVerified(false);
+    setHasPin(false);
   };
 
   const updateUser = async (updates: Partial<User>) => {
@@ -226,9 +264,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       value={{
         user,
         loading,
+        pinVerified,
+        hasPin,
         login,
         logout,
         updateUser,
+        setPinVerified,
+        checkHasPin,
+        removePin,
         isTrialExpired,
         getDaysRemaining,
         isSubscriptionActive,

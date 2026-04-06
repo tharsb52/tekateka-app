@@ -114,6 +114,32 @@ export async function markAlertShown(): Promise<void> {
   await AsyncStorage.setItem(LAST_ALERT_KEY, new Date().toISOString());
 }
 
+// Send an immediate local notification (for stock alerts, etc.)
+export async function sendInstantNotification(title: string, body: string, data?: Record<string, any>): Promise<void> {
+  if (Platform.OS === 'web') {
+    // On web, use a simple console log (no native notifications)
+    console.log(`[NOTIFICATION] ${title}: ${body}`);
+    return;
+  }
+
+  const hasPermission = await requestNotificationPermissions();
+  if (!hasPermission) return;
+
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        sound: true,
+        data: data || {},
+      },
+      trigger: null, // null = immediate
+    });
+  } catch (e) {
+    console.log('Failed to send instant notification:', e);
+  }
+}
+
 // Get urgency level based on days remaining
 export function getUrgencyLevel(daysRemaining: number): 'critical' | 'warning' | 'info' | 'none' {
   if (daysRemaining <= 1) return 'critical';

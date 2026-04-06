@@ -9,6 +9,7 @@ import {
   addPurchase as addPurchaseToStorage, updatePurchase as updatePurchaseInStorage, deletePurchase as deletePurchaseFromStorage,
 } from '../utils/storage';
 import { useAuth } from './AuthContext';
+import { sendInstantNotification } from '../services/notificationService';
 
 interface DataContextType {
   products: Product[];
@@ -94,7 +95,18 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setSales(prev => [...prev, ns]);
     // Update stock
     const prod = products.find(p => p.id === data.productId);
-    if (prod) await updateProduct(prod.id, { stock: prod.stock - data.quantity });
+    if (prod) {
+      const newStock = prod.stock - data.quantity;
+      await updateProduct(prod.id, { stock: newStock });
+      // Stock alert: notify when product reaches 0
+      if (newStock <= 0) {
+        sendInstantNotification(
+          'Stock épuisé !',
+          `Le produit "${prod.name}" est en rupture de stock. Pensez à le réapprovisionner.`,
+          { type: 'stock_alert', productId: prod.id, productName: prod.name }
+        ).catch(() => {});
+      }
+    }
   };
   const updateSale = async (id: string, u: Partial<Sale>) => {
     await updateSaleInStorage(id, u);

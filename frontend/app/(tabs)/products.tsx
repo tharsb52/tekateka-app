@@ -101,10 +101,9 @@ export default function ProductsScreen() {
     <View style={styles.container}>
       <AppHeader title="Produits" />
       <View style={styles.header}>
-          <View>
-            <Text style={styles.title}>{i18n.t('products')}</Text>
-            <Text style={styles.totalText}>Inventaire: {formatCurrency(totalInventoryValue, currency)}</Text>
-          </View>
+        <View>
+          <Text style={styles.title}>{i18n.t('products')}</Text>
+          <Text style={styles.totalText}>Inventaire: {formatCurrency(totalInventoryValue, currency)}</Text>
         </View>
         <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
           <Ionicons name="add" size={24} color="#fff" />

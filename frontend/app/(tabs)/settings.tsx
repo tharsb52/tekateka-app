@@ -16,6 +16,7 @@ import { CURRENCIES } from '../../utils/currencies';
 import { getOTPProviderInfo } from '../../services/otpService';
 import { getPaymentProviderInfo } from '../../services/paymentService';
 import AppHeader from '../../components/AppHeader';
+import PinScreen from '../../components/PinScreen';
 
 const BG = '#fef3e7';
 
@@ -26,10 +27,13 @@ const LANGUAGES = [
 ];
 
 export default function SettingsScreen() {
-  const { user, updateUser, logout, isSubscriptionActive, getSubscriptionDaysRemaining } = useAuth();
+  const { user, updateUser, logout, isSubscriptionActive, getSubscriptionDaysRemaining, hasPin, checkHasPin, removePin } = useAuth();
   const router = useRouter();
   const [langModalVisible, setLangModalVisible] = useState(false);
   const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
+  const [pinModalVisible, setPinModalVisible] = useState(false);
+  const [pinMode, setPinMode] = useState<'setup' | 'change'>('setup');
+  const [removePinConfirm, setRemovePinConfirm] = useState(false);
 
   const otpInfo = getOTPProviderInfo();
   const paymentInfo = getPaymentProviderInfo();
@@ -127,6 +131,55 @@ export default function SettingsScreen() {
             </View>
             <Ionicons name="chevron-forward" size={22} color="#94a3b8" />
           </TouchableOpacity>
+        </View>
+
+        {/* Security / PIN Section */}
+        <Text style={styles.sectionLabel}>SÉCURITÉ</Text>
+        <View style={styles.card}>
+          <TouchableOpacity
+            style={styles.settingRow}
+            onPress={() => {
+              if (hasPin) {
+                setPinMode('change');
+              } else {
+                setPinMode('setup');
+              }
+              setPinModalVisible(true);
+            }}
+          >
+            <View style={styles.settingLeft}>
+              <View style={[styles.iconCircle, { backgroundColor: hasPin ? '#d1fae5' : '#fef3c7' }]}>
+                <Ionicons name={hasPin ? 'lock-closed' : 'lock-open'} size={22} color={hasPin ? '#10b981' : '#f59e0b'} />
+              </View>
+              <View>
+                <Text style={styles.settingTitle}>Code PIN</Text>
+                <Text style={styles.settingSubtitle}>
+                  {hasPin ? 'PIN activé - Modifier' : 'Configurer un code PIN'}
+                </Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={22} color="#94a3b8" />
+          </TouchableOpacity>
+
+          {hasPin && (
+            <>
+              <View style={styles.divider} />
+              <TouchableOpacity
+                style={styles.settingRow}
+                onPress={() => setRemovePinConfirm(true)}
+              >
+                <View style={styles.settingLeft}>
+                  <View style={[styles.iconCircle, { backgroundColor: '#fef2f2' }]}>
+                    <Ionicons name="trash-outline" size={22} color="#dc2626" />
+                  </View>
+                  <View>
+                    <Text style={[styles.settingTitle, { color: '#dc2626' }]}>Supprimer le PIN</Text>
+                    <Text style={styles.settingSubtitle}>Désactiver la protection par PIN</Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
 
         {/* Integration Info */}
@@ -251,6 +304,53 @@ export default function SettingsScreen() {
                 )}
               </TouchableOpacity>
             ))}
+          </View>
+        </View>
+      </Modal>
+
+      {/* PIN Setup/Change Modal */}
+      <Modal visible={pinModalVisible} animationType="slide">
+        <PinScreen
+          userId={user?.id || ''}
+          mode={pinMode}
+          onSuccess={() => {
+            setPinModalVisible(false);
+            checkHasPin();
+          }}
+          onCancel={() => setPinModalVisible(false)}
+        />
+      </Modal>
+
+      {/* Remove PIN Confirmation Modal */}
+      <Modal visible={removePinConfirm} animationType="fade" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { padding: 24 }]}>
+            <View style={{ alignItems: 'center', marginBottom: 16 }}>
+              <View style={[styles.iconCircle, { backgroundColor: '#fef2f2', width: 56, height: 56, borderRadius: 28, marginBottom: 12 }]}>
+                <Ionicons name="warning" size={28} color="#dc2626" />
+              </View>
+              <Text style={[styles.modalTitle, { textAlign: 'center' }]}>Supprimer le code PIN ?</Text>
+              <Text style={{ color: '#64748b', textAlign: 'center', marginTop: 8, fontSize: 14 }}>
+                Votre application ne sera plus protégée au démarrage.
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
+              <TouchableOpacity
+                style={{ flex: 1, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', alignItems: 'center' }}
+                onPress={() => setRemovePinConfirm(false)}
+              >
+                <Text style={{ fontSize: 16, fontWeight: '600', color: '#64748b' }}>Annuler</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ flex: 1, padding: 14, borderRadius: 12, backgroundColor: '#dc2626', alignItems: 'center' }}
+                onPress={async () => {
+                  await removePin();
+                  setRemovePinConfirm(false);
+                }}
+              >
+                <Text style={{ fontSize: 16, fontWeight: '600', color: '#fff' }}>Supprimer</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
