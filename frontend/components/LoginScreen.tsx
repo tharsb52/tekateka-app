@@ -9,6 +9,7 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import i18n from '../utils/i18n';
@@ -82,7 +83,7 @@ export default function LoginScreen() {
     >
       <View style={styles.content}>
         <View style={styles.header}>
-          <Ionicons name="storefront" size={80} color="#2563eb" />
+          <Image source={require('../assets/images/tk-logo.png')} style={styles.logoImage} />
           <Text style={styles.title}>TekaTeka</Text>
           <Text style={styles.subtitle}>{i18n.t('welcome')}</Text>
         </View>
@@ -182,6 +183,11 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginBottom: 48,
+  },
+  logoImage: {
+    width: 120,
+    height: 120,
+    resizeMode: 'contain',
   },
   title: {
     fontSize: 36,

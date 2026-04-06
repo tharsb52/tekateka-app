@@ -117,7 +117,7 @@ export default function DashboardScreen() {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <View style={styles.logoRow}>
-            <Text style={styles.logoIcon}>🛒</Text>
+            <Image source={require('../../assets/images/tk-logo.png')} style={styles.logoImage} />
             <Text style={styles.greeting}>TekaTeka</Text>
             <Text style={styles.flagEmoji}>{country.flag}</Text>
           </View>
@@ -458,8 +458,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
-  logoIcon: {
-    fontSize: 26,
+  logoImage: {
+    width: 40,
+    height: 40,
+    resizeMode: 'contain',
   },
   greeting: {
     fontSize: 28,
