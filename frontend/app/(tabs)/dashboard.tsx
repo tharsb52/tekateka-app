@@ -7,6 +7,7 @@ import {
   Image,
   TouchableOpacity,
   Alert,
+  Dimensions,
 } from 'react-native';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
@@ -15,6 +16,10 @@ import i18n from '../../utils/i18n';
 import { Ionicons } from '@expo/vector-icons';
 import { formatCurrency } from '../../utils/currencies';
 import { getUrgencyLevel, getUrgencyColor, shouldShowInAppAlert, markAlertShown } from '../../services/notificationService';
+import { getCountryFromPhone } from '../../utils/countryFlags';
+import { exportSalesToPDF, exportSalesToExcel } from '../../utils/exportService';
+import { format, subDays } from 'date-fns';
+import { fr } from 'date-fns/locale';
 
 import { cardShadow } from '../../utils/shadows';
 
@@ -47,16 +52,40 @@ export default function DashboardScreen() {
 
     const topProducts = Array.from(productSales.values())
       .sort((a, b) => b.quantity - a.quantity)
-      .slice(0, 5);
+      .slice(0, 10);
 
     return { totalSales, totalExpenses, netProfit, realProfit, topProducts, totalDebts, totalPurchases };
   }, [sales, expenses, debts, purchases]);
 
   const isProfit = stats.realProfit >= 0;
+  const currency = user?.currency || 'USD';
   const daysRemaining = getDaysRemaining();
   const isSubActive = isSubscriptionActive();
   const expiryReminder = showExpiryReminder();
   const subDaysLeft = getSubscriptionDaysRemaining();
+
+  // Country flag from phone number
+  const country = getCountryFromPhone(user?.phoneNumber || '');
+
+  // Revenue chart data (last 7 days)
+  const chartData = useMemo(() => {
+    const days: { label: string; value: number }[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const date = subDays(new Date(), i);
+      const dateKey = format(date, 'yyyy-MM-dd');
+      const dayLabel = i === 0 ? "Auj" : i === 1 ? "Hier" : format(date, 'EEE', { locale: fr });
+      const dayRevenue = sales
+        .filter(s => {
+          try { return format(new Date(s.createdAt), 'yyyy-MM-dd') === dateKey; } catch { return false; }
+        })
+        .reduce((sum, s) => sum + s.totalAmount, 0);
+      days.push({ label: dayLabel.charAt(0).toUpperCase() + dayLabel.slice(1), value: dayRevenue });
+    }
+    return days;
+  }, [sales]);
+
+  const maxChartValue = Math.max(...chartData.map(d => d.value), 1);
+  const screenWidth = Dimensions.get('window').width - 48;
 
   // Determine urgency for trial or subscription
   const urgencyDays = isSubActive ? subDaysLeft : daysRemaining;
@@ -84,10 +113,14 @@ export default function DashboardScreen() {
 
   return (
     <ScrollView style={styles.container}>
-      {/* Header with Slogan */}
+      {/* Header with Logo, Flag, and Slogan */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>TekaTeka</Text>
+        <View style={styles.headerLeft}>
+          <View style={styles.logoRow}>
+            <Text style={styles.logoIcon}>🛒</Text>
+            <Text style={styles.greeting}>TekaTeka</Text>
+            <Text style={styles.flagEmoji}>{country.flag}</Text>
+          </View>
           <Text style={styles.slogan}>{i18n.t('slogan')}</Text>
           <Text style={styles.dateTime}>
             {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
@@ -196,7 +229,7 @@ export default function DashboardScreen() {
           </View>
           <View style={styles.storyCard}>
             <Image
-              source={{ uri: 'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=400' }}
+              source={{ uri: 'https://images.pexels.com/photos/36534594/pexels-photo-36534594.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940' }}
               style={styles.storyImage}
             />
             <View style={styles.storyOverlay}>
@@ -207,7 +240,7 @@ export default function DashboardScreen() {
           </View>
           <View style={styles.storyCard}>
             <Image
-              source={{ uri: 'https://images.unsplash.com/photo-1581470686066-773e689d5715?w=400' }}
+              source={{ uri: 'https://images.unsplash.com/photo-1671468158276-b486e8411457?w=400' }}
               style={styles.storyImage}
             />
             <View style={styles.storyOverlay}>
@@ -311,6 +344,52 @@ export default function DashboardScreen() {
         </View>
       </View>
 
+      {/* Revenue Chart - Last 7 days */}
+      <View style={styles.section}>
+        <View style={styles.chartHeader}>
+          <Text style={styles.sectionTitle}>Chiffre d'affaires (7 jours)</Text>
+          <View style={styles.exportButtons}>
+            <TouchableOpacity
+              style={styles.exportBtn}
+              onPress={() => exportSalesToPDF(sales, currency, user?.phoneNumber || '')}
+            >
+              <Ionicons name="document-text" size={16} color="#dc2626" />
+              <Text style={styles.exportBtnText}>PDF</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.exportBtn}
+              onPress={() => exportSalesToExcel(sales, currency, user?.phoneNumber || '')}
+            >
+              <Ionicons name="grid" size={16} color="#10b981" />
+              <Text style={[styles.exportBtnText, { color: '#10b981' }]}>Excel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+        <View style={styles.chartContainer}>
+          {chartData.map((day, index) => (
+            <View key={index} style={styles.chartColumn}>
+              <Text style={styles.chartValue}>
+                {day.value > 0 ? (day.value >= 1000 ? `${(day.value / 1000).toFixed(1)}k` : Math.round(day.value).toString()) : ''}
+              </Text>
+              <View style={styles.chartBarBg}>
+                <View
+                  style={[
+                    styles.chartBar,
+                    {
+                      height: `${Math.max((day.value / maxChartValue) * 100, 2)}%`,
+                      backgroundColor: index === chartData.length - 1 ? '#2563eb' : '#93c5fd',
+                    },
+                  ]}
+                />
+              </View>
+              <Text style={[styles.chartLabel, index === chartData.length - 1 && { fontWeight: '700', color: '#2563eb' }]}>
+                {day.label}
+              </Text>
+            </View>
+          ))}
+        </View>
+      </View>
+
       {/* Top Products */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{i18n.t('topProducts')}</Text>
@@ -371,10 +450,25 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  headerLeft: {
+    flex: 1,
+  },
+  logoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  logoIcon: {
+    fontSize: 26,
+  },
   greeting: {
     fontSize: 28,
     fontWeight: 'bold',
     color: '#1e293b',
+  },
+  flagEmoji: {
+    fontSize: 22,
+    marginLeft: 4,
   },
   slogan: {
     fontSize: 14,
@@ -678,5 +772,68 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#dc2626',
+  },
+  // Chart styles
+  chartHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  exportButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  exportBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#f8fafc',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  exportBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#dc2626',
+  },
+  chartContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    height: 180,
+    paddingHorizontal: 4,
+  },
+  chartColumn: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+  },
+  chartValue: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#64748b',
+    height: 14,
+  },
+  chartBarBg: {
+    width: '70%',
+    height: 130,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 6,
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+  },
+  chartBar: {
+    width: '100%',
+    borderRadius: 6,
+    minHeight: 3,
+  },
+  chartLabel: {
+    fontSize: 11,
+    color: '#64748b',
+    fontWeight: '500',
   },
 });

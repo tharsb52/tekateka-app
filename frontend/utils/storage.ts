@@ -1,37 +1,56 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User, Product, Sale, Expense, Debt, Purchase } from '../types';
 
-const KEYS = {
-  USER: '@tekateka:user',
-  PRODUCTS: '@tekateka:products',
-  SALES: '@tekateka:sales',
-  EXPENSES: '@tekateka:expenses',
-  DEBTS: '@tekateka:debts',
-  PURCHASES: '@tekateka:purchases',
-  PENDING_SYNC: '@tekateka:pendingSync',
-};
+// Active user key (global - tracks who is logged in)
+const ACTIVE_USER_KEY = '@tekateka:active_user';
 
-// User operations
+// Get user-specific keys
+const userKeys = (userId: string) => ({
+  PRODUCTS: `@tekateka:${userId}:products`,
+  SALES: `@tekateka:${userId}:sales`,
+  EXPENSES: `@tekateka:${userId}:expenses`,
+  DEBTS: `@tekateka:${userId}:debts`,
+  PURCHASES: `@tekateka:${userId}:purchases`,
+  PENDING_SYNC: `@tekateka:${userId}:pendingSync`,
+  USER_PROFILE: `@tekateka:${userId}:profile`,
+});
+
+// ============ USER operations ============
 export const saveUser = async (user: User): Promise<void> => {
-  await AsyncStorage.setItem(KEYS.USER, JSON.stringify(user));
+  const keys = userKeys(user.id);
+  await AsyncStorage.setItem(ACTIVE_USER_KEY, user.id);
+  await AsyncStorage.setItem(keys.USER_PROFILE, JSON.stringify(user));
 };
 
 export const getUser = async (): Promise<User | null> => {
-  const data = await AsyncStorage.getItem(KEYS.USER);
+  const activeId = await AsyncStorage.getItem(ACTIVE_USER_KEY);
+  if (!activeId) return null;
+  const keys = userKeys(activeId);
+  const data = await AsyncStorage.getItem(keys.USER_PROFILE);
   return data ? JSON.parse(data) : null;
 };
 
 export const clearUser = async (): Promise<void> => {
-  await AsyncStorage.removeItem(KEYS.USER);
+  // Only clear the active session, NOT the user's data
+  await AsyncStorage.removeItem(ACTIVE_USER_KEY);
 };
 
-// Products operations
+// Helper to get the active userId
+const getActiveUserId = async (): Promise<string | null> => {
+  return await AsyncStorage.getItem(ACTIVE_USER_KEY);
+};
+
+// ============ PRODUCTS operations ============
 export const saveProducts = async (products: Product[]): Promise<void> => {
-  await AsyncStorage.setItem(KEYS.PRODUCTS, JSON.stringify(products));
+  const userId = await getActiveUserId();
+  if (!userId) return;
+  await AsyncStorage.setItem(userKeys(userId).PRODUCTS, JSON.stringify(products));
 };
 
 export const getProducts = async (): Promise<Product[]> => {
-  const data = await AsyncStorage.getItem(KEYS.PRODUCTS);
+  const userId = await getActiveUserId();
+  if (!userId) return [];
+  const data = await AsyncStorage.getItem(userKeys(userId).PRODUCTS);
   return data ? JSON.parse(data) : [];
 };
 
@@ -56,13 +75,17 @@ export const deleteProduct = async (productId: string): Promise<void> => {
   await saveProducts(filtered);
 };
 
-// Sales operations
+// ============ SALES operations ============
 export const saveSales = async (sales: Sale[]): Promise<void> => {
-  await AsyncStorage.setItem(KEYS.SALES, JSON.stringify(sales));
+  const userId = await getActiveUserId();
+  if (!userId) return;
+  await AsyncStorage.setItem(userKeys(userId).SALES, JSON.stringify(sales));
 };
 
 export const getSales = async (): Promise<Sale[]> => {
-  const data = await AsyncStorage.getItem(KEYS.SALES);
+  const userId = await getActiveUserId();
+  if (!userId) return [];
+  const data = await AsyncStorage.getItem(userKeys(userId).SALES);
   return data ? JSON.parse(data) : [];
 };
 
@@ -87,13 +110,17 @@ export const deleteSale = async (saleId: string): Promise<void> => {
   await saveSales(filtered);
 };
 
-// Expenses operations
+// ============ EXPENSES operations ============
 export const saveExpenses = async (expenses: Expense[]): Promise<void> => {
-  await AsyncStorage.setItem(KEYS.EXPENSES, JSON.stringify(expenses));
+  const userId = await getActiveUserId();
+  if (!userId) return;
+  await AsyncStorage.setItem(userKeys(userId).EXPENSES, JSON.stringify(expenses));
 };
 
 export const getExpenses = async (): Promise<Expense[]> => {
-  const data = await AsyncStorage.getItem(KEYS.EXPENSES);
+  const userId = await getActiveUserId();
+  if (!userId) return [];
+  const data = await AsyncStorage.getItem(userKeys(userId).EXPENSES);
   return data ? JSON.parse(data) : [];
 };
 
@@ -118,13 +145,17 @@ export const deleteExpense = async (expenseId: string): Promise<void> => {
   await saveExpenses(filtered);
 };
 
-// Debts operations
+// ============ DEBTS operations ============
 export const saveDebts = async (debts: Debt[]): Promise<void> => {
-  await AsyncStorage.setItem(KEYS.DEBTS, JSON.stringify(debts));
+  const userId = await getActiveUserId();
+  if (!userId) return;
+  await AsyncStorage.setItem(userKeys(userId).DEBTS, JSON.stringify(debts));
 };
 
 export const getDebts = async (): Promise<Debt[]> => {
-  const data = await AsyncStorage.getItem(KEYS.DEBTS);
+  const userId = await getActiveUserId();
+  if (!userId) return [];
+  const data = await AsyncStorage.getItem(userKeys(userId).DEBTS);
   return data ? JSON.parse(data) : [];
 };
 
@@ -149,13 +180,17 @@ export const deleteDebt = async (debtId: string): Promise<void> => {
   await saveDebts(filtered);
 };
 
-// Purchases operations
+// ============ PURCHASES operations ============
 export const savePurchases = async (purchases: Purchase[]): Promise<void> => {
-  await AsyncStorage.setItem(KEYS.PURCHASES, JSON.stringify(purchases));
+  const userId = await getActiveUserId();
+  if (!userId) return;
+  await AsyncStorage.setItem(userKeys(userId).PURCHASES, JSON.stringify(purchases));
 };
 
 export const getPurchases = async (): Promise<Purchase[]> => {
-  const data = await AsyncStorage.getItem(KEYS.PURCHASES);
+  const userId = await getActiveUserId();
+  if (!userId) return [];
+  const data = await AsyncStorage.getItem(userKeys(userId).PURCHASES);
   return data ? JSON.parse(data) : [];
 };
 
@@ -180,7 +215,20 @@ export const deletePurchase = async (purchaseId: string): Promise<void> => {
   await savePurchases(filtered);
 };
 
-// Clear all data
+// ============ Clear all data for current user ============
 export const clearAllData = async (): Promise<void> => {
-  await AsyncStorage.multiRemove([KEYS.USER, KEYS.PRODUCTS, KEYS.SALES, KEYS.EXPENSES, KEYS.DEBTS, KEYS.PURCHASES, KEYS.PENDING_SYNC]);
+  const userId = await getActiveUserId();
+  if (!userId) return;
+  const keys = userKeys(userId);
+  await AsyncStorage.multiRemove([
+    keys.USER_PROFILE, keys.PRODUCTS, keys.SALES,
+    keys.EXPENSES, keys.DEBTS, keys.PURCHASES, keys.PENDING_SYNC,
+  ]);
+  await AsyncStorage.removeItem(ACTIVE_USER_KEY);
+};
+
+// ============ Check if user has data (for sample data init) ============
+export const userHasData = async (userId: string): Promise<boolean> => {
+  const data = await AsyncStorage.getItem(userKeys(userId).PRODUCTS);
+  return data !== null && JSON.parse(data).length > 0;
 };

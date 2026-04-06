@@ -256,8 +256,15 @@ export const generateSampleExpenses = (userId: string): Expense[] => {
 };
 
 export const initializeSampleData = async (userId: string) => {
-  const { saveProducts, saveSales, saveExpenses, saveDebts } = await import('./storage');
+  const { saveProducts, saveSales, saveExpenses, saveDebts, userHasData } = await import('./storage');
   const { generateSampleDebts } = await import('./sampleDebts');
+  
+  // Check if this user already has data - don't overwrite
+  const hasData = await userHasData(userId);
+  if (hasData) {
+    console.log('User already has data, skipping sample data init');
+    return null;
+  }
   
   const products = generateSampleProducts(userId);
   const sales = generateSampleSales(userId);
