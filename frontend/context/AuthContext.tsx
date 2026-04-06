@@ -64,28 +64,42 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       throw new Error('Invalid OTP');
     }
 
-    const newUser: User = {
-      id: phoneNumber,
-      phoneNumber,
-      createdAt: new Date().toISOString(),
-      trialStartDate: new Date().toISOString(),
-      isSubscribed: false,
-      currency: 'USD',
-      language: 'fr',
-    };
+    // Check if this user already has a saved profile
+    const { getUser: getStoredUser, saveUser: saveStoredUser } = await import('../utils/storage');
+    
+    // Temporarily set active user to check for existing profile
+    const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+    await AsyncStorage.setItem('@tekateka:active_user', phoneNumber);
+    
+    const existingUser = await getStoredUser();
+    
+    if (existingUser && existingUser.id === phoneNumber) {
+      // Existing user - restore their profile
+      console.log('Existing user found, restoring profile');
+      setUser(existingUser);
+      if (existingUser.language) await changeLocale(existingUser.language);
+    } else {
+      // New user - create fresh profile with EMPTY data
+      const newUser: User = {
+        id: phoneNumber,
+        phoneNumber,
+        createdAt: new Date().toISOString(),
+        trialStartDate: new Date().toISOString(),
+        isSubscribed: false,
+        currency: 'USD',
+        language: 'fr',
+      };
 
-    await saveUser(newUser);
-    
-    const { initializeSampleData } = await import('../utils/sampleData');
-    await initializeSampleData(phoneNumber);
-    console.log('Sample data initialized for demo');
-    
-    // Schedule trial expiry reminders
-    const trialEnd = new Date();
-    trialEnd.setDate(trialEnd.getDate() + 7);
-    scheduleExpiryReminders(trialEnd.toISOString(), true).catch(() => {});
-    
-    setUser(newUser);
+      await saveStoredUser(newUser);
+      console.log('New user created with empty data');
+      
+      // Schedule trial expiry reminders
+      const trialEnd = new Date();
+      trialEnd.setDate(trialEnd.getDate() + 7);
+      scheduleExpiryReminders(trialEnd.toISOString(), true).catch(() => {});
+      
+      setUser(newUser);
+    }
   };
 
   const logout = async () => {

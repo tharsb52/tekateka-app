@@ -22,15 +22,18 @@ export async function exportSalesToPDF(sales: Sale[], currency: string, userName
   dayMap.forEach((daySales, dateKey) => {
     const dayTotal = daySales.reduce((s, sale) => s + sale.totalAmount, 0);
     const dayLabel = format(new Date(dateKey), 'EEEE dd MMMM yyyy', { locale: fr });
-    tableRows += `<tr style="background:#eff6ff"><td colspan="5" style="padding:10px;font-weight:bold;color:#2563eb">${dayLabel} — Total: ${formatCurrency(dayTotal, currency)}</td></tr>`;
+    tableRows += `<tr style="background:#eff6ff"><td colspan="7" style="padding:10px;font-weight:bold;color:#2563eb">${dayLabel} — Total: ${formatCurrency(dayTotal, currency)}</td></tr>`;
     daySales.forEach(sale => {
+      const dateStr = format(new Date(sale.createdAt), 'dd/MM/yyyy');
       const time = format(new Date(sale.createdAt), 'HH:mm');
       tableRows += `<tr>
+        <td style="padding:6px 10px">${dateStr}</td>
         <td style="padding:6px 10px">${time}</td>
         <td style="padding:6px 10px">${sale.productName}</td>
         <td style="padding:6px 10px;text-align:center">${sale.quantity}</td>
         <td style="padding:6px 10px;text-align:right">${formatCurrency(sale.price, currency)}</td>
         <td style="padding:6px 10px;text-align:right;font-weight:600">${formatCurrency(sale.totalAmount, currency)}</td>
+        <td style="padding:6px 10px;text-align:center">${sale.paymentMethod || 'cash'}</td>
       </tr>`;
     });
   });
@@ -55,7 +58,7 @@ export async function exportSalesToPDF(sales: Sale[], currency: string, userName
         <p>${sortedSales.length} ventes • ${dayMap.size} jours</p>
       </div>
       <table>
-        <thead><tr><th>Heure</th><th>Produit</th><th>Qte</th><th>Prix unit.</th><th>Total</th></tr></thead>
+        <thead><tr><th>Date</th><th>Heure</th><th>Produit</th><th>Qte</th><th>Prix unit.</th><th>Total</th><th>Paiement</th></tr></thead>
         <tbody>${tableRows}</tbody>
       </table>
       <div class="footer">Rapport genere par TekaTeka — tekateka.app</div>
