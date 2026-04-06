@@ -40,8 +40,8 @@ export function convertCurrency(amount: number, fromCurrency: string, toCurrency
 export const formatCurrency = (amount: number, currencyCode: string): string => {
   const symbol = getCurrencySymbol(currencyCode);
   const formatted = amount.toLocaleString('fr-FR', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 3,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   });
   
   if (currencyCode === 'USD') {

@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Alert,
   Dimensions,
+  Modal,
 } from 'react-native';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
@@ -51,7 +52,7 @@ export default function DashboardScreen() {
     const realProfit = totalSales - totalExpenses - totalPurchases;
 
     // Top selling products (converted)
-    const productSales = new Map<string, { name: string; quantity: number; revenue: number }>();
+    const productSales: Map<string, { name: string; quantity: number; revenue: number }> = new Map();
     sales.forEach((sale) => {
       if (sale.productId === 'debt-payment') return;
       const convertedRevenue = convertCurrency(sale.totalAmount, sale.currency || userCurrency, userCurrency);
@@ -101,6 +102,23 @@ export default function DashboardScreen() {
   const maxChartValue = Math.max(...chartData.map(d => d.value), 1);
   const screenWidth = Dimensions.get('window').width - 48;
 
+  // State for day sales modal
+  const [selectedDay, setSelectedDay] = useState<{ label: string; dateKey: string; sales: any[]; total: number } | null>(null);
+
+  const openDaySales = (dayIndex: number) => {
+    const day = chartData[dayIndex];
+    const date = subDays(new Date(), 6 - dayIndex);
+    const dateKey = format(date, 'yyyy-MM-dd');
+    const userCurrency = user?.currency || 'USD';
+    const daySales = sales
+      .filter(s => {
+        try { return format(new Date(s.createdAt), 'yyyy-MM-dd') === dateKey; } catch { return false; }
+      })
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const total = daySales.reduce((sum, s) => sum + convertCurrency(s.totalAmount, s.currency || userCurrency, userCurrency), 0);
+    setSelectedDay({ label: day.label, dateKey, sales: daySales, total });
+  };
+
   // Determine urgency for trial or subscription
   const urgencyDays = isSubActive ? subDaysLeft : daysRemaining;
   const urgencyLevel = getUrgencyLevel(urgencyDays);
@@ -131,7 +149,7 @@ export default function DashboardScreen() {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <View style={styles.logoRow}>
-            <Image source={require('../../assets/images/tk-logo.png')} style={styles.logoImage} />
+            <Image source={require('../../assets/images/tk-logo-transparent.png')} style={styles.logoImage} />
             <Text style={styles.greeting}>TekaTeka</Text>
             <Text style={styles.flagEmoji}>{country.flag}</Text>
           </View>
@@ -381,7 +399,7 @@ export default function DashboardScreen() {
         </View>
         <View style={styles.chartContainer}>
           {chartData.map((day, index) => (
-            <View key={index} style={styles.chartColumn}>
+            <TouchableOpacity key={index} style={styles.chartColumn} onPress={() => openDaySales(index)} activeOpacity={0.7}>
               <Text style={styles.chartValue}>
                 {day.value > 0 ? (day.value >= 1000 ? `${(day.value / 1000).toFixed(1)}k` : Math.round(day.value).toString()) : ''}
               </Text>
@@ -399,7 +417,7 @@ export default function DashboardScreen() {
               <Text style={[styles.chartLabel, index === chartData.length - 1 && { fontWeight: '700', color: '#2563eb' }]}>
                 {day.label}
               </Text>
-            </View>
+            </TouchableOpacity>
           ))}
         </View>
       </View>
@@ -448,6 +466,54 @@ export default function DashboardScreen() {
       )}
 
       <View style={{ height: 80 }} />
+
+    {/* Day Sales Modal */}
+    <Modal visible={selectedDay !== null} animationType="slide" transparent>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>
+              Ventes — {selectedDay?.label}
+            </Text>
+            <TouchableOpacity onPress={() => setSelectedDay(null)}>
+              <Ionicons name="close-circle" size={30} color="#64748b" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.modalTotalBanner}>
+            <Ionicons name="cash" size={20} color="#10b981" />
+            <Text style={styles.modalTotalText}>
+              Total : {formatCurrency(selectedDay?.total || 0, currency)}
+            </Text>
+          </View>
+
+          <ScrollView style={{ maxHeight: 400 }}>
+            {selectedDay?.sales.length === 0 ? (
+              <View style={{ alignItems: 'center', padding: 40 }}>
+                <Ionicons name="receipt-outline" size={48} color="#cbd5e1" />
+                <Text style={{ color: '#94a3b8', marginTop: 8, fontSize: 15 }}>Aucune vente ce jour</Text>
+              </View>
+            ) : (
+              selectedDay?.sales.map((sale: any) => (
+                <View key={sale.id} style={styles.modalSaleCard}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 15, fontWeight: '600', color: '#1e293b' }}>{sale.productName}</Text>
+                    <Text style={{ fontSize: 12, color: '#2563eb', marginTop: 2 }}>
+                      {(() => { try { return format(new Date(sale.createdAt), 'HH:mm'); } catch { return ''; } })()}
+                      {' • '}{sale.quantity}x {formatCurrency(sale.price, sale.currency || currency)}
+                      {sale.currency && sale.currency !== currency ? ` (${sale.currency})` : ''}
+                    </Text>
+                  </View>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#10b981' }}>
+                    {formatCurrency(convertCurrency(sale.totalAmount, sale.currency || currency, currency), currency)}
+                  </Text>
+                </View>
+              ))
+            )}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
     </ScrollView>
   );
 }
@@ -851,5 +917,55 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#64748b',
     fontWeight: '500',
+  },
+  // Day sales modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1e293b',
+  },
+  modalTotalBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#f0fdf4',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#86efac',
+  },
+  modalTotalText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#166534',
+  },
+  modalSaleCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
 });

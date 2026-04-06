@@ -83,7 +83,7 @@ export default function LoginScreen() {
     >
       <View style={styles.content}>
         <View style={styles.header}>
-          <Image source={require('../assets/images/tk-logo.png')} style={styles.logoImage} />
+          <Image source={require('../assets/images/tk-logo-transparent.png')} style={styles.logoImage} />
           <Text style={styles.title}>TekaTeka</Text>
           <Text style={styles.subtitle}>{i18n.t('welcome')}</Text>
         </View>
