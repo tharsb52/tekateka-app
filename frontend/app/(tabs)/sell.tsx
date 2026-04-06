@@ -253,6 +253,21 @@ export default function SellScreen() {
                 </View>
               </View>
 
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Devise du client</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+                  {CURRENCIES.map((c) => (
+                    <TouchableOpacity key={c.code}
+                      style={[styles.currencyChip, currency === c.code && styles.currencyChipSelected]}
+                      onPress={() => setCurrency(c.code)}>
+                      <Text style={[styles.currencyChipText, currency === c.code && styles.currencyChipTextSelected]}>
+                        {c.symbol} {c.code}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+
               <View style={styles.totalCard}>
                 <Text style={styles.totalLabel}>{i18n.t('totalAmount')}</Text>
                 <Text style={styles.totalAmount}>{formatCurrency(totalAmount, currency)}</Text>
@@ -333,6 +348,11 @@ const styles = StyleSheet.create({
   paymentButtonSelected: { backgroundColor: '#2563eb', borderColor: '#2563eb' },
   paymentText: { fontSize: 14, fontWeight: '600', color: '#64748b' },
   paymentTextSelected: { color: '#fff' },
+  // Currency chips
+  currencyChip: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, borderWidth: 2, borderColor: '#e2e8f0', backgroundColor: '#fff', marginRight: 8 },
+  currencyChipSelected: { backgroundColor: '#2563eb', borderColor: '#2563eb' },
+  currencyChipText: { fontSize: 14, fontWeight: '600', color: '#64748b' },
+  currencyChipTextSelected: { color: '#fff' },
   totalCard: { backgroundColor: '#fff', margin: 16, padding: 20, borderRadius: 16, alignItems: 'center', borderWidth: 2, borderColor: '#2563eb' },
   totalLabel: { fontSize: 14, color: '#64748b', marginBottom: 6 },
   totalAmount: { fontSize: 30, fontWeight: 'bold', color: '#2563eb' },

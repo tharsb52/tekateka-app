@@ -14,7 +14,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'expo-router';
 import i18n from '../../utils/i18n';
 import { Ionicons } from '@expo/vector-icons';
-import { formatCurrency } from '../../utils/currencies';
+import { formatCurrency, convertCurrency } from '../../utils/currencies';
 import { getUrgencyLevel, getUrgencyColor, shouldShowInAppAlert, markAlertShown } from '../../services/notificationService';
 import { getCountryFromPhone } from '../../utils/countryFlags';
 import { exportSalesToPDF, exportSalesToExcel } from '../../utils/exportService';
@@ -31,22 +31,35 @@ export default function DashboardScreen() {
   const router = useRouter();
 
   const stats = useMemo(() => {
-    const totalSales = sales.reduce((sum, sale) => sum + sale.totalAmount, 0);
-    const totalExpenses = expenses.reduce((sum, exp) => sum + exp.amount, 0);
-    const totalDebts = debts.filter(d => !d.isPaid).reduce((sum, debt) => sum + debt.amount, 0);
+    const userCurrency = user?.currency || 'USD';
+    
+    // Convert all sales to user's currency
+    const totalSales = sales.reduce((sum, sale) => {
+      return sum + convertCurrency(sale.totalAmount, sale.currency || userCurrency, userCurrency);
+    }, 0);
+    
+    const totalExpenses = expenses.reduce((sum, exp) => {
+      return sum + convertCurrency(exp.amount, exp.currency || userCurrency, userCurrency);
+    }, 0);
+    
+    const totalDebts = debts.filter(d => !d.isPaid).reduce((sum, debt) => {
+      return sum + convertCurrency(debt.amount, debt.currency || userCurrency, userCurrency);
+    }, 0);
+    
     const totalPurchases = products.reduce((sum, p) => sum + (p.purchasePrice || 0) * p.stock, 0);
     const netProfit = totalSales - totalExpenses;
     const realProfit = totalSales - totalExpenses - totalPurchases;
 
-    // Top selling products
+    // Top selling products (converted)
     const productSales = new Map<string, { name: string; quantity: number; revenue: number }>();
     sales.forEach((sale) => {
-      if (sale.productId === 'debt-payment') return; // Skip debt payments for top products
+      if (sale.productId === 'debt-payment') return;
+      const convertedRevenue = convertCurrency(sale.totalAmount, sale.currency || userCurrency, userCurrency);
       const existing = productSales.get(sale.productId) || { name: sale.productName, quantity: 0, revenue: 0 };
       productSales.set(sale.productId, {
         name: sale.productName,
         quantity: existing.quantity + sale.quantity,
-        revenue: existing.revenue + sale.totalAmount,
+        revenue: existing.revenue + convertedRevenue,
       });
     });
 
@@ -55,7 +68,7 @@ export default function DashboardScreen() {
       .slice(0, 10);
 
     return { totalSales, totalExpenses, netProfit, realProfit, topProducts, totalDebts, totalPurchases };
-  }, [sales, expenses, debts, purchases]);
+  }, [sales, expenses, debts, purchases, products, user?.currency]);
 
   const isProfit = stats.realProfit >= 0;
   const currency = user?.currency || 'USD';
@@ -67,8 +80,9 @@ export default function DashboardScreen() {
   // Country flag from phone number
   const country = getCountryFromPhone(user?.phoneNumber || '');
 
-  // Revenue chart data (last 7 days)
+  // Revenue chart data (last 7 days) - converted to user currency
   const chartData = useMemo(() => {
+    const userCurrency = user?.currency || 'USD';
     const days: { label: string; value: number }[] = [];
     for (let i = 6; i >= 0; i--) {
       const date = subDays(new Date(), i);
@@ -78,11 +92,11 @@ export default function DashboardScreen() {
         .filter(s => {
           try { return format(new Date(s.createdAt), 'yyyy-MM-dd') === dateKey; } catch { return false; }
         })
-        .reduce((sum, s) => sum + s.totalAmount, 0);
+        .reduce((sum, s) => sum + convertCurrency(s.totalAmount, s.currency || userCurrency, userCurrency), 0);
       days.push({ label: dayLabel.charAt(0).toUpperCase() + dayLabel.slice(1), value: dayRevenue });
     }
     return days;
-  }, [sales]);
+  }, [sales, user?.currency]);
 
   const maxChartValue = Math.max(...chartData.map(d => d.value), 1);
   const screenWidth = Dimensions.get('window').width - 48;

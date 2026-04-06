@@ -15,7 +15,7 @@ import { VoiceInputButton } from '../../components/VoiceInputButton';
 
 const BG = '#fef3e7';
 const EXPENSE_CATEGORIES: ExpenseCategoryType[] = [
-  'inventory', 'transport', 'rent', 'electricity', 'water', 'internet',
+  'transport', 'rent', 'electricity', 'water', 'internet',
   'salaries', 'mobileMoneyFees', 'taxes', 'maintenance', 'supplies', 'miscellaneous',
 ];
 
@@ -25,7 +25,7 @@ export default function ExpensesScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingExpense, setEditingExpense] = useState<any>(null);
   const [formData, setFormData] = useState({
-    category: 'inventory' as ExpenseCategoryType,
+    category: 'transport' as ExpenseCategoryType,
     customCategory: '', amount: '', notes: '', productId: '',
   });
 
