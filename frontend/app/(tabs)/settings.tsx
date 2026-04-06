@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { CURRENCIES } from '../../utils/currencies';
 import { getOTPProviderInfo } from '../../services/otpService';
 import { getPaymentProviderInfo } from '../../services/paymentService';
+import AppHeader from '../../components/AppHeader';
 
 const BG = '#fef3e7';
 
@@ -54,10 +55,7 @@ export default function SettingsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Ionicons name="settings" size={32} color="#2563eb" />
-        <Text style={styles.title}>Paramètres</Text>
-      </View>
+      <AppHeader title="Paramètres" />
 
       <ScrollView style={styles.content}>
         {/* Profile Section */}

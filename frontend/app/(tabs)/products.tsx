@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { formatCurrency } from '../../utils/currencies';
 import { CategoryType } from '../../types';
 import { cardShadow } from '../../utils/shadows';
+import AppHeader from '../../components/AppHeader';
 import { VoiceInputButton } from '../../components/VoiceInputButton';
 
 const BG = '#fef3e7';
@@ -98,9 +99,8 @@ export default function ProductsScreen() {
 
   return (
     <View style={styles.container}>
+      <AppHeader title="Produits" />
       <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Ionicons name="cube" size={28} color="#2563eb" />
           <View>
             <Text style={styles.title}>{i18n.t('products')}</Text>
             <Text style={styles.totalText}>Inventaire: {formatCurrency(totalInventoryValue, currency)}</Text>

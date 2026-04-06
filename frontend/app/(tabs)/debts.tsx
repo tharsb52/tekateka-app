@@ -17,6 +17,7 @@ import i18n from '../../utils/i18n';
 import { Ionicons } from '@expo/vector-icons';
 import { formatCurrency } from '../../utils/currencies';
 import { format } from 'date-fns';
+import AppHeader from '../../components/AppHeader';
 
 import { cardShadow } from '../../utils/shadows';
 import { VoiceInputButton } from '../../components/VoiceInputButton';
@@ -140,11 +141,10 @@ export default function DebtsScreen() {
 
   return (
     <View style={styles.container}>
+      <AppHeader title="Dettes" />
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Ionicons name="receipt" size={32} color="#f59e0b" />
           <View>
-            <Text style={styles.title}>{i18n.t('debts')}</Text>
             <Text style={styles.totalText}>
               {formatCurrency(totalUnpaidAmount, user?.currency || 'USD')} non payé
             </Text>

@@ -12,6 +12,7 @@ import { ExpenseCategoryType } from '../../types';
 import { format } from 'date-fns';
 import { cardShadow } from '../../utils/shadows';
 import { VoiceInputButton } from '../../components/VoiceInputButton';
+import AppHeader from '../../components/AppHeader';
 
 const BG = '#fef3e7';
 const EXPENSE_CATEGORIES: ExpenseCategoryType[] = [
@@ -82,9 +83,8 @@ export default function ExpensesScreen() {
 
   return (
     <View style={styles.container}>
+      <AppHeader title="Charges" />
       <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Ionicons name="wallet" size={28} color="#dc2626" />
           <View>
             <Text style={styles.title}>{i18n.t('expenses')}</Text>
             <Text style={styles.totalText}>{formatCurrency(totalExpenses, currency)}</Text>

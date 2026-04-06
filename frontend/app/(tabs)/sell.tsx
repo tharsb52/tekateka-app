@@ -11,6 +11,7 @@ import { formatCurrency, CURRENCIES } from '../../utils/currencies';
 import { format, isToday, isYesterday, parseISO } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cardShadow } from '../../utils/shadows';
+import AppHeader from '../../components/AppHeader';
 import { VoiceInputButton } from '../../components/VoiceInputButton';
 
 const BG = '#fef3e7';
@@ -116,8 +117,8 @@ export default function SellScreen() {
 
   return (
     <ScrollView style={styles.container}>
+      <AppHeader title="Vendre" />
       <View style={styles.header}>
-        <Ionicons name="cart" size={28} color="#2563eb" />
         <Text style={styles.title}>{i18n.t('sell')}</Text>
         <View style={{ flex: 1 }} />
         <TouchableOpacity style={styles.historyBtn} onPress={() => setShowHistory(!showHistory)}>
