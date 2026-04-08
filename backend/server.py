@@ -6,12 +6,13 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
 import uuid
 from datetime import datetime
 
-# Import reporting router
+# Import routers
 from reporting import router as reporting_router
+from otp_service import send_otp, verify_otp
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -36,6 +37,14 @@ class StatusCheck(BaseModel):
 
 class StatusCheckCreate(BaseModel):
     client_name: str
+
+# OTP Models
+class OTPSendRequest(BaseModel):
+    phoneNumber: str
+
+class OTPVerifyRequest(BaseModel):
+    phoneNumber: str
+    code: str
 
 # Add your routes to the router instead of directly to app
 @api_router.get("/")
@@ -74,6 +83,21 @@ async def get_status_checks(limit: int = 100, skip: int = 0):
         {}, {"id": 1, "client_name": 1, "timestamp": 1, "_id": 0}
     ).limit(limit).skip(skip).to_list(limit)
     return [StatusCheck(**status_check) for status_check in status_checks]
+
+# ==========================================
+# OTP Routes (Africa's Talking)
+# ==========================================
+@api_router.post("/otp/send")
+async def api_send_otp(request: OTPSendRequest):
+    """Send OTP code via Africa's Talking SMS."""
+    result = await send_otp(request.phoneNumber)
+    return result
+
+@api_router.post("/otp/verify")
+async def api_verify_otp(request: OTPVerifyRequest):
+    """Verify OTP code."""
+    result = await verify_otp(request.phoneNumber, request.code)
+    return result
 
 # Include the router in the main app
 app.include_router(api_router)

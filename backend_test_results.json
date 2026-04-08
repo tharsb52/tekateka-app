@@ -1,9 +1,9 @@
 {
-  "timestamp": "2026-04-04T12:11:12.865565",
+  "timestamp": "2026-04-08T18:24:29.198686",
   "backend_url": "https://low-data-shop.preview.emergentagent.com",
   "summary": {
-    "total_tests": 5,
-    "passed": 5,
+    "total_tests": 9,
+    "passed": 9,
     "failed": 0
   },
   "results": [
@@ -11,7 +11,7 @@
       "endpoint": "/api/health",
       "status": "PASS",
       "details": "Health check returned correct format and healthy status",
-      "timestamp": "2026-04-04T12:11:12.655694",
+      "timestamp": "2026-04-08T18:24:27.951332",
       "response_data": {
         "status": "healthy",
         "database": "connected"
@@ -21,7 +21,7 @@
       "endpoint": "/api/",
       "status": "PASS",
       "details": "Root endpoint returned correct message",
-      "timestamp": "2026-04-04T12:11:12.700539",
+      "timestamp": "2026-04-08T18:24:28.001833",
       "response_data": {
         "message": "Hello World"
       }
@@ -30,7 +30,7 @@
       "endpoint": "/api/reports/analytics",
       "status": "PASS",
       "details": "Analytics endpoint returned correct format and data types",
-      "timestamp": "2026-04-04T12:11:12.757623",
+      "timestamp": "2026-04-08T18:24:28.058443",
       "response_data": {
         "total_users": 0,
         "new_users_this_week": 0,
@@ -43,19 +43,69 @@
     {
       "endpoint": "/api/status",
       "status": "PASS",
-      "details": "Status endpoint returned empty list (no data yet)",
-      "timestamp": "2026-04-04T12:11:12.803645",
-      "response_data": []
+      "details": "Status endpoint returned 2 items with correct structure",
+      "timestamp": "2026-04-08T18:24:28.110387",
+      "response_data": {
+        "count": 2,
+        "sample": {
+          "id": "05e14e3f-ef48-4762-a290-4e833af38332",
+          "client_name": "TekaTeka Mobile App",
+          "timestamp": "2026-04-04T12:11:12.831000"
+        }
+      }
     },
     {
       "endpoint": "POST /api/status",
       "status": "PASS",
       "details": "Status check created successfully",
-      "timestamp": "2026-04-04T12:11:12.865405",
+      "timestamp": "2026-04-08T18:24:28.167592",
       "response_data": {
-        "id": "05e14e3f-ef48-4762-a290-4e833af38332",
+        "id": "33eac8cf-0392-4d09-be5c-91d8a45fd56e",
         "client_name": "TekaTeka Mobile App",
-        "timestamp": "2026-04-04T12:11:12.831675"
+        "timestamp": "2026-04-08T18:24:28.144884"
+      }
+    },
+    {
+      "endpoint": "POST /api/otp/send",
+      "status": "PASS",
+      "details": "OTP sent successfully. Debug code: 1838",
+      "timestamp": "2026-04-08T18:24:28.653074",
+      "response_data": {
+        "success": true,
+        "message": "Code g\u00e9n\u00e9r\u00e9 pour +243111000111",
+        "sandbox": true,
+        "debug_code": "1838",
+        "warning": "The supplied authentication is invalid"
+      }
+    },
+    {
+      "endpoint": "POST /api/otp/verify (correct)",
+      "status": "PASS",
+      "details": "OTP verification successful with correct code",
+      "timestamp": "2026-04-08T18:24:28.706534",
+      "response_data": {
+        "success": true,
+        "message": "V\u00e9rification r\u00e9ussie!"
+      }
+    },
+    {
+      "endpoint": "POST /api/otp/verify (wrong)",
+      "status": "PASS",
+      "details": "OTP verification correctly failed with wrong code",
+      "timestamp": "2026-04-08T18:24:29.148626",
+      "response_data": {
+        "success": false,
+        "message": "Code incorrect. 4 tentatives restantes."
+      }
+    },
+    {
+      "endpoint": "POST /api/otp/verify (no code)",
+      "status": "PASS",
+      "details": "OTP verification correctly failed when no code was sent",
+      "timestamp": "2026-04-08T18:24:29.198496",
+      "response_data": {
+        "success": false,
+        "message": "Aucun code envoy\u00e9 pour ce num\u00e9ro. Veuillez en demander un nouveau."
       }
     }
   ]

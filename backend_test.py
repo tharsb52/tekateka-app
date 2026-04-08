@@ -207,6 +207,155 @@ class BackendTester:
         except requests.exceptions.RequestException as e:
             self.log_test("POST /api/status", "FAIL", f"Request failed: {str(e)}")
 
+    def test_otp_send_endpoint(self):
+        """Test POST /api/otp/send endpoint"""
+        try:
+            test_data = {
+                "phoneNumber": "+243111000111"
+            }
+            
+            response = self.session.post(
+                f"{self.base_url}/api/otp/send", 
+                json=test_data,
+                headers={"Content-Type": "application/json"}
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                if data.get("success") is True:
+                    # Check if we got a debug_code (sandbox mode)
+                    if "debug_code" in data:
+                        self.debug_code = data["debug_code"]  # Store for verification test
+                        self.log_test("POST /api/otp/send", "PASS", 
+                                    f"OTP sent successfully. Debug code: {self.debug_code}", data)
+                    else:
+                        self.log_test("POST /api/otp/send", "PASS", 
+                                    "OTP sent successfully (production mode)", data)
+                else:
+                    self.log_test("POST /api/otp/send", "FAIL", 
+                                f"OTP send failed: {data.get('message', 'Unknown error')}", data)
+            else:
+                self.log_test("POST /api/otp/send", "FAIL", 
+                            f"Expected 200 OK, got {response.status_code}: {response.text}")
+                
+        except requests.exceptions.RequestException as e:
+            self.log_test("POST /api/otp/send", "FAIL", f"Request failed: {str(e)}")
+
+    def test_otp_verify_correct_code(self):
+        """Test POST /api/otp/verify with correct code"""
+        if not hasattr(self, 'debug_code'):
+            self.log_test("POST /api/otp/verify (correct)", "SKIP", 
+                        "Skipped - no debug code from send test")
+            return
+            
+        try:
+            test_data = {
+                "phoneNumber": "+243111000111",
+                "code": self.debug_code
+            }
+            
+            response = self.session.post(
+                f"{self.base_url}/api/otp/verify", 
+                json=test_data,
+                headers={"Content-Type": "application/json"}
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                if data.get("success") is True:
+                    self.log_test("POST /api/otp/verify (correct)", "PASS", 
+                                "OTP verification successful with correct code", data)
+                else:
+                    self.log_test("POST /api/otp/verify (correct)", "FAIL", 
+                                f"OTP verification failed: {data.get('message', 'Unknown error')}", data)
+            else:
+                self.log_test("POST /api/otp/verify (correct)", "FAIL", 
+                            f"Expected 200 OK, got {response.status_code}: {response.text}")
+                
+        except requests.exceptions.RequestException as e:
+            self.log_test("POST /api/otp/verify (correct)", "FAIL", f"Request failed: {str(e)}")
+
+    def test_otp_verify_wrong_code(self):
+        """Test POST /api/otp/verify with wrong code"""
+        try:
+            # First send an OTP to have something to verify against
+            send_data = {"phoneNumber": "+243111000111"}
+            send_response = self.session.post(
+                f"{self.base_url}/api/otp/send", 
+                json=send_data,
+                headers={"Content-Type": "application/json"}
+            )
+            
+            if send_response.status_code != 200 or not send_response.json().get("success"):
+                self.log_test("POST /api/otp/verify (wrong)", "FAIL", 
+                            "Could not send OTP for wrong code test")
+                return
+            
+            # Now try with wrong code
+            test_data = {
+                "phoneNumber": "+243111000111",
+                "code": "0000"
+            }
+            
+            response = self.session.post(
+                f"{self.base_url}/api/otp/verify", 
+                json=test_data,
+                headers={"Content-Type": "application/json"}
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                if data.get("success") is False:
+                    self.log_test("POST /api/otp/verify (wrong)", "PASS", 
+                                "OTP verification correctly failed with wrong code", data)
+                else:
+                    self.log_test("POST /api/otp/verify (wrong)", "FAIL", 
+                                "OTP verification should have failed with wrong code", data)
+            else:
+                self.log_test("POST /api/otp/verify (wrong)", "FAIL", 
+                            f"Expected 200 OK, got {response.status_code}: {response.text}")
+                
+        except requests.exceptions.RequestException as e:
+            self.log_test("POST /api/otp/verify (wrong)", "FAIL", f"Request failed: {str(e)}")
+
+    def test_otp_verify_no_code_sent(self):
+        """Test POST /api/otp/verify with no OTP sent"""
+        try:
+            test_data = {
+                "phoneNumber": "+243999999999",  # Different number with no OTP sent
+                "code": "1234"
+            }
+            
+            response = self.session.post(
+                f"{self.base_url}/api/otp/verify", 
+                json=test_data,
+                headers={"Content-Type": "application/json"}
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                if data.get("success") is False:
+                    message = data.get("message", "").lower()
+                    if "aucun code" in message or "no code" in message:
+                        self.log_test("POST /api/otp/verify (no code)", "PASS", 
+                                    "OTP verification correctly failed when no code was sent", data)
+                    else:
+                        self.log_test("POST /api/otp/verify (no code)", "PASS", 
+                                    "OTP verification failed as expected (different error message)", data)
+                else:
+                    self.log_test("POST /api/otp/verify (no code)", "FAIL", 
+                                "OTP verification should have failed when no code was sent", data)
+            else:
+                self.log_test("POST /api/otp/verify (no code)", "FAIL", 
+                            f"Expected 200 OK, got {response.status_code}: {response.text}")
+                
+        except requests.exceptions.RequestException as e:
+            self.log_test("POST /api/otp/verify (no code)", "FAIL", f"Request failed: {str(e)}")
+
     def run_all_tests(self):
         """Run all backend tests"""
         print(f"🚀 Starting TekaTeka Backend API Tests")
@@ -221,6 +370,14 @@ class BackendTester:
         self.test_status_endpoint_with_pagination()
         self.test_status_endpoint_create()
         
+        # Test OTP endpoints
+        print("🔐 Testing Africa's Talking OTP Integration")
+        print("-" * 40)
+        self.test_otp_send_endpoint()
+        self.test_otp_verify_correct_code()
+        self.test_otp_verify_wrong_code()
+        self.test_otp_verify_no_code_sent()
+        
         # Summary
         print("=" * 60)
         print("📊 TEST SUMMARY")
@@ -228,10 +385,13 @@ class BackendTester:
         
         passed = sum(1 for result in self.test_results if result["status"] == "PASS")
         failed = sum(1 for result in self.test_results if result["status"] == "FAIL")
+        skipped = sum(1 for result in self.test_results if result["status"] == "SKIP")
         total = len(self.test_results)
         
         print(f"✅ Passed: {passed}/{total}")
         print(f"❌ Failed: {failed}/{total}")
+        if skipped > 0:
+            print(f"⏭️  Skipped: {skipped}/{total}")
         print()
         
         if failed > 0:

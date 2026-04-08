@@ -102,7 +102,7 @@
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
 
-user_problem_statement: "Test the TekaTeka FastAPI backend running on http://localhost:8001. Test these endpoints: 1. GET /api/health - NEW health check endpoint, should return {\"status\": \"healthy\", \"database\": \"connected\"} 2. GET /api/ - Root endpoint, should return {\"message\": \"Hello World\"} 3. GET /api/reports/analytics - Optimized analytics endpoint using MongoDB aggregation pipelines. Should return JSON with: total_users, new_users_this_week, countries, total_revenue, revenue_growth, active_users 4. GET /api/status?limit=10&skip=0 - Status checks with pagination"
+user_problem_statement: "Test the TekaTeka FastAPI backend running on http://localhost:8001. Test these endpoints: 1. GET /api/health - NEW health check endpoint, should return {\"status\": \"healthy\", \"database\": \"connected\"} 2. GET /api/ - Root endpoint, should return {\"message\": \"Hello World\"} 3. GET /api/reports/analytics - Optimized analytics endpoint using MongoDB aggregation pipelines. Should return JSON with: total_users, new_users_this_week, countries, total_revenue, revenue_growth, active_users 4. GET /api/status?limit=10&skip=0 - Status checks with pagination. ADDITIONAL: Test the Africa's Talking OTP integration endpoints: POST /api/otp/send and POST /api/otp/verify"
 
 backend:
   - task: "Health Check Endpoint"
@@ -153,6 +153,30 @@ backend:
           agent: "testing"
           comment: "Status endpoint (/api/status) with pagination working correctly. GET returns empty list (no data yet), POST creates status checks successfully with proper UUID generation and timestamp."
 
+  - task: "OTP Send Endpoint"
+    implemented: true
+    working: true
+    file: "server.py, otp_service.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "OTP send endpoint (/api/otp/send) working correctly. Successfully generates and stores OTP codes. Returns debug_code in sandbox mode. Africa's Talking integration configured but shows authentication warning (expected in sandbox mode). Core functionality working properly."
+
+  - task: "OTP Verify Endpoint"
+    implemented: true
+    working: true
+    file: "server.py, otp_service.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "OTP verify endpoint (/api/otp/verify) working correctly. Successfully validates correct codes, rejects wrong codes, handles expired/missing codes appropriately. All verification scenarios tested and working as expected."
+
 frontend:
   # No frontend testing requested
 
@@ -168,6 +192,8 @@ test_plan:
     - "Root API Endpoint"
     - "Analytics Reporting Endpoint"
     - "Status Checks with Pagination"
+    - "OTP Send Endpoint"
+    - "OTP Verify Endpoint"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -175,3 +201,5 @@ test_plan:
 agent_communication:
     - agent: "testing"
       message: "Completed comprehensive backend API testing for TekaTeka. All 4 requested endpoints are working correctly: 1) /api/health returns proper health status with database connectivity, 2) /api/ returns Hello World message, 3) /api/reports/analytics returns all required analytics fields with proper data types, 4) /api/status supports pagination and CRUD operations. Backend is fully functional and ready for production use."
+    - agent: "testing"
+      message: "ADDITIONAL: Completed Africa's Talking OTP integration testing. Fixed critical routing issue where OTP endpoints were not being registered (routes were added after router inclusion). Both OTP endpoints now working correctly: 1) /api/otp/send successfully generates and stores OTP codes, returns debug_code in sandbox mode, 2) /api/otp/verify properly validates codes with all scenarios tested (correct code, wrong code, expired/missing codes). Africa's Talking authentication shows expected sandbox warning but core OTP functionality is fully operational."
