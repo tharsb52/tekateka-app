@@ -75,7 +75,8 @@ export const getOTPProviderInfo = () => {
   return {
     provider,
     isMock: provider === 'mock',
-    name: provider === 'africas_talking' ? "Africa's Talking" : 'Mode Test',
+    isSandbox: provider === 'africas_talking', // sandbox mode returns debug_code
+    name: provider === 'africas_talking' ? "Africa's Talking (Sandbox)" : 'Mode Test',
   };
 };
 
@@ -127,19 +128,6 @@ const verifyOTPMock = async (phoneNumber: string, code: string): Promise<VerifyR
 // ==========================================
 
 const sendOTPAfricasTalking = async (phoneNumber: string): Promise<OTPResult> => {
-  /**
-   * TODO: Implémenter quand les clés API sont disponibles
-   * 
-   * L'implémentation utilisera l'API backend :
-   * POST /api/otp/send
-   * Body: { phoneNumber: "+243..." }
-   * 
-   * Le backend appellera Africa's Talking SMS API :
-   * - Endpoint: https://api.africastalking.com/version1/messaging
-   * - Headers: { apiKey: AT_API_KEY, Accept: 'application/json' }
-   * - Body: { username: AT_USERNAME, to: phoneNumber, message: `Votre code TekaTeka: ${otp}` }
-   */
-  
   const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || '';
   
   try {
@@ -154,7 +142,9 @@ const sendOTPAfricasTalking = async (phoneNumber: string): Promise<OTPResult> =>
     if (response.ok && data.success) {
       return {
         success: true,
-        message: `Code envoyé à +${phoneNumber}`,
+        message: data.message || `Code envoyé à +${phoneNumber}`,
+        // In sandbox mode, backend returns debug_code for testing
+        otp: data.debug_code || undefined,
       };
     }
 

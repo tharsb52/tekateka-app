@@ -128,7 +128,7 @@ export default function LoginScreen() {
                 autoFocus
               />
               
-              {mockOtp && otpInfo.isMock ? (
+              {mockOtp ? (
                 <View style={styles.mockOtpBox}>
                   <Text style={styles.mockOtpLabel}>Code test ({otpInfo.name}) :</Text>
                   <Text style={styles.mockOtpText}>{mockOtp}</Text>
@@ -159,12 +159,10 @@ export default function LoginScreen() {
         </View>
 
         {/* Provider indicator */}
-        {otpInfo.isMock && (
-          <View style={styles.providerBadge}>
-            <Ionicons name="flask" size={14} color="#92400e" />
-            <Text style={styles.providerText}>{otpInfo.name}</Text>
-          </View>
-        )}
+        <View style={styles.providerBadge}>
+          <Ionicons name={otpInfo.isMock ? "flask" : "cellular"} size={14} color={otpInfo.isMock ? "#92400e" : "#065f46"} />
+          <Text style={[styles.providerText, !otpInfo.isMock && { color: '#065f46' }]}>{otpInfo.name}</Text>
+        </View>
       </View>
     </KeyboardAvoidingView>
   );
