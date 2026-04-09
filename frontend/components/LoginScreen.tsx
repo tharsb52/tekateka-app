@@ -22,30 +22,34 @@ import { sendOTP, verifyOTP, getOTPProviderInfo } from '../services/otpService';
 
 const BG = '#fef3e7';
 
-// Country list for the picker
+// Flag image URL from CDN (works on all platforms)
+const getFlagUrl = (iso: string) =>
+  `https://flagcdn.com/w80/${iso.toLowerCase()}.png`;
+
+// Country list for the picker (iso = 2-letter country code for flag CDN)
 const COUNTRIES = [
-  { code: '243', flag: '🇨🇩', name: 'RD Congo' },
-  { code: '237', flag: '🇨🇲', name: 'Cameroun' },
-  { code: '225', flag: '🇨🇮', name: "Côte d'Ivoire" },
-  { code: '221', flag: '🇸🇳', name: 'Sénégal' },
-  { code: '254', flag: '🇰🇪', name: 'Kenya' },
-  { code: '255', flag: '🇹🇿', name: 'Tanzanie' },
-  { code: '256', flag: '🇺🇬', name: 'Ouganda' },
-  { code: '250', flag: '🇷🇼', name: 'Rwanda' },
-  { code: '257', flag: '🇧🇮', name: 'Burundi' },
-  { code: '234', flag: '🇳🇬', name: 'Nigéria' },
-  { code: '233', flag: '🇬🇭', name: 'Ghana' },
-  { code: '228', flag: '🇹🇬', name: 'Togo' },
-  { code: '229', flag: '🇧🇯', name: 'Bénin' },
-  { code: '226', flag: '🇧🇫', name: 'Burkina Faso' },
-  { code: '223', flag: '🇲🇱', name: 'Mali' },
-  { code: '242', flag: '🇨🇬', name: 'Congo' },
-  { code: '241', flag: '🇬🇦', name: 'Gabon' },
-  { code: '235', flag: '🇹🇩', name: 'Tchad' },
-  { code: '236', flag: '🇨🇫', name: 'Centrafrique' },
-  { code: '33', flag: '🇫🇷', name: 'France' },
-  { code: '32', flag: '🇧🇪', name: 'Belgique' },
-  { code: '1', flag: '🇺🇸', name: 'USA' },
+  { code: '243', iso: 'cd', name: 'RD Congo' },
+  { code: '237', iso: 'cm', name: 'Cameroun' },
+  { code: '225', iso: 'ci', name: "Côte d'Ivoire" },
+  { code: '221', iso: 'sn', name: 'Sénégal' },
+  { code: '254', iso: 'ke', name: 'Kenya' },
+  { code: '255', iso: 'tz', name: 'Tanzanie' },
+  { code: '256', iso: 'ug', name: 'Ouganda' },
+  { code: '250', iso: 'rw', name: 'Rwanda' },
+  { code: '257', iso: 'bi', name: 'Burundi' },
+  { code: '234', iso: 'ng', name: 'Nigéria' },
+  { code: '233', iso: 'gh', name: 'Ghana' },
+  { code: '228', iso: 'tg', name: 'Togo' },
+  { code: '229', iso: 'bj', name: 'Bénin' },
+  { code: '226', iso: 'bf', name: 'Burkina Faso' },
+  { code: '223', iso: 'ml', name: 'Mali' },
+  { code: '242', iso: 'cg', name: 'Congo' },
+  { code: '241', iso: 'ga', name: 'Gabon' },
+  { code: '235', iso: 'td', name: 'Tchad' },
+  { code: '236', iso: 'cf', name: 'Centrafrique' },
+  { code: '33', iso: 'fr', name: 'France' },
+  { code: '32', iso: 'be', name: 'Belgique' },
+  { code: '1', iso: 'us', name: 'USA' },
 ];
 
 export default function LoginScreen() {
@@ -123,7 +127,7 @@ export default function LoginScreen() {
             <Image source={require('../assets/images/tk-logo-transparent.png')} style={styles.logoImage} />
             <View style={styles.titleRow}>
               <Text style={styles.title}>TekaTeka</Text>
-              <Text style={styles.headerFlag}>{selectedCountry.flag}</Text>
+              <Image source={{ uri: getFlagUrl(selectedCountry.iso) }} style={styles.headerFlagImg} />
             </View>
             <Text style={styles.subtitle}>{i18n.t('welcome')}</Text>
           </View>
@@ -139,7 +143,7 @@ export default function LoginScreen() {
                     style={styles.countryButton}
                     onPress={() => setShowCountryPicker(true)}
                   >
-                    <Text style={styles.countryFlag}>{selectedCountry.flag}</Text>
+                    <Image source={{ uri: getFlagUrl(selectedCountry.iso) }} style={styles.countryFlagImg} />
                     <Text style={styles.countryCode}>+{selectedCountry.code}</Text>
                     <Ionicons name="chevron-down" size={14} color="#64748b" />
                   </TouchableOpacity>
@@ -175,9 +179,10 @@ export default function LoginScreen() {
             ) : (
               <>
                 <Text style={styles.label}>{i18n.t('enterOTP')}</Text>
-                <Text style={styles.phoneDisplay}>
-                  {selectedCountry.flag} +{fullPhoneNumber}
-                </Text>
+                <View style={styles.phoneDisplayRow}>
+                  <Image source={{ uri: getFlagUrl(selectedCountry.iso) }} style={styles.countryFlagImg} />
+                  <Text style={styles.phoneDisplay}>+{fullPhoneNumber}</Text>
+                </View>
                 
                 <TextInput
                   style={styles.input}
@@ -245,7 +250,7 @@ export default function LoginScreen() {
                     setShowCountryPicker(false);
                   }}
                 >
-                  <Text style={styles.countryItemFlag}>{country.flag}</Text>
+                  <Image source={{ uri: getFlagUrl(country.iso) }} style={styles.countryItemFlagImg} />
                   <View style={{ flex: 1 }}>
                     <Text style={[
                       styles.countryItemName,
@@ -302,8 +307,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#1e293b',
   },
-  headerFlag: {
-    fontSize: 28,
+  headerFlagImg: {
+    width: 32,
+    height: 22,
+    borderRadius: 3,
+    resizeMode: 'cover',
   },
   subtitle: {
     fontSize: 18,
@@ -337,8 +345,11 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     minWidth: 110,
   },
-  countryFlag: {
-    fontSize: 20,
+  countryFlagImg: {
+    width: 24,
+    height: 16,
+    borderRadius: 2,
+    resizeMode: 'cover',
   },
   countryCode: {
     fontSize: 16,
@@ -397,6 +408,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#2563eb',
     textAlign: 'center',
+  },
+  phoneDisplayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
     marginBottom: 8,
   },
   mockOtpBox: {
@@ -468,8 +485,11 @@ const styles = StyleSheet.create({
   countryItemSelected: {
     backgroundColor: '#eff6ff',
   },
-  countryItemFlag: {
-    fontSize: 28,
+  countryItemFlagImg: {
+    width: 36,
+    height: 24,
+    borderRadius: 3,
+    resizeMode: 'cover',
   },
   countryItemName: {
     fontSize: 16,

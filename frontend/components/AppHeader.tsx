@@ -8,6 +8,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const HEADER_BG = '#1a2744';
 
+// Flag image URL from CDN (works on all platforms, no emoji rendering issues)
+const getFlagUrl = (countryCode: string) =>
+  `https://flagcdn.com/w80/${countryCode.toLowerCase()}.png`;
+
 interface AppHeaderProps {
   showSubscription?: boolean;
 }
@@ -29,7 +33,9 @@ export default function AppHeader({ showSubscription = false }: AppHeaderProps) 
         <View style={styles.logoRow}>
           <Image source={require('../assets/images/tk-logo-transparent.png')} style={styles.logoImage} />
           <Text style={styles.appName}>TekaTeka</Text>
-          <Text style={styles.flagEmoji}>{country.flag}</Text>
+          {country.code !== 'XX' && (
+            <Image source={{ uri: getFlagUrl(country.code) }} style={styles.flagImage} />
+          )}
         </View>
         {showSubscription && (
           <TouchableOpacity
@@ -96,9 +102,12 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     letterSpacing: 0.5,
   },
-  flagEmoji: {
-    fontSize: 20,
-    marginLeft: 4,
+  flagImage: {
+    width: 28,
+    height: 20,
+    borderRadius: 3,
+    marginLeft: 6,
+    resizeMode: 'cover',
   },
   badge: {
     flexDirection: 'row',
