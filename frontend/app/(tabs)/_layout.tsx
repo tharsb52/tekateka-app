@@ -1,14 +1,16 @@
 import React from 'react';
 import { Tabs, Redirect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Platform } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import i18n from '../../utils/i18n';
 
 const BG = '#fef3e7';
 
 export default function TabLayout() {
   const { user, loading, hasAccess, hasPin, pinVerified } = useAuth();
+  const insets = useSafeAreaInsets();
 
   if (loading) {
     return (
@@ -33,6 +35,9 @@ export default function TabLayout() {
     return <Redirect href="/subscription" />;
   }
 
+  // Bottom safe area for tab bar (respects phone's navigation bar)
+  const bottomPadding = Math.max(insets.bottom, 6);
+
   return (
     <Tabs
       screenOptions={{
@@ -42,9 +47,9 @@ export default function TabLayout() {
           backgroundColor: BG,
           borderTopWidth: 1,
           borderTopColor: '#f0d9c0',
-          height: 65,
-          paddingBottom: 8,
-          paddingTop: 8,
+          height: 56 + bottomPadding,
+          paddingBottom: bottomPadding,
+          paddingTop: 6,
         },
         tabBarLabelStyle: {
           fontSize: 11,

@@ -19,48 +19,20 @@ import { useAuth } from '../context/AuthContext';
 import i18n from '../utils/i18n';
 import { Ionicons } from '@expo/vector-icons';
 import { sendOTP, verifyOTP, getOTPProviderInfo } from '../services/otpService';
+import { ALL_COUNTRIES, searchCountries, getFlagUrl, Country } from '../utils/countries';
 
 const BG = '#fef3e7';
-
-// Flag image URL from CDN (works on all platforms)
-const getFlagUrl = (iso: string) =>
-  `https://flagcdn.com/w80/${iso.toLowerCase()}.png`;
-
-// Country list for the picker (iso = 2-letter country code for flag CDN)
-const COUNTRIES = [
-  { code: '243', iso: 'cd', name: 'RD Congo' },
-  { code: '237', iso: 'cm', name: 'Cameroun' },
-  { code: '225', iso: 'ci', name: "Côte d'Ivoire" },
-  { code: '221', iso: 'sn', name: 'Sénégal' },
-  { code: '254', iso: 'ke', name: 'Kenya' },
-  { code: '255', iso: 'tz', name: 'Tanzanie' },
-  { code: '256', iso: 'ug', name: 'Ouganda' },
-  { code: '250', iso: 'rw', name: 'Rwanda' },
-  { code: '257', iso: 'bi', name: 'Burundi' },
-  { code: '234', iso: 'ng', name: 'Nigéria' },
-  { code: '233', iso: 'gh', name: 'Ghana' },
-  { code: '228', iso: 'tg', name: 'Togo' },
-  { code: '229', iso: 'bj', name: 'Bénin' },
-  { code: '226', iso: 'bf', name: 'Burkina Faso' },
-  { code: '223', iso: 'ml', name: 'Mali' },
-  { code: '242', iso: 'cg', name: 'Congo' },
-  { code: '241', iso: 'ga', name: 'Gabon' },
-  { code: '235', iso: 'td', name: 'Tchad' },
-  { code: '236', iso: 'cf', name: 'Centrafrique' },
-  { code: '33', iso: 'fr', name: 'France' },
-  { code: '32', iso: 'be', name: 'Belgique' },
-  { code: '1', iso: 'us', name: 'USA' },
-];
 
 export default function LoginScreen() {
   const { login } = useAuth();
   const [localNumber, setLocalNumber] = useState('');
-  const [selectedCountry, setSelectedCountry] = useState(COUNTRIES[0]); // Default: DRC
+  const [selectedCountry, setSelectedCountry] = useState<Country>(ALL_COUNTRIES[0]); // Default: DRC
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [mockOtp, setMockOtp] = useState('');
   const [showCountryPicker, setShowCountryPicker] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const otpInfo = getOTPProviderInfo();
 
@@ -227,44 +199,70 @@ export default function LoginScreen() {
         </View>
       </KeyboardAvoidingView>
 
-      {/* Country Picker Modal */}
+      {/* Country Picker Modal with Search */}
       <Modal visible={showCountryPicker} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Choisir le pays</Text>
-              <TouchableOpacity onPress={() => setShowCountryPicker(false)}>
+              <TouchableOpacity onPress={() => { setShowCountryPicker(false); setSearchQuery(''); }}>
                 <Ionicons name="close" size={28} color="#64748b" />
               </TouchableOpacity>
             </View>
-            <ScrollView style={styles.countryList}>
-              {COUNTRIES.map((country) => (
+
+            {/* Search Bar */}
+            <View style={styles.searchBar}>
+              <Ionicons name="search" size={20} color="#94a3b8" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Rechercher un pays ou indicatif..."
+                placeholderTextColor="#94a3b8"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoCorrect={false}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                  <Ionicons name="close-circle" size={20} color="#94a3b8" />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <ScrollView style={styles.countryList} keyboardShouldPersistTaps="handled">
+              {searchCountries(searchQuery).map((country, index) => (
                 <TouchableOpacity
-                  key={country.code}
+                  key={`${country.iso}-${index}`}
                   style={[
                     styles.countryItem,
-                    selectedCountry.code === country.code && styles.countryItemSelected,
+                    selectedCountry.iso === country.iso && selectedCountry.code === country.code && styles.countryItemSelected,
                   ]}
                   onPress={() => {
                     setSelectedCountry(country);
                     setShowCountryPicker(false);
+                    setSearchQuery('');
                   }}
                 >
                   <Image source={{ uri: getFlagUrl(country.iso) }} style={styles.countryItemFlagImg} />
                   <View style={{ flex: 1 }}>
                     <Text style={[
                       styles.countryItemName,
-                      selectedCountry.code === country.code && styles.countryItemNameSelected,
+                      selectedCountry.iso === country.iso && selectedCountry.code === country.code && styles.countryItemNameSelected,
                     ]}>
                       {country.name}
                     </Text>
                     <Text style={styles.countryItemCode}>+{country.code}</Text>
                   </View>
-                  {selectedCountry.code === country.code && (
+                  {selectedCountry.iso === country.iso && selectedCountry.code === country.code && (
                     <Ionicons name="checkmark-circle" size={22} color="#2563eb" />
                   )}
                 </TouchableOpacity>
               ))}
+              {searchCountries(searchQuery).length === 0 && (
+                <View style={{ padding: 24, alignItems: 'center' }}>
+                  <Ionicons name="globe-outline" size={48} color="#cbd5e1" />
+                  <Text style={{ color: '#94a3b8', fontSize: 16, marginTop: 12 }}>Aucun résultat</Text>
+                </View>
+              )}
             </ScrollView>
           </View>
         </View>
@@ -470,6 +468,25 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
     color: '#1e293b',
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginHorizontal: 16,
+    marginVertical: 12,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#1e293b',
+    padding: 0,
   },
   countryList: {
     padding: 12,
