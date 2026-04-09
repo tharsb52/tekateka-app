@@ -40,11 +40,9 @@ def generate_otp() -> str:
 
 
 def normalize_phone(phone: str) -> str:
-    """Normalize phone number to include + prefix."""
-    phone = phone.strip()
-    if not phone.startswith('+'):
-        phone = f'+{phone}'
-    return phone
+    """Normalize phone number to include single + prefix."""
+    phone = phone.strip().lstrip('+')
+    return f'+{phone}'
 
 
 async def send_otp(phone_number: str) -> dict:

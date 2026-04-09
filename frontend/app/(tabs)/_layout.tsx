@@ -36,24 +36,35 @@ export default function TabLayout() {
   }
 
   // Bottom safe area for tab bar (respects phone's navigation bar)
-  const bottomPadding = Math.max(insets.bottom, 6);
+  // Extra generous padding to ensure visibility above phone footer
+  const bottomPadding = Math.max(insets.bottom, 16) + 8;
+
+  const TAB_BAR_BG = '#1a2744'; // Dark navy matching header
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#2563eb',
-        tabBarInactiveTintColor: '#94a3b8',
+        tabBarActiveTintColor: '#60a5fa',
+        tabBarInactiveTintColor: 'rgba(255,255,255,0.55)',
         tabBarStyle: {
-          backgroundColor: BG,
-          borderTopWidth: 1,
-          borderTopColor: '#f0d9c0',
-          height: 56 + bottomPadding,
+          backgroundColor: TAB_BAR_BG,
+          borderTopWidth: 0,
+          height: 62 + bottomPadding,
           paddingBottom: bottomPadding,
-          paddingTop: 6,
+          paddingTop: 8,
+          elevation: 20,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -4 },
+          shadowOpacity: 0.15,
+          shadowRadius: 8,
         },
         tabBarLabelStyle: {
           fontSize: 11,
-          fontWeight: '600',
+          fontWeight: '700',
+          marginTop: 2,
+        },
+        tabBarIconStyle: {
+          marginBottom: -2,
         },
         headerShown: false,
         sceneStyle: { backgroundColor: BG },
