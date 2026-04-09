@@ -1,9 +1,10 @@
 import React from 'react';
-import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, Image, StyleSheet, TouchableOpacity, StatusBar, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useRouter } from 'expo-router';
 import { getCountryFromPhone } from '../utils/countryFlags';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const HEADER_BG = '#1a2744';
 
@@ -14,6 +15,7 @@ interface AppHeaderProps {
 export default function AppHeader({ showSubscription = false }: AppHeaderProps) {
   const { user, isSubscriptionActive, getSubscriptionDaysRemaining, getDaysRemaining, showExpiryReminder } = useAuth();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const country = getCountryFromPhone(user?.phoneNumber || '');
   const isSubActive = isSubscriptionActive();
   const subDaysLeft = getSubscriptionDaysRemaining();
@@ -21,48 +23,51 @@ export default function AppHeader({ showSubscription = false }: AppHeaderProps) 
   const expiryReminder = showExpiryReminder();
 
   return (
-    <View style={styles.header}>
-      <View style={styles.logoRow}>
-        <Image source={require('../assets/images/tk-logo-transparent.png')} style={styles.logoImage} />
-        <Text style={styles.appName}>TekaTeka</Text>
-        <Text style={styles.flagEmoji}>{country.flag}</Text>
+    <>
+      <StatusBar barStyle="light-content" backgroundColor={HEADER_BG} />
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 8) + 8 }]}>
+        <View style={styles.logoRow}>
+          <Image source={require('../assets/images/tk-logo-transparent.png')} style={styles.logoImage} />
+          <Text style={styles.appName}>TekaTeka</Text>
+          <Text style={styles.flagEmoji}>{country.flag}</Text>
+        </View>
+        {showSubscription && (
+          <TouchableOpacity
+            style={[
+              styles.badge,
+              isSubActive
+                ? (expiryReminder ? styles.warningBadge : styles.activeBadge)
+                : (daysRemaining > 0 ? styles.trialBadge : styles.expiredBadge),
+            ]}
+            onPress={() => router.push('/subscription')}
+          >
+            <Ionicons
+              name={
+                isSubActive
+                  ? (expiryReminder ? 'warning' : 'shield-checkmark')
+                  : (daysRemaining > 0 ? 'time' : 'alert-circle')
+              }
+              size={14}
+              color={
+                isSubActive
+                  ? (expiryReminder ? '#fcd34d' : '#6ee7b7')
+                  : (daysRemaining > 0 ? '#93c5fd' : '#fca5a5')
+              }
+            />
+            <Text style={[
+              styles.badgeText,
+              isSubActive
+                ? (expiryReminder ? styles.warningText : styles.activeText)
+                : (daysRemaining > 0 ? styles.trialText : styles.expiredText),
+            ]}>
+              {isSubActive
+                ? (expiryReminder ? `${subDaysLeft}j` : 'Pro')
+                : (daysRemaining > 0 ? `${daysRemaining}j essai` : 'Expiré')}
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
-      {showSubscription && (
-        <TouchableOpacity
-          style={[
-            styles.badge,
-            isSubActive
-              ? (expiryReminder ? styles.warningBadge : styles.activeBadge)
-              : (daysRemaining > 0 ? styles.trialBadge : styles.expiredBadge),
-          ]}
-          onPress={() => router.push('/subscription')}
-        >
-          <Ionicons
-            name={
-              isSubActive
-                ? (expiryReminder ? 'warning' : 'shield-checkmark')
-                : (daysRemaining > 0 ? 'time' : 'alert-circle')
-            }
-            size={14}
-            color={
-              isSubActive
-                ? (expiryReminder ? '#fcd34d' : '#6ee7b7')
-                : (daysRemaining > 0 ? '#93c5fd' : '#fca5a5')
-            }
-          />
-          <Text style={[
-            styles.badgeText,
-            isSubActive
-              ? (expiryReminder ? styles.warningText : styles.activeText)
-              : (daysRemaining > 0 ? styles.trialText : styles.expiredText),
-          ]}>
-            {isSubActive
-              ? (expiryReminder ? `${subDaysLeft}j` : 'Pro')
-              : (daysRemaining > 0 ? `${daysRemaining}j essai` : 'Expiré')}
-          </Text>
-        </TouchableOpacity>
-      )}
-    </View>
+    </>
   );
 }
 
@@ -70,7 +75,6 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: HEADER_BG,
     paddingHorizontal: 16,
-    paddingTop: 14,
     paddingBottom: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',

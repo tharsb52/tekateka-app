@@ -6,6 +6,7 @@ import { loadLocale } from '../utils/i18n';
 import { ActivityIndicator, View } from 'react-native';
 import * as Font from 'expo-font';
 import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 export default function RootLayout() {
   const [loading, setLoading] = useState(true);
@@ -35,14 +36,16 @@ export default function RootLayout() {
   }
 
   return (
-    <AuthProvider>
-      <DataProvider>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="index" />
-          <Stack.Screen name="subscription" options={{ gestureEnabled: false }} />
-          <Stack.Screen name="(tabs)" />
-        </Stack>
-      </DataProvider>
-    </AuthProvider>
+    <SafeAreaProvider>
+      <AuthProvider>
+        <DataProvider>
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="index" />
+            <Stack.Screen name="subscription" options={{ gestureEnabled: false }} />
+            <Stack.Screen name="(tabs)" />
+          </Stack>
+        </DataProvider>
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }

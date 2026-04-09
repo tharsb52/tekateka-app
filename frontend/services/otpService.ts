@@ -134,7 +134,7 @@ const sendOTPAfricasTalking = async (phoneNumber: string): Promise<OTPResult> =>
     const response = await fetch(`${backendUrl}/api/otp/send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phoneNumber: `+${phoneNumber}` }),
+      body: JSON.stringify({ phoneNumber: phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}` }),
     });
 
     const data = await response.json();
@@ -167,7 +167,7 @@ const verifyOTPAfricasTalking = async (phoneNumber: string, code: string): Promi
     const response = await fetch(`${backendUrl}/api/otp/verify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phoneNumber: `+${phoneNumber}`, code }),
+      body: JSON.stringify({ phoneNumber: phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`, code }),
     });
 
     const data = await response.json();

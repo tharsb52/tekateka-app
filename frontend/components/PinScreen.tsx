@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Image, Animated, Platform,
+  View, Text, StyleSheet, TouchableOpacity, Image, Animated, Platform, StatusBar,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -148,17 +149,19 @@ export default function PinScreen({ userId, mode, onSuccess, onLogout, onCancel 
 
   if (successMsg) {
     return (
-      <View style={styles.container}>
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor={BG} />
         <View style={styles.successCircle}>
           <Ionicons name="checkmark-circle" size={64} color="#10b981" />
         </View>
         <Text style={styles.successText}>{successMsg}</Text>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={BG} />
       {/* Logo & Title */}
       <Image source={require('../assets/images/tk-logo-transparent.png')} style={styles.logo} />
       <Text style={styles.appName}>TekaTeka</Text>
@@ -227,7 +230,7 @@ export default function PinScreen({ userId, mode, onSuccess, onLogout, onCancel 
           </TouchableOpacity>
         )}
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
