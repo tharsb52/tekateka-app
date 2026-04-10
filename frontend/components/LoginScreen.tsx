@@ -50,7 +50,7 @@ export default function LoginScreen() {
 
   const handleSendOTP = async () => {
     if (localNumber.length < 6) {
-      Alert.alert(i18n.t('error'), 'Veuillez entrer un numero valide');
+      Alert.alert(i18n.t('error'), 'Veuillez entrer un numéro valide');
       return;
     }
     setLoading(true);
@@ -63,7 +63,7 @@ export default function LoginScreen() {
         Alert.alert(i18n.t('error'), result.message);
       }
     } catch (error) {
-      Alert.alert(i18n.t('error'), "Echec de l'envoi du code");
+      Alert.alert(i18n.t('error'), "Échec de l'envoi du code");
     } finally {
       setLoading(false);
     }
@@ -71,7 +71,7 @@ export default function LoginScreen() {
 
   const handleVerifyOTP = async () => {
     if (otp.length !== 4) {
-      Alert.alert(i18n.t('error'), 'Entrez le code a 4 chiffres');
+      Alert.alert(i18n.t('error'), 'Entrez le code à 4 chiffres');
       return;
     }
     setLoading(true);
@@ -83,7 +83,7 @@ export default function LoginScreen() {
         Alert.alert(i18n.t('error'), result.message);
       }
     } catch (error: any) {
-      Alert.alert(i18n.t('error'), error.message || 'Verification echouee');
+      Alert.alert(i18n.t('error'), error.message || 'Vérification échouée');
     } finally {
       setLoading(false);
     }
@@ -134,7 +134,7 @@ export default function LoginScreen() {
               onPress={() => setActiveTab('phone')}
             >
               <Ionicons name="call" size={18} color={activeTab === 'phone' ? '#2563eb' : '#94a3b8'} />
-              <Text style={[styles.tabText, activeTab === 'phone' && styles.tabTextActive]}>Telephone</Text>
+              <Text style={[styles.tabText, activeTab === 'phone' && styles.tabTextActive]}>Connexion Téléphone</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.tab, activeTab === 'credentials' && styles.tabActive]}
@@ -162,7 +162,7 @@ export default function LoginScreen() {
                     </TouchableOpacity>
                     <TextInput
                       style={styles.phoneInput}
-                      placeholder="Numero local"
+                      placeholder="Numéro local"
                       placeholderTextColor="#94a3b8"
                       value={localNumber}
                       onChangeText={setLocalNumber}
@@ -201,7 +201,7 @@ export default function LoginScreen() {
                   />
                   {mockOtp ? (
                     <View style={styles.mockOtpBox}>
-                      <Text style={styles.mockOtpLabel}>Code de verification :</Text>
+                      <Text style={styles.mockOtpLabel}>Code de vérification :</Text>
                       <Text style={styles.mockOtpText}>{mockOtp}</Text>
                     </View>
                   ) : null}
@@ -217,7 +217,7 @@ export default function LoginScreen() {
                     onPress={() => { setOtpSent(false); setOtp(''); setMockOtp(''); }}
                   >
                     <Ionicons name="arrow-back" size={16} color="#64748b" />
-                    <Text style={styles.backButtonText}>Changer de numero</Text>
+                    <Text style={styles.backButtonText}>Changer de numéro</Text>
                   </TouchableOpacity>
                 </>
               )}
@@ -230,7 +230,7 @@ export default function LoginScreen() {
               <View style={styles.credInfoBox}>
                 <Ionicons name="information-circle" size={20} color="#2563eb" />
                 <Text style={styles.credInfoText}>
-                  Connectez-vous avec les identifiants fournis par le proprietaire du compte.
+                  Connectez-vous avec les identifiants fournis par le propriétaire du compte.
                 </Text>
               </View>
 

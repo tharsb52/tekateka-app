@@ -79,7 +79,7 @@ export default function SettingsScreen() {
       return;
     }
     if (!credPassword || credPassword.length < 6) {
-      setCredError('Le mot de passe doit contenir au moins 6 caracteres');
+      setCredError('Le mot de passe doit contenir au moins 6 caractères');
       return;
     }
     if (credPassword !== credConfirmPassword) {
@@ -188,7 +188,7 @@ export default function SettingsScreen() {
         </View>
 
         {/* Colleague Access Section */}
-        <Text style={styles.sectionLabel}>ACCES COLLEGUE</Text>
+        <Text style={styles.sectionLabel}>ACCÈS COLLÈGUE</Text>
         <View style={styles.card}>
           <TouchableOpacity
             style={styles.settingRow}
@@ -208,12 +208,12 @@ export default function SettingsScreen() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.settingTitle}>
-                  {user?.hasPassword ? 'Identifiants configures' : 'Configurer les identifiants'}
+                  {user?.hasPassword ? 'Identifiants configurés' : 'Configurer les identifiants'}
                 </Text>
                 <Text style={styles.settingSubtitle}>
                   {user?.hasPassword
                     ? `${user.email ? user.email : ''}${user.email && user.username ? ' / ' : ''}${user.username ? user.username : ''}`
-                    : 'Permettre a un collegue de se connecter'}
+                    : 'Permettre à un collègue de se connecter'}
                 </Text>
               </View>
             </View>
@@ -449,7 +449,7 @@ export default function SettingsScreen() {
           <View style={[styles.modalContent, { padding: 24, maxHeight: '85%' }]}>
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Acces collegue</Text>
+                <Text style={styles.modalTitle}>Accès collègue</Text>
                 <TouchableOpacity onPress={() => setCredModalVisible(false)}>
                   <Ionicons name="close" size={28} color="#64748b" />
                 </TouchableOpacity>
@@ -457,7 +457,7 @@ export default function SettingsScreen() {
 
               <View style={{ backgroundColor: '#eff6ff', borderRadius: 12, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: '#bfdbfe' }}>
                 <Text style={{ fontSize: 13, color: '#1e40af', lineHeight: 18 }}>
-                  Configurez un email/nom d'utilisateur et mot de passe pour permettre a votre collegue de se connecter sur un autre appareil et voir les donnees en temps reel.
+                  Configurez un email/nom d'utilisateur et mot de passe pour permettre à votre collègue de se connecter sur un autre appareil et voir les données en temps réel.
                 </Text>
               </View>
 
@@ -466,9 +466,9 @@ export default function SettingsScreen() {
                   <View style={[styles.iconCircle, { backgroundColor: '#d1fae5', width: 64, height: 64, borderRadius: 32, marginBottom: 12 }]}>
                     <Ionicons name="checkmark-circle" size={36} color="#10b981" />
                   </View>
-                  <Text style={{ fontSize: 18, fontWeight: '700', color: '#10b981' }}>Configuration reussie !</Text>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: '#10b981' }}>Configuration réussie !</Text>
                   <Text style={{ color: '#64748b', textAlign: 'center', marginTop: 8 }}>
-                    Votre collegue peut maintenant se connecter.
+                    Votre collègue peut maintenant se connecter.
                   </Text>
                 </View>
               ) : (
@@ -498,7 +498,7 @@ export default function SettingsScreen() {
                   <View style={styles.credPasswordRow}>
                     <TextInput
                       style={styles.credPasswordInput}
-                      placeholder="Min. 6 caracteres"
+                      placeholder="Min. 6 caractères"
                       placeholderTextColor="#94a3b8"
                       value={credPassword}
                       onChangeText={(t) => { setCredPassword(t); setCredError(''); }}
