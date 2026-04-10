@@ -102,80 +102,116 @@
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
 
-user_problem_statement: "Test the TekaTeka FastAPI backend running on http://localhost:8001. Test these endpoints: 1. GET /api/health - NEW health check endpoint, should return {\"status\": \"healthy\", \"database\": \"connected\"} 2. GET /api/ - Root endpoint, should return {\"message\": \"Hello World\"} 3. GET /api/reports/analytics - Optimized analytics endpoint using MongoDB aggregation pipelines. Should return JSON with: total_users, new_users_this_week, countries, total_revenue, revenue_growth, active_users 4. GET /api/status?limit=10&skip=0 - Status checks with pagination. ADDITIONAL: Test the Africa's Talking OTP integration endpoints: POST /api/otp/send and POST /api/otp/verify"
+user_problem_statement: "Test the TekaTeka multi-device auth and data sync API. Test Flow: 1. POST /api/auth/phone-login - Login with phone (creates user in MongoDB), 2. POST /api/auth/setup-credentials - Set email+password for the account, 3. POST /api/auth/credential-login - Login with email+password (colleague on different device), 4. POST /api/auth/credential-login - Login with username+password, 5. POST /api/data/products - Add a product (using token from step 1), 6. GET /api/data/products - Get products (using token from step 3 - colleague's token), 7. POST /api/data/sales - Add a sale, 8. GET /api/data/sales - Get sales (from original user's token), 9. POST /api/auth/credential-login - Wrong password test. Backend URL: https://low-data-shop.preview.emergentagent.com"
 
 backend:
-  - task: "Health Check Endpoint"
+  - task: "Phone Login Authentication"
     implemented: true
     working: true
-    file: "server.py"
+    file: "data_api.py"
     stuck_count: 0
     priority: "high"
     needs_retesting: false
     status_history:
         - working: true
           agent: "testing"
-          comment: "Health check endpoint (/api/health) working correctly. Returns {\"status\": \"healthy\", \"database\": \"connected\"} as expected. Database connection verified."
+          comment: "Phone login endpoint (/api/auth/phone-login) working correctly. Successfully creates new users in MongoDB when they don't exist, returns JWT token and user object with proper ID. Handles phone number formatting correctly (+243111000111 format)."
 
-  - task: "Root API Endpoint"
+  - task: "Credentials Setup"
     implemented: true
     working: true
-    file: "server.py"
-    stuck_count: 0
-    priority: "medium"
-    needs_retesting: false
-    status_history:
-        - working: true
-          agent: "testing"
-          comment: "Root endpoint (/api/) working correctly. Returns {\"message\": \"Hello World\"} as expected."
-
-  - task: "Analytics Reporting Endpoint"
-    implemented: true
-    working: true
-    file: "reporting.py"
+    file: "data_api.py"
     stuck_count: 0
     priority: "high"
     needs_retesting: false
     status_history:
         - working: true
           agent: "testing"
-          comment: "Analytics endpoint (/api/reports/analytics) working correctly. Returns all required fields: total_users, new_users_this_week, countries, total_revenue, revenue_growth, active_users. MongoDB aggregation pipelines functioning properly. Currently returns zero values as expected for empty database."
+          comment: "Setup credentials endpoint (/api/auth/setup-credentials) working correctly. Successfully sets email and username for existing phone accounts, validates uniqueness constraints, hashes passwords securely using bcrypt."
 
-  - task: "Status Checks with Pagination"
+  - task: "Email Credential Login"
     implemented: true
     working: true
-    file: "server.py"
-    stuck_count: 0
-    priority: "medium"
-    needs_retesting: false
-    status_history:
-        - working: true
-          agent: "testing"
-          comment: "Status endpoint (/api/status) with pagination working correctly. GET returns empty list (no data yet), POST creates status checks successfully with proper UUID generation and timestamp."
-
-  - task: "OTP Send Endpoint"
-    implemented: true
-    working: true
-    file: "server.py, otp_service.py"
+    file: "data_api.py"
     stuck_count: 0
     priority: "high"
     needs_retesting: false
     status_history:
         - working: true
           agent: "testing"
-          comment: "OTP send endpoint (/api/otp/send) working correctly. Successfully generates and stores OTP codes. Returns debug_code in sandbox mode. Africa's Talking integration configured but shows authentication warning (expected in sandbox mode). Core functionality working properly."
+          comment: "Email credential login (/api/auth/credential-login) working correctly. Successfully authenticates users with email+password, returns same user ID as phone login proving account linking works. JWT token generation working properly."
 
-  - task: "OTP Verify Endpoint"
+  - task: "Username Credential Login"
     implemented: true
     working: true
-    file: "server.py, otp_service.py"
+    file: "data_api.py"
     stuck_count: 0
     priority: "high"
     needs_retesting: false
     status_history:
         - working: true
           agent: "testing"
-          comment: "OTP verify endpoint (/api/otp/verify) working correctly. Successfully validates correct codes, rejects wrong codes, handles expired/missing codes appropriately. All verification scenarios tested and working as expected."
+          comment: "Username credential login (/api/auth/credential-login) working correctly. Successfully authenticates users with username+password, returns same user ID confirming multi-device auth works perfectly."
+
+  - task: "Product Management"
+    implemented: true
+    working: true
+    file: "data_api.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Product CRUD endpoints working correctly. POST /api/data/products successfully creates products with proper user association. GET /api/data/products returns user-specific products. Product data includes all required fields (name, purchasePrice, salePrice, stock, category)."
+
+  - task: "Data Sync - Products"
+    implemented: true
+    working: true
+    file: "data_api.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Multi-device data sync working perfectly! Colleague using different login method (email token) can see products created by original user (phone token). Same user ID ensures data is properly shared across devices. Found exact product match confirming real-time sync."
+
+  - task: "Sales Management"
+    implemented: true
+    working: true
+    file: "data_api.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Sales CRUD endpoints working correctly. POST /api/data/sales successfully creates sales with automatic stock updates. Includes proper product linking, quantity tracking, and stock alert functionality. Sales data properly associated with user accounts."
+
+  - task: "Data Sync - Sales"
+    implemented: true
+    working: true
+    file: "data_api.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Multi-device data sync for sales working perfectly! Original user (phone token) can see sales created by colleague (email token). This proves that data synchronization works bidirectionally across different authentication methods and devices."
+
+  - task: "Authentication Security"
+    implemented: true
+    working: true
+    file: "data_api.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Authentication security working correctly. Wrong password attempts properly rejected with 401 Unauthorized status. Password validation and error handling functioning as expected."
 
 frontend:
   # No frontend testing requested
@@ -188,18 +224,19 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Health Check Endpoint"
-    - "Root API Endpoint"
-    - "Analytics Reporting Endpoint"
-    - "Status Checks with Pagination"
-    - "OTP Send Endpoint"
-    - "OTP Verify Endpoint"
+    - "Phone Login Authentication"
+    - "Credentials Setup"
+    - "Email Credential Login"
+    - "Username Credential Login"
+    - "Product Management"
+    - "Data Sync - Products"
+    - "Sales Management"
+    - "Data Sync - Sales"
+    - "Authentication Security"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
 agent_communication:
     - agent: "testing"
-      message: "Completed comprehensive backend API testing for TekaTeka. All 4 requested endpoints are working correctly: 1) /api/health returns proper health status with database connectivity, 2) /api/ returns Hello World message, 3) /api/reports/analytics returns all required analytics fields with proper data types, 4) /api/status supports pagination and CRUD operations. Backend is fully functional and ready for production use."
-    - agent: "testing"
-      message: "ADDITIONAL: Completed Africa's Talking OTP integration testing. Fixed critical routing issue where OTP endpoints were not being registered (routes were added after router inclusion). Both OTP endpoints now working correctly: 1) /api/otp/send successfully generates and stores OTP codes, returns debug_code in sandbox mode, 2) /api/otp/verify properly validates codes with all scenarios tested (correct code, wrong code, expired/missing codes). Africa's Talking authentication shows expected sandbox warning but core OTP functionality is fully operational."
+      message: "Completed comprehensive testing of TekaTeka multi-device auth and data sync API. All 9 test scenarios passed successfully: 1) Phone login creates users and returns JWT tokens, 2) Credentials setup works with email/username validation, 3) Email login returns same user ID proving account linking, 4) Username login confirms multi-device auth, 5) Product creation with proper user association, 6) Data sync verified - colleague sees products from different device, 7) Sales creation with stock management, 8) Bidirectional data sync confirmed - original user sees colleague's sales, 9) Security validated with wrong password rejection. Multi-device authentication and real-time data synchronization working perfectly across all endpoints."

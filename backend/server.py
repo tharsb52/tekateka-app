@@ -13,6 +13,7 @@ from datetime import datetime
 # Import routers
 from reporting import router as reporting_router
 from otp_service import send_otp, verify_otp
+from data_api import router as data_router
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -101,6 +102,9 @@ async def api_verify_otp(request: OTPVerifyRequest):
 
 # Include the router in the main app
 app.include_router(api_router)
+
+# Include data API router (auth + CRUD)
+app.include_router(data_router, prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,
