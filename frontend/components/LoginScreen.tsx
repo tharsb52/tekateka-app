@@ -140,8 +140,8 @@ export default function LoginScreen() {
               style={[styles.tab, activeTab === 'credentials' && styles.tabActive]}
               onPress={() => setActiveTab('credentials')}
             >
-              <Ionicons name="person" size={18} color={activeTab === 'credentials' ? '#2563eb' : '#94a3b8'} />
-              <Text style={[styles.tabText, activeTab === 'credentials' && styles.tabTextActive]}>Collegue</Text>
+              <Ionicons name="mail" size={18} color={activeTab === 'credentials' ? '#2563eb' : '#94a3b8'} />
+              <Text style={[styles.tabText, activeTab === 'credentials' && styles.tabTextActive]}>Connexion Mail</Text>
             </TouchableOpacity>
           </View>
 
