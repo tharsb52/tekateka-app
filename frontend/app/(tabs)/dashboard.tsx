@@ -226,7 +226,7 @@ export default function DashboardScreen() {
           </View>
           <View style={styles.storyCard}>
             <Image
-              source={{ uri: 'https://images.pexels.com/photos/36534594/pexels-photo-36534594.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940' }}
+              source={{ uri: 'https://images.unsplash.com/photo-1576091358783-a212ec293ff3?w=400' }}
               style={styles.storyImage}
             />
             <View style={styles.storyOverlay}>
@@ -237,7 +237,7 @@ export default function DashboardScreen() {
           </View>
           <View style={styles.storyCard}>
             <Image
-              source={{ uri: 'https://images.unsplash.com/photo-1671468158276-b486e8411457?w=400' }}
+              source={{ uri: 'https://images.pexels.com/photos/27967669/pexels-photo-27967669.jpeg?auto=compress&cs=tinysrgb&w=400' }}
               style={styles.storyImage}
             />
             <View style={styles.storyOverlay}>
@@ -248,7 +248,7 @@ export default function DashboardScreen() {
           </View>
           <View style={styles.storyCard}>
             <Image
-              source={{ uri: 'https://images.unsplash.com/photo-1649399044617-a9b212467213?w=400' }}
+              source={{ uri: 'https://images.unsplash.com/photo-1768248559223-cc4ef20363fa?w=400' }}
               style={styles.storyImage}
             />
             <View style={styles.storyOverlay}>
