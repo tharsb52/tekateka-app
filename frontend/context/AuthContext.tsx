@@ -1,10 +1,30 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User } from '../types';
-import { getUser, saveUser, clearUser } from '../utils/storage';
 import { changeLocale } from '../utils/i18n';
 import { SubscriptionPlan } from '../types/subscription';
 import { scheduleExpiryReminders, cancelAllReminders } from '../services/notificationService';
+import { authAPI, getToken, clearToken } from '../services/apiService';
+
+// Map backend user response to frontend User type
+function mapBackendUser(data: any): User {
+  const sub = data.subscription || {};
+  return {
+    id: data.id || '',
+    phoneNumber: (data.phoneNumber || '').replace(/^\+/, ''),
+    email: data.email || undefined,
+    username: data.username || undefined,
+    hasPassword: data.hasPassword || false,
+    createdAt: data.createdAt || new Date().toISOString(),
+    trialStartDate: data.createdAt || new Date().toISOString(),
+    isSubscribed: sub.status === 'active' || (!!sub.plan && sub.plan !== null),
+    subscriptionPlan: sub.plan || undefined,
+    subscriptionStartDate: sub.startedAt || undefined,
+    subscriptionEndDate: sub.expiresAt || undefined,
+    currency: data.currency || 'USD',
+    language: data.language || 'fr',
+  };
+}
 
 interface AuthContextType {
   user: User | null;
@@ -12,6 +32,8 @@ interface AuthContextType {
   pinVerified: boolean;
   hasPin: boolean;
   login: (phoneNumber: string, otp: string) => Promise<void>;
+  loginWithCredentials: (identifier: string, password: string) => Promise<void>;
+  setupCredentials: (email?: string, username?: string, password?: string) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (updates: Partial<User>) => Promise<void>;
   setPinVerified: (v: boolean) => void;
@@ -63,13 +85,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const loadUser = async () => {
     try {
-      const savedUser = await getUser();
-      if (savedUser) {
-        setUser(savedUser);
-        await changeLocale(savedUser.language);
-        // Check if this user has a PIN configured
-        const savedPin = await AsyncStorage.getItem(`@tekateka:${savedUser.id}:pin`);
-        setHasPin(!!savedPin);
+      const token = await getToken();
+      if (token) {
+        // We have a saved token, try to fetch profile from backend
+        try {
+          const result = await authAPI.getProfile();
+          if (result.user) {
+            const mappedUser = mapBackendUser(result.user);
+            setUser(mappedUser);
+            await changeLocale(mappedUser.language);
+            // Check PIN
+            const savedPin = await AsyncStorage.getItem(`@tekateka:${mappedUser.id}:pin`);
+            setHasPin(!!savedPin);
+          }
+        } catch (error) {
+          console.log('Token expired or invalid, clearing');
+          await clearToken();
+        }
       }
     } catch (error) {
       console.error('Error loading user:', error);
@@ -93,54 +125,61 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setPinVerified(true);
   };
 
-  const login = async (phoneNumber: string, otp: string) => {
-    console.log(`Mock OTP Verification: ${phoneNumber} - ${otp}`);
-    
-    if (otp.length !== 4) {
-      throw new Error('Invalid OTP');
+  // Login via phone (called after OTP verification)
+  const login = async (phoneNumber: string, _otp: string) => {
+    try {
+      // Call backend to create/login user in MongoDB and get JWT
+      const result = await authAPI.phoneLogin(phoneNumber);
+      if (result.user) {
+        const mappedUser = mapBackendUser(result.user);
+        setUser(mappedUser);
+        await changeLocale(mappedUser.language);
+        
+        // Schedule trial expiry reminders for new users
+        if (!mappedUser.isSubscribed) {
+          const trialEnd = new Date(mappedUser.createdAt);
+          trialEnd.setDate(trialEnd.getDate() + 7);
+          scheduleExpiryReminders(trialEnd.toISOString(), true).catch(() => {});
+        }
+      }
+    } catch (error: any) {
+      console.error('Phone login error:', error);
+      throw new Error(error.message || 'Erreur de connexion');
     }
+  };
 
-    // Check if this user already has a saved profile
-    const { getUser: getStoredUser, saveUser: saveStoredUser } = await import('../utils/storage');
-    
-    // Temporarily set active user to check for existing profile
-    const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-    await AsyncStorage.setItem('@tekateka:active_user', phoneNumber);
-    
-    const existingUser = await getStoredUser();
-    
-    if (existingUser && existingUser.id === phoneNumber) {
-      // Existing user - restore their profile
-      console.log('Existing user found, restoring profile');
-      setUser(existingUser);
-      if (existingUser.language) await changeLocale(existingUser.language);
-    } else {
-      // New user - create fresh profile with EMPTY data
-      const newUser: User = {
-        id: phoneNumber,
-        phoneNumber,
-        createdAt: new Date().toISOString(),
-        trialStartDate: new Date().toISOString(),
-        isSubscribed: false,
-        currency: 'USD',
-        language: 'fr',
-      };
+  // Login via email/username + password (for colleague)
+  const loginWithCredentials = async (identifier: string, password: string) => {
+    try {
+      const result = await authAPI.credentialLogin(identifier, password);
+      if (result.user) {
+        const mappedUser = mapBackendUser(result.user);
+        setUser(mappedUser);
+        await changeLocale(mappedUser.language);
+      }
+    } catch (error: any) {
+      console.error('Credential login error:', error);
+      throw new Error(error.message || 'Identifiants incorrects');
+    }
+  };
 
-      await saveStoredUser(newUser);
-      console.log('New user created with empty data');
-      
-      // Schedule trial expiry reminders
-      const trialEnd = new Date();
-      trialEnd.setDate(trialEnd.getDate() + 7);
-      scheduleExpiryReminders(trialEnd.toISOString(), true).catch(() => {});
-      
-      setUser(newUser);
+  // Setup email/username + password for colleague access
+  const setupCredentials = async (email?: string, username?: string, password?: string) => {
+    try {
+      const result = await authAPI.setupCredentials(email, username, password);
+      if (result.user) {
+        const mappedUser = mapBackendUser(result.user);
+        setUser(mappedUser);
+      }
+    } catch (error: any) {
+      console.error('Setup credentials error:', error);
+      throw new Error(error.message || 'Erreur de configuration');
     }
   };
 
   const logout = async () => {
     await cancelAllReminders();
-    await clearUser();
+    await authAPI.logout();
     setUser(null);
     setPinVerified(false);
     setHasPin(false);
@@ -149,9 +188,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const updateUser = async (updates: Partial<User>) => {
     if (!user) return;
     
-    const updatedUser = { ...user, ...updates };
-    await saveUser(updatedUser);
-    setUser(updatedUser);
+    // Map frontend fields to backend-accepted fields
+    const backendUpdates: Record<string, any> = {};
+    if (updates.currency) backendUpdates.currency = updates.currency;
+    if (updates.language) backendUpdates.language = updates.language;
+    if (updates.email) backendUpdates.email = updates.email;
+    if (updates.username) backendUpdates.username = updates.username;
+    
+    try {
+      if (Object.keys(backendUpdates).length > 0) {
+        const result = await authAPI.updateProfile(backendUpdates);
+        if (result.user) {
+          const mappedUser = mapBackendUser(result.user);
+          setUser(mappedUser);
+        }
+      }
+    } catch (error) {
+      console.error('Update user error:', error);
+      // Still update locally as fallback for non-critical fields
+      const updatedUser = { ...user, ...updates };
+      setUser(updatedUser);
+    }
     
     if (updates.language) {
       await changeLocale(updates.language);
@@ -173,12 +230,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const getDaysRemaining = (): number => {
     if (!user) return 0;
     
-    // If subscribed, show subscription days
     if (user.isSubscribed && user.subscriptionEndDate) {
       return getSubscriptionDaysRemaining();
     }
     
-    // Otherwise show trial days
     const trialStart = new Date(user.trialStartDate);
     const now = new Date();
     const daysPassed = Math.floor((now.getTime() - trialStart.getTime()) / (1000 * 60 * 60 * 24));
@@ -186,7 +241,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return Math.max(0, 7 - daysPassed);
   };
 
-  // Subscription logic
   const isSubscriptionActive = (): boolean => {
     if (!user) return false;
     if (!user.isSubscribed) return false;
@@ -207,56 +261,57 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
   };
 
-  // Subscribe to a plan
   const subscribe = async (plan: SubscriptionPlan) => {
     if (!user) return;
 
-    const now = new Date();
-    const endDate = new Date();
-    
-    switch (plan) {
-      case 'monthly':
-        endDate.setMonth(now.getMonth() + 1);
-        break;
-      case 'quarterly':
-        endDate.setMonth(now.getMonth() + 3);
-        break;
-      case 'yearly':
-        endDate.setFullYear(now.getFullYear() + 1);
-        break;
+    try {
+      const result = await authAPI.subscribe(plan);
+      if (result.user) {
+        const mappedUser = mapBackendUser(result.user);
+        setUser(mappedUser);
+        
+        if (mappedUser.subscriptionEndDate) {
+          scheduleExpiryReminders(mappedUser.subscriptionEndDate, false).catch(() => {});
+        }
+      }
+    } catch (error) {
+      console.error('Subscribe error:', error);
+      // Fallback: compute locally
+      const now = new Date();
+      const endDate = new Date();
+      switch (plan) {
+        case 'monthly': endDate.setMonth(now.getMonth() + 1); break;
+        case 'quarterly': endDate.setMonth(now.getMonth() + 3); break;
+        case 'yearly': endDate.setFullYear(now.getFullYear() + 1); break;
+      }
+      const updatedUser = {
+        ...user,
+        isSubscribed: true,
+        subscriptionPlan: plan,
+        subscriptionStartDate: now.toISOString(),
+        subscriptionEndDate: endDate.toISOString(),
+      };
+      setUser(updatedUser);
+      scheduleExpiryReminders(endDate.toISOString(), false).catch(() => {});
     }
-
-    await updateUser({
-      isSubscribed: true,
-      subscriptionPlan: plan,
-      subscriptionStartDate: now.toISOString(),
-      subscriptionEndDate: endDate.toISOString(),
-    });
-
-    // Schedule subscription expiry reminders
-    scheduleExpiryReminders(endDate.toISOString(), false).catch(() => {});
   };
 
-  // Check if user needs to subscribe (trial expired + no active subscription)
   const needsSubscription = (): boolean => {
     if (!user) return false;
     if (isSubscriptionActive()) return false;
     return isTrialExpired();
   };
 
-  // Show expiry reminder: 14 days before subscription ends
   const showExpiryReminder = (): boolean => {
     if (!user || !user.isSubscribed || !user.subscriptionEndDate) return false;
-    
     const daysRemaining = getSubscriptionDaysRemaining();
     return daysRemaining > 0 && daysRemaining <= 14;
   };
 
-  // Has access: trial active OR subscription active
   const hasAccess = (): boolean => {
     if (!user) return false;
     if (isSubscriptionActive()) return true;
-    return !isTrialExpired(); // Trial still valid
+    return !isTrialExpired();
   };
 
   return (
@@ -267,6 +322,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         pinVerified,
         hasPin,
         login,
+        loginWithCredentials,
+        setupCredentials,
         logout,
         updateUser,
         setPinVerified,

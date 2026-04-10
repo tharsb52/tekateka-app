@@ -1,6 +1,9 @@
 export interface User {
   id: string;
   phoneNumber: string;
+  email?: string;
+  username?: string;
+  hasPassword?: boolean;
   createdAt: string;
   trialStartDate: string;
   isSubscribed: boolean;

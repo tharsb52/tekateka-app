@@ -213,30 +213,64 @@ backend:
           agent: "testing"
           comment: "Authentication security working correctly. Wrong password attempts properly rejected with 401 Unauthorized status. Password validation and error handling functioning as expected."
 
+  - task: "Purchases CRUD Operations"
+    implemented: true
+    working: true
+    file: "data_api.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Purchases CRUD endpoints working perfectly. POST /api/data/purchases creates purchases with proper user association. GET /api/data/purchases returns user-specific purchases. PUT /api/data/purchases/{id} updates purchase data correctly. DELETE /api/data/purchases/{id} removes purchases successfully. All endpoints require proper authentication."
+
+  - task: "Sales Update Operation"
+    implemented: true
+    working: true
+    file: "data_api.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Sales update endpoint working correctly. PUT /api/data/sales/{id} successfully updates sale data including quantity modifications. Proper user authentication and data validation in place."
+
+  - task: "Subscription Management"
+    implemented: true
+    working: true
+    file: "data_api.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Subscription endpoint working perfectly. POST /api/auth/subscribe with plan='monthly' successfully activates subscription. User profile correctly shows active subscription status. Subscription data properly stored and retrieved."
+
 frontend:
   # No frontend testing requested
 
 metadata:
   created_by: "testing_agent"
   version: "1.0"
-  test_sequence: 1
+  test_sequence: 2
   run_ui: false
 
 test_plan:
   current_focus:
-    - "Phone Login Authentication"
-    - "Credentials Setup"
-    - "Email Credential Login"
-    - "Username Credential Login"
-    - "Product Management"
-    - "Data Sync - Products"
-    - "Sales Management"
-    - "Data Sync - Sales"
-    - "Authentication Security"
+    - "Purchases CRUD Operations"
+    - "Sales Update Operation"
+    - "Subscription Management"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
 agent_communication:
     - agent: "testing"
-      message: "Completed comprehensive testing of TekaTeka multi-device auth and data sync API. All 9 test scenarios passed successfully: 1) Phone login creates users and returns JWT tokens, 2) Credentials setup works with email/username validation, 3) Email login returns same user ID proving account linking, 4) Username login confirms multi-device auth, 5) Product creation with proper user association, 6) Data sync verified - colleague sees products from different device, 7) Sales creation with stock management, 8) Bidirectional data sync confirmed - original user sees colleague's sales, 9) Security validated with wrong password rejection. Multi-device authentication and real-time data synchronization working perfectly across all endpoints."
+      message: "Completed comprehensive testing of TekaTeka multi-device auth and data sync API. All 9 test scenarios passed successfully."
+    - agent: "main"
+      message: "Frontend migration to MongoDB backend completed. AuthContext and DataContext now use apiService.ts for all data operations. LoginScreen has new 'Collegue' tab for credential login. Settings has new 'Acces Collegue' section. Need to test new backend endpoints: purchases CRUD, sales update, and subscribe. Please test: 1) POST/GET/PUT/DELETE /api/data/purchases, 2) PUT /api/data/sales/{id}, 3) POST /api/auth/subscribe with plan='monthly'. Use existing phone login flow to get a token first."
+    - agent: "testing"
+      message: "Completed testing of new TekaTeka backend endpoints. All 10 test scenarios passed successfully: 1) Phone login authentication, 2) Purchases CRUD (POST/GET/PUT/DELETE), 3) Sales update (PUT), 4) Subscription management (POST /auth/subscribe + profile verification). All endpoints working perfectly with proper authentication, data validation, and user association."

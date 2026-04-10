@@ -7,6 +7,8 @@ import {
   ScrollView,
   Alert,
   Modal,
+  TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'expo-router';
@@ -27,13 +29,24 @@ const LANGUAGES = [
 ];
 
 export default function SettingsScreen() {
-  const { user, updateUser, logout, isSubscriptionActive, getSubscriptionDaysRemaining, hasPin, checkHasPin, removePin } = useAuth();
+  const { user, updateUser, logout, isSubscriptionActive, getSubscriptionDaysRemaining, hasPin, checkHasPin, removePin, setupCredentials } = useAuth();
   const router = useRouter();
   const [langModalVisible, setLangModalVisible] = useState(false);
   const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
   const [pinModalVisible, setPinModalVisible] = useState(false);
   const [pinMode, setPinMode] = useState<'setup' | 'change'>('setup');
   const [removePinConfirm, setRemovePinConfirm] = useState(false);
+
+  // Credential setup state
+  const [credModalVisible, setCredModalVisible] = useState(false);
+  const [credEmail, setCredEmail] = useState('');
+  const [credUsername, setCredUsername] = useState('');
+  const [credPassword, setCredPassword] = useState('');
+  const [credConfirmPassword, setCredConfirmPassword] = useState('');
+  const [credLoading, setCredLoading] = useState(false);
+  const [credError, setCredError] = useState('');
+  const [credSuccess, setCredSuccess] = useState(false);
+  const [showCredPassword, setShowCredPassword] = useState(false);
 
   const otpInfo = getOTPProviderInfo();
   const paymentInfo = getPaymentProviderInfo();
@@ -55,6 +68,47 @@ export default function SettingsScreen() {
 
   const handleLogout = async () => {
     await logout();
+  };
+
+  const handleSetupCredentials = async () => {
+    setCredError('');
+    setCredSuccess(false);
+
+    if (!credEmail.trim() && !credUsername.trim()) {
+      setCredError('Entrez au moins un email ou un nom d\'utilisateur');
+      return;
+    }
+    if (!credPassword || credPassword.length < 6) {
+      setCredError('Le mot de passe doit contenir au moins 6 caracteres');
+      return;
+    }
+    if (credPassword !== credConfirmPassword) {
+      setCredError('Les mots de passe ne correspondent pas');
+      return;
+    }
+
+    setCredLoading(true);
+    try {
+      await setupCredentials(
+        credEmail.trim() || undefined,
+        credUsername.trim() || undefined,
+        credPassword
+      );
+      setCredSuccess(true);
+      // Reset form after 2s
+      setTimeout(() => {
+        setCredModalVisible(false);
+        setCredSuccess(false);
+        setCredEmail('');
+        setCredUsername('');
+        setCredPassword('');
+        setCredConfirmPassword('');
+      }, 2000);
+    } catch (error: any) {
+      setCredError(error.message || 'Erreur lors de la configuration');
+    } finally {
+      setCredLoading(false);
+    }
   };
 
   return (
@@ -133,8 +187,42 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Colleague Access Section */}
+        <Text style={styles.sectionLabel}>ACCES COLLEGUE</Text>
+        <View style={styles.card}>
+          <TouchableOpacity
+            style={styles.settingRow}
+            onPress={() => {
+              setCredEmail(user?.email || '');
+              setCredUsername(user?.username || '');
+              setCredPassword('');
+              setCredConfirmPassword('');
+              setCredError('');
+              setCredSuccess(false);
+              setCredModalVisible(true);
+            }}
+          >
+            <View style={styles.settingLeft}>
+              <View style={[styles.iconCircle, { backgroundColor: user?.hasPassword ? '#d1fae5' : '#fef3c7' }]}>
+                <Ionicons name={user?.hasPassword ? 'people' : 'person-add'} size={22} color={user?.hasPassword ? '#10b981' : '#f59e0b'} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.settingTitle}>
+                  {user?.hasPassword ? 'Identifiants configures' : 'Configurer les identifiants'}
+                </Text>
+                <Text style={styles.settingSubtitle}>
+                  {user?.hasPassword
+                    ? `${user.email ? user.email : ''}${user.email && user.username ? ' / ' : ''}${user.username ? user.username : ''}`
+                    : 'Permettre a un collegue de se connecter'}
+                </Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={22} color="#94a3b8" />
+          </TouchableOpacity>
+        </View>
+
         {/* Security / PIN Section */}
-        <Text style={styles.sectionLabel}>SÉCURITÉ</Text>
+        <Text style={styles.sectionLabel}>SECURITE</Text>
         <View style={styles.card}>
           <TouchableOpacity
             style={styles.settingRow}
@@ -354,6 +442,105 @@ export default function SettingsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Credential Setup Modal */}
+      <Modal visible={credModalVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { padding: 24, maxHeight: '85%' }]}>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Acces collegue</Text>
+                <TouchableOpacity onPress={() => setCredModalVisible(false)}>
+                  <Ionicons name="close" size={28} color="#64748b" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={{ backgroundColor: '#eff6ff', borderRadius: 12, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: '#bfdbfe' }}>
+                <Text style={{ fontSize: 13, color: '#1e40af', lineHeight: 18 }}>
+                  Configurez un email/nom d'utilisateur et mot de passe pour permettre a votre collegue de se connecter sur un autre appareil et voir les donnees en temps reel.
+                </Text>
+              </View>
+
+              {credSuccess ? (
+                <View style={{ alignItems: 'center', paddingVertical: 24 }}>
+                  <View style={[styles.iconCircle, { backgroundColor: '#d1fae5', width: 64, height: 64, borderRadius: 32, marginBottom: 12 }]}>
+                    <Ionicons name="checkmark-circle" size={36} color="#10b981" />
+                  </View>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: '#10b981' }}>Configuration reussie !</Text>
+                  <Text style={{ color: '#64748b', textAlign: 'center', marginTop: 8 }}>
+                    Votre collegue peut maintenant se connecter.
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#334155', marginBottom: 6 }}>Email (optionnel)</Text>
+                  <TextInput
+                    style={styles.credInput}
+                    placeholder="collegue@email.com"
+                    placeholderTextColor="#94a3b8"
+                    value={credEmail}
+                    onChangeText={(t) => { setCredEmail(t); setCredError(''); }}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                  />
+
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#334155', marginBottom: 6, marginTop: 12 }}>Nom d'utilisateur (optionnel)</Text>
+                  <TextInput
+                    style={styles.credInput}
+                    placeholder="nom_collegue"
+                    placeholderTextColor="#94a3b8"
+                    value={credUsername}
+                    onChangeText={(t) => { setCredUsername(t); setCredError(''); }}
+                    autoCapitalize="none"
+                  />
+
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#334155', marginBottom: 6, marginTop: 12 }}>Mot de passe</Text>
+                  <View style={styles.credPasswordRow}>
+                    <TextInput
+                      style={styles.credPasswordInput}
+                      placeholder="Min. 6 caracteres"
+                      placeholderTextColor="#94a3b8"
+                      value={credPassword}
+                      onChangeText={(t) => { setCredPassword(t); setCredError(''); }}
+                      secureTextEntry={!showCredPassword}
+                    />
+                    <TouchableOpacity style={{ padding: 14 }} onPress={() => setShowCredPassword(!showCredPassword)}>
+                      <Ionicons name={showCredPassword ? 'eye-off' : 'eye'} size={22} color="#64748b" />
+                    </TouchableOpacity>
+                  </View>
+
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#334155', marginBottom: 6, marginTop: 12 }}>Confirmer le mot de passe</Text>
+                  <TextInput
+                    style={styles.credInput}
+                    placeholder="Confirmer le mot de passe"
+                    placeholderTextColor="#94a3b8"
+                    value={credConfirmPassword}
+                    onChangeText={(t) => { setCredConfirmPassword(t); setCredError(''); }}
+                    secureTextEntry={!showCredPassword}
+                  />
+
+                  {credError ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fef2f2', padding: 12, borderRadius: 10, marginTop: 12, borderWidth: 1, borderColor: '#fca5a5' }}>
+                      <Ionicons name="alert-circle" size={16} color="#dc2626" />
+                      <Text style={{ flex: 1, fontSize: 14, color: '#dc2626' }}>{credError}</Text>
+                    </View>
+                  ) : null}
+
+                  <TouchableOpacity
+                    style={{ backgroundColor: '#2563eb', padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 16, minHeight: 52, justifyContent: 'center' }}
+                    onPress={handleSetupCredentials}
+                    disabled={credLoading}
+                  >
+                    {credLoading ? <ActivityIndicator color="#fff" /> : (
+                      <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Enregistrer</Text>
+                    )}
+                  </TouchableOpacity>
+                </>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -546,5 +733,28 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#94a3b8',
     marginTop: 2,
+  },
+  credInput: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 16,
+    color: '#1e293b',
+  },
+  credPasswordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+  },
+  credPasswordInput: {
+    flex: 1,
+    padding: 14,
+    fontSize: 16,
+    color: '#1e293b',
   },
 });

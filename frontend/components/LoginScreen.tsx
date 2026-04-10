@@ -23,10 +23,15 @@ import { ALL_COUNTRIES, searchCountries, getFlagUrl, Country } from '../utils/co
 
 const BG = '#fef3e7';
 
+type LoginTab = 'phone' | 'credentials';
+
 export default function LoginScreen() {
-  const { login } = useAuth();
+  const { login, loginWithCredentials } = useAuth();
+  const [activeTab, setActiveTab] = useState<LoginTab>('phone');
+
+  // Phone login state
   const [localNumber, setLocalNumber] = useState('');
-  const [selectedCountry, setSelectedCountry] = useState<Country>(ALL_COUNTRIES[0]); // Default: DRC
+  const [selectedCountry, setSelectedCountry] = useState<Country>(ALL_COUNTRIES[0]);
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -34,31 +39,31 @@ export default function LoginScreen() {
   const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const otpInfo = getOTPProviderInfo();
+  // Credential login state
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [credError, setCredError] = useState('');
 
-  // Full phone number = country code + local number
+  const otpInfo = getOTPProviderInfo();
   const fullPhoneNumber = selectedCountry.code + localNumber.replace(/^0+/, '');
 
   const handleSendOTP = async () => {
     if (localNumber.length < 6) {
-      Alert.alert(i18n.t('error'), 'Veuillez entrer un numéro valide');
+      Alert.alert(i18n.t('error'), 'Veuillez entrer un numero valide');
       return;
     }
-
     setLoading(true);
     try {
       const result = await sendOTP(fullPhoneNumber);
-
       if (result.success) {
         setOtpSent(true);
-        if (result.otp) {
-          setMockOtp(result.otp);
-        }
+        if (result.otp) setMockOtp(result.otp);
       } else {
         Alert.alert(i18n.t('error'), result.message);
       }
     } catch (error) {
-      Alert.alert(i18n.t('error'), "Échec de l'envoi du code");
+      Alert.alert(i18n.t('error'), "Echec de l'envoi du code");
     } finally {
       setLoading(false);
     }
@@ -66,21 +71,39 @@ export default function LoginScreen() {
 
   const handleVerifyOTP = async () => {
     if (otp.length !== 4) {
-      Alert.alert(i18n.t('error'), 'Entrez le code à 4 chiffres');
+      Alert.alert(i18n.t('error'), 'Entrez le code a 4 chiffres');
       return;
     }
-
     setLoading(true);
     try {
       const result = await verifyOTP(fullPhoneNumber, otp);
-
       if (result.success) {
         await login(fullPhoneNumber, otp);
       } else {
         Alert.alert(i18n.t('error'), result.message);
       }
-    } catch (error) {
-      Alert.alert(i18n.t('error'), 'Vérification échouée');
+    } catch (error: any) {
+      Alert.alert(i18n.t('error'), error.message || 'Verification echouee');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCredentialLogin = async () => {
+    setCredError('');
+    if (!identifier.trim()) {
+      setCredError('Entrez votre email ou nom d\'utilisateur');
+      return;
+    }
+    if (!password) {
+      setCredError('Entrez votre mot de passe');
+      return;
+    }
+    setLoading(true);
+    try {
+      await loginWithCredentials(identifier.trim(), password);
+    } catch (error: any) {
+      setCredError(error.message || 'Identifiants incorrects');
     } finally {
       setLoading(false);
     }
@@ -93,8 +116,8 @@ export default function LoginScreen() {
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View style={styles.content}>
-          {/* Logo + App name + selected country flag */}
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+          {/* Logo */}
           <View style={styles.header}>
             <Image source={require('../assets/images/tk-logo-transparent.png')} style={styles.logoImage} />
             <View style={styles.titleRow}>
@@ -104,102 +127,162 @@ export default function LoginScreen() {
             <Text style={styles.subtitle}>{i18n.t('welcome')}</Text>
           </View>
 
-          <View style={styles.form}>
-            {!otpSent ? (
-              <>
-                <Text style={styles.label}>{i18n.t('phoneNumber')}</Text>
+          {/* Tab Switcher */}
+          <View style={styles.tabContainer}>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'phone' && styles.tabActive]}
+              onPress={() => setActiveTab('phone')}
+            >
+              <Ionicons name="call" size={18} color={activeTab === 'phone' ? '#2563eb' : '#94a3b8'} />
+              <Text style={[styles.tabText, activeTab === 'phone' && styles.tabTextActive]}>Telephone</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'credentials' && styles.tabActive]}
+              onPress={() => setActiveTab('credentials')}
+            >
+              <Ionicons name="person" size={18} color={activeTab === 'credentials' ? '#2563eb' : '#94a3b8'} />
+              <Text style={[styles.tabText, activeTab === 'credentials' && styles.tabTextActive]}>Collegue</Text>
+            </TouchableOpacity>
+          </View>
 
-                {/* Phone input with country selector */}
-                <View style={styles.phoneRow}>
+          {/* ========== PHONE TAB ========== */}
+          {activeTab === 'phone' && (
+            <View style={styles.form}>
+              {!otpSent ? (
+                <>
+                  <Text style={styles.label}>{i18n.t('phoneNumber')}</Text>
+                  <View style={styles.phoneRow}>
+                    <TouchableOpacity
+                      style={styles.countryButton}
+                      onPress={() => setShowCountryPicker(true)}
+                    >
+                      <Image source={{ uri: getFlagUrl(selectedCountry.iso) }} style={styles.countryFlagImg} />
+                      <Text style={styles.countryCode}>+{selectedCountry.code}</Text>
+                      <Ionicons name="chevron-down" size={14} color="#64748b" />
+                    </TouchableOpacity>
+                    <TextInput
+                      style={styles.phoneInput}
+                      placeholder="Numero local"
+                      placeholderTextColor="#94a3b8"
+                      value={localNumber}
+                      onChangeText={setLocalNumber}
+                      keyboardType="phone-pad"
+                      maxLength={12}
+                      autoFocus
+                    />
+                  </View>
+                  {localNumber.length > 3 && (
+                    <Text style={styles.previewNumber}>+{fullPhoneNumber}</Text>
+                  )}
                   <TouchableOpacity
-                    style={styles.countryButton}
-                    onPress={() => setShowCountryPicker(true)}
+                    style={[styles.button, loading && styles.buttonDisabled]}
+                    onPress={handleSendOTP}
+                    disabled={loading}
                   >
-                    <Image source={{ uri: getFlagUrl(selectedCountry.iso) }} style={styles.countryFlagImg} />
-                    <Text style={styles.countryCode}>+{selectedCountry.code}</Text>
-                    <Ionicons name="chevron-down" size={14} color="#64748b" />
+                    {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{i18n.t('sendOTP')}</Text>}
                   </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.label}>{i18n.t('enterOTP')}</Text>
+                  <View style={styles.phoneDisplayRow}>
+                    <Image source={{ uri: getFlagUrl(selectedCountry.iso) }} style={styles.countryFlagImg} />
+                    <Text style={styles.phoneDisplay}>+{fullPhoneNumber}</Text>
+                  </View>
                   <TextInput
-                    style={styles.phoneInput}
-                    placeholder="Numéro local"
+                    style={styles.otpInput}
+                    placeholder="0000"
                     placeholderTextColor="#94a3b8"
-                    value={localNumber}
-                    onChangeText={setLocalNumber}
-                    keyboardType="phone-pad"
-                    maxLength={12}
+                    value={otp}
+                    onChangeText={setOtp}
+                    keyboardType="number-pad"
+                    maxLength={4}
                     autoFocus
                   />
-                </View>
+                  {mockOtp ? (
+                    <View style={styles.mockOtpBox}>
+                      <Text style={styles.mockOtpLabel}>Code de verification :</Text>
+                      <Text style={styles.mockOtpText}>{mockOtp}</Text>
+                    </View>
+                  ) : null}
+                  <TouchableOpacity
+                    style={[styles.button, loading && styles.buttonDisabled]}
+                    onPress={handleVerifyOTP}
+                    disabled={loading}
+                  >
+                    {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{i18n.t('verifyOTP')}</Text>}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.backButton}
+                    onPress={() => { setOtpSent(false); setOtp(''); setMockOtp(''); }}
+                  >
+                    <Ionicons name="arrow-back" size={16} color="#64748b" />
+                    <Text style={styles.backButtonText}>Changer de numero</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          )}
 
-                {/* Preview full number */}
-                {localNumber.length > 3 && (
-                  <Text style={styles.previewNumber}>+{fullPhoneNumber}</Text>
-                )}
+          {/* ========== CREDENTIALS TAB ========== */}
+          {activeTab === 'credentials' && (
+            <View style={styles.form}>
+              <View style={styles.credInfoBox}>
+                <Ionicons name="information-circle" size={20} color="#2563eb" />
+                <Text style={styles.credInfoText}>
+                  Connectez-vous avec les identifiants fournis par le proprietaire du compte.
+                </Text>
+              </View>
 
-                <TouchableOpacity
-                  style={[styles.button, loading && styles.buttonDisabled]}
-                  onPress={handleSendOTP}
-                  disabled={loading}
-                >
-                  {loading ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={styles.buttonText}>{i18n.t('sendOTP')}</Text>
-                  )}
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                <Text style={styles.label}>{i18n.t('enterOTP')}</Text>
-                <View style={styles.phoneDisplayRow}>
-                  <Image source={{ uri: getFlagUrl(selectedCountry.iso) }} style={styles.countryFlagImg} />
-                  <Text style={styles.phoneDisplay}>+{fullPhoneNumber}</Text>
-                </View>
-                
+              <Text style={styles.label}>Email ou nom d'utilisateur</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="ex: collegue@email.com"
+                placeholderTextColor="#94a3b8"
+                value={identifier}
+                onChangeText={(t) => { setIdentifier(t); setCredError(''); }}
+                autoCapitalize="none"
+                keyboardType="email-address"
+              />
+
+              <Text style={[styles.label, { marginTop: 12 }]}>Mot de passe</Text>
+              <View style={styles.passwordRow}>
                 <TextInput
-                  style={styles.input}
-                  placeholder="0000"
+                  style={styles.passwordInput}
+                  placeholder="Mot de passe"
                   placeholderTextColor="#94a3b8"
-                  value={otp}
-                  onChangeText={setOtp}
-                  keyboardType="number-pad"
-                  maxLength={4}
-                  autoFocus
+                  value={password}
+                  onChangeText={(t) => { setPassword(t); setCredError(''); }}
+                  secureTextEntry={!showPassword}
                 />
-                
-                {mockOtp ? (
-                  <View style={styles.mockOtpBox}>
-                    <Text style={styles.mockOtpLabel}>Code de vérification :</Text>
-                    <Text style={styles.mockOtpText}>{mockOtp}</Text>
-                  </View>
-                ) : null}
-                
                 <TouchableOpacity
-                  style={[styles.button, loading && styles.buttonDisabled]}
-                  onPress={handleVerifyOTP}
-                  disabled={loading}
+                  style={styles.eyeButton}
+                  onPress={() => setShowPassword(!showPassword)}
                 >
-                  {loading ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={styles.buttonText}>{i18n.t('verifyOTP')}</Text>
-                  )}
+                  <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={22} color="#64748b" />
                 </TouchableOpacity>
-                
-                <TouchableOpacity
-                  style={styles.backButton}
-                  onPress={() => { setOtpSent(false); setOtp(''); setMockOtp(''); }}
-                >
-                  <Ionicons name="arrow-back" size={16} color="#64748b" />
-                  <Text style={styles.backButtonText}>Changer de numéro</Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-        </View>
+              </View>
+
+              {credError ? (
+                <View style={styles.errorBox}>
+                  <Ionicons name="alert-circle" size={16} color="#dc2626" />
+                  <Text style={styles.errorText}>{credError}</Text>
+                </View>
+              ) : null}
+
+              <TouchableOpacity
+                style={[styles.button, loading && styles.buttonDisabled]}
+                onPress={handleCredentialLogin}
+                disabled={loading}
+              >
+                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Se connecter</Text>}
+              </TouchableOpacity>
+            </View>
+          )}
+        </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Country Picker Modal with Search */}
+      {/* Country Picker Modal */}
       <Modal visible={showCountryPicker} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -209,8 +292,6 @@ export default function LoginScreen() {
                 <Ionicons name="close" size={28} color="#64748b" />
               </TouchableOpacity>
             </View>
-
-            {/* Search Bar */}
             <View style={styles.searchBar}>
               <Ionicons name="search" size={20} color="#94a3b8" />
               <TextInput
@@ -227,7 +308,6 @@ export default function LoginScreen() {
                 </TouchableOpacity>
               )}
             </View>
-
             <ScrollView style={styles.countryList} keyboardShouldPersistTaps="handled">
               {searchCountries(searchQuery).map((country, index) => (
                 <TouchableOpacity
@@ -260,7 +340,7 @@ export default function LoginScreen() {
               {searchCountries(searchQuery).length === 0 && (
                 <View style={{ padding: 24, alignItems: 'center' }}>
                   <Ionicons name="globe-outline" size={48} color="#cbd5e1" />
-                  <Text style={{ color: '#94a3b8', fontSize: 16, marginTop: 12 }}>Aucun résultat</Text>
+                  <Text style={{ color: '#94a3b8', fontSize: 16, marginTop: 12 }}>Aucun resultat</Text>
                 </View>
               )}
             </ScrollView>
@@ -272,254 +352,149 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: BG,
-  },
-  container: {
-    flex: 1,
-    backgroundColor: BG,
-  },
-  content: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: 24,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 40,
-  },
-  logoImage: {
-    width: 120,
-    height: 120,
-    resizeMode: 'contain',
-  },
-  titleRow: {
+  safeArea: { flex: 1, backgroundColor: BG },
+  container: { flex: 1, backgroundColor: BG },
+  scrollContent: { flexGrow: 1, justifyContent: 'center', padding: 24 },
+  header: { alignItems: 'center', marginBottom: 28 },
+  logoImage: { width: 100, height: 100, resizeMode: 'contain' },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
+  title: { fontSize: 32, fontWeight: 'bold', color: '#1e293b' },
+  headerFlagImg: { width: 28, height: 20, borderRadius: 3, resizeMode: 'cover' },
+  subtitle: { fontSize: 16, color: '#64748b', marginTop: 4 },
+
+  // Tab switcher
+  tabContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginTop: 12,
-  },
-  title: {
-    fontSize: 36,
-    fontWeight: 'bold',
-    color: '#1e293b',
-  },
-  headerFlagImg: {
-    width: 32,
-    height: 22,
-    borderRadius: 3,
-    resizeMode: 'cover',
-  },
-  subtitle: {
-    fontSize: 18,
-    color: '#64748b',
-    marginTop: 6,
-  },
-  form: {
-    gap: 14,
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#334155',
-    marginBottom: 4,
-  },
-  // Phone input row
-  phoneRow: {
-    flexDirection: 'row',
-    gap: 8,
-    alignItems: 'center',
-  },
-  countryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
     backgroundColor: '#fff',
-    borderWidth: 2,
-    borderColor: '#e2e8f0',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 14,
-    minWidth: 110,
-  },
-  countryFlagImg: {
-    width: 24,
-    height: 16,
-    borderRadius: 2,
-    resizeMode: 'cover',
-  },
-  countryCode: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1e293b',
-  },
-  phoneInput: {
-    flex: 1,
-    backgroundColor: '#fff',
-    borderWidth: 2,
-    borderColor: '#e2e8f0',
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1e293b',
-  },
-  previewNumber: {
-    fontSize: 14,
-    color: '#2563eb',
-    fontWeight: '600',
-    textAlign: 'center',
-    marginTop: -4,
-  },
-  input: {
-    backgroundColor: '#fff',
-    borderWidth: 2,
-    borderColor: '#e2e8f0',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#1e293b',
-    textAlign: 'center',
-    letterSpacing: 8,
-  },
-  button: {
-    backgroundColor: '#2563eb',
-    padding: 18,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 4,
-    minHeight: 56,
-    justifyContent: 'center',
-  },
-  buttonDisabled: {
-    backgroundColor: '#94a3b8',
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  phoneDisplay: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#2563eb',
-    textAlign: 'center',
-  },
-  phoneDisplayRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  mockOtpBox: {
-    backgroundColor: '#fef3c7',
-    padding: 16,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#fbbf24',
-    alignItems: 'center',
-  },
-  mockOtpLabel: {
-    fontSize: 12,
-    color: '#92400e',
-    marginBottom: 4,
-  },
-  mockOtpText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#92400e',
-    letterSpacing: 4,
-  },
-  backButton: {
-    padding: 12,
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  backButtonText: {
-    color: '#64748b',
-    fontSize: 16,
-  },
-  // Country picker modal
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '70%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1e293b',
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginHorizontal: 16,
-    marginVertical: 12,
-    backgroundColor: '#f1f5f9',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    borderRadius: 14,
+    padding: 4,
+    marginBottom: 20,
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },
-  searchInput: {
+  tab: {
     flex: 1,
-    fontSize: 16,
-    color: '#1e293b',
-    padding: 0,
-  },
-  countryList: {
-    padding: 12,
-  },
-  countryItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    padding: 14,
-    borderRadius: 12,
-    marginBottom: 4,
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 10,
   },
-  countryItemSelected: {
+  tabActive: {
     backgroundColor: '#eff6ff',
   },
-  countryItemFlagImg: {
-    width: 36,
-    height: 24,
-    borderRadius: 3,
-    resizeMode: 'cover',
+  tabText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#94a3b8',
   },
-  countryItemName: {
-    fontSize: 16,
-    color: '#1e293b',
-    fontWeight: '500',
-  },
-  countryItemNameSelected: {
-    fontWeight: '700',
+  tabTextActive: {
     color: '#2563eb',
   },
-  countryItemCode: {
-    fontSize: 13,
-    color: '#94a3b8',
-    marginTop: 2,
+
+  form: { gap: 14 },
+  label: { fontSize: 16, fontWeight: '600', color: '#334155', marginBottom: 4 },
+
+  // Phone input
+  phoneRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  countryButton: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#fff', borderWidth: 2, borderColor: '#e2e8f0',
+    borderRadius: 12, paddingHorizontal: 12, paddingVertical: 14, minWidth: 110,
   },
+  countryFlagImg: { width: 24, height: 16, borderRadius: 2, resizeMode: 'cover' },
+  countryCode: { fontSize: 16, fontWeight: '700', color: '#1e293b' },
+  phoneInput: {
+    flex: 1, backgroundColor: '#fff', borderWidth: 2, borderColor: '#e2e8f0',
+    borderRadius: 12, padding: 14, fontSize: 18, fontWeight: '600', color: '#1e293b',
+  },
+  previewNumber: { fontSize: 14, color: '#2563eb', fontWeight: '600', textAlign: 'center', marginTop: -4 },
+
+  input: {
+    backgroundColor: '#fff', borderWidth: 2, borderColor: '#e2e8f0',
+    borderRadius: 12, padding: 16, fontSize: 16, color: '#1e293b',
+  },
+  otpInput: {
+    backgroundColor: '#fff', borderWidth: 2, borderColor: '#e2e8f0',
+    borderRadius: 12, padding: 16, fontSize: 24, fontWeight: '700',
+    color: '#1e293b', textAlign: 'center', letterSpacing: 8,
+  },
+
+  // Password
+  passwordRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#fff', borderWidth: 2, borderColor: '#e2e8f0', borderRadius: 12,
+  },
+  passwordInput: {
+    flex: 1, padding: 16, fontSize: 16, color: '#1e293b',
+  },
+  eyeButton: {
+    padding: 14,
+  },
+
+  // Credential info
+  credInfoBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#eff6ff', borderRadius: 12, padding: 14,
+    borderWidth: 1, borderColor: '#bfdbfe',
+  },
+  credInfoText: { flex: 1, fontSize: 13, color: '#1e40af', lineHeight: 18 },
+
+  // Error
+  errorBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#fef2f2', padding: 12, borderRadius: 10,
+    borderWidth: 1, borderColor: '#fca5a5',
+  },
+  errorText: { flex: 1, fontSize: 14, color: '#dc2626' },
+
+  // Buttons
+  button: {
+    backgroundColor: '#2563eb', padding: 18, borderRadius: 12,
+    alignItems: 'center', marginTop: 4, minHeight: 56, justifyContent: 'center',
+  },
+  buttonDisabled: { backgroundColor: '#94a3b8' },
+  buttonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+
+  phoneDisplay: { fontSize: 20, fontWeight: '600', color: '#2563eb', textAlign: 'center' },
+  phoneDisplayRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 8 },
+
+  mockOtpBox: {
+    backgroundColor: '#fef3c7', padding: 16, borderRadius: 8,
+    borderWidth: 1, borderColor: '#fbbf24', alignItems: 'center',
+  },
+  mockOtpLabel: { fontSize: 12, color: '#92400e', marginBottom: 4 },
+  mockOtpText: { fontSize: 24, fontWeight: 'bold', color: '#92400e', letterSpacing: 4 },
+
+  backButton: {
+    padding: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6,
+  },
+  backButtonText: { color: '#64748b', fontSize: 16 },
+
+  // Country picker modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '70%' },
+  modalHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    padding: 20, borderBottomWidth: 1, borderBottomColor: '#e2e8f0',
+  },
+  modalTitle: { fontSize: 20, fontWeight: '700', color: '#1e293b' },
+  searchBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    marginHorizontal: 16, marginVertical: 12, backgroundColor: '#f1f5f9',
+    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10,
+    borderWidth: 1, borderColor: '#e2e8f0',
+  },
+  searchInput: { flex: 1, fontSize: 16, color: '#1e293b', padding: 0 },
+  countryList: { padding: 12 },
+  countryItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    padding: 14, borderRadius: 12, marginBottom: 4,
+  },
+  countryItemSelected: { backgroundColor: '#eff6ff' },
+  countryItemFlagImg: { width: 36, height: 24, borderRadius: 3, resizeMode: 'cover' },
+  countryItemName: { fontSize: 16, color: '#1e293b', fontWeight: '500' },
+  countryItemNameSelected: { fontWeight: '700', color: '#2563eb' },
+  countryItemCode: { fontSize: 13, color: '#94a3b8', marginTop: 2 },
 });

@@ -40,6 +40,9 @@ router = APIRouter()
 # ==========================================
 # Models
 # ==========================================
+class PhoneLoginRequest(BaseModel):
+    phoneNumber: str
+
 class RegisterRequest(BaseModel):
     phoneNumber: str
     email: Optional[str] = None
@@ -62,6 +65,18 @@ class UpdateProfileRequest(BaseModel):
     language: Optional[str] = None
     email: Optional[str] = None
     username: Optional[str] = None
+
+class SubscribeRequest(BaseModel):
+    plan: str  # monthly, quarterly, yearly
+
+class PurchaseModel(BaseModel):
+    productName: str
+    supplier: str = ""
+    quantity: int = 1
+    unitPrice: float = 0
+    totalCost: float = 0
+    currency: str = "USD"
+    notes: Optional[str] = None
 
 class ProductModel(BaseModel):
     name: str
@@ -124,9 +139,13 @@ async def get_current_user(authorization: str = Header(None)):
 # Auth Routes
 # ==========================================
 @router.post("/auth/phone-login")
-async def phone_login(phone_number: str = None, phoneNumber: str = None):
+async def phone_login(req: PhoneLoginRequest = None, phone_number: str = None, phoneNumber: str = None):
     """Login/register via phone after OTP verification. Creates user if not exists."""
-    phone = phoneNumber or phone_number
+    phone = None
+    if req and req.phoneNumber:
+        phone = req.phoneNumber
+    else:
+        phone = phoneNumber or phone_number
     if not phone:
         raise HTTPException(status_code=400, detail="Numéro requis")
     
@@ -311,6 +330,16 @@ async def delete_sale(sale_id: str, user_id: str = Depends(get_current_user)):
     await db.sales.delete_one({"_id": ObjectId(sale_id), "userId": user_id})
     return {"success": True}
 
+@router.put("/data/sales/{sale_id}")
+async def update_sale(sale_id: str, updates: dict, user_id: str = Depends(get_current_user)):
+    updates.pop("id", None)
+    updates.pop("_id", None)
+    updates.pop("userId", None)
+    updates["updatedAt"] = datetime.utcnow().isoformat()
+    await db.sales.update_one({"_id": ObjectId(sale_id), "userId": user_id}, {"$set": updates})
+    doc = await db.sales.find_one({"_id": ObjectId(sale_id)})
+    return serialize_doc(doc) if doc else {}
+
 # ==========================================
 # Expenses CRUD
 # ==========================================
@@ -374,6 +403,69 @@ async def update_debt(debt_id: str, updates: dict, user_id: str = Depends(get_cu
 async def delete_debt(debt_id: str, user_id: str = Depends(get_current_user)):
     await db.debts.delete_one({"_id": ObjectId(debt_id), "userId": user_id})
     return {"success": True}
+
+# ==========================================
+# Purchases CRUD
+# ==========================================
+@router.get("/data/purchases")
+async def get_purchases(user_id: str = Depends(get_current_user)):
+    purchases = await db.purchases.find({"userId": user_id}).to_list(5000)
+    return [serialize_doc(p) for p in purchases]
+
+@router.post("/data/purchases")
+async def add_purchase(purchase: PurchaseModel, user_id: str = Depends(get_current_user)):
+    doc = purchase.dict()
+    doc["userId"] = user_id
+    doc["createdAt"] = datetime.utcnow().isoformat()
+    result = await db.purchases.insert_one(doc)
+    doc["id"] = str(result.inserted_id)
+    return serialize_doc(doc)
+
+@router.put("/data/purchases/{purchase_id}")
+async def update_purchase(purchase_id: str, updates: dict, user_id: str = Depends(get_current_user)):
+    updates.pop("id", None)
+    updates.pop("_id", None)
+    updates.pop("userId", None)
+    updates["updatedAt"] = datetime.utcnow().isoformat()
+    await db.purchases.update_one({"_id": ObjectId(purchase_id), "userId": user_id}, {"$set": updates})
+    doc = await db.purchases.find_one({"_id": ObjectId(purchase_id)})
+    return serialize_doc(doc) if doc else {}
+
+@router.delete("/data/purchases/{purchase_id}")
+async def delete_purchase(purchase_id: str, user_id: str = Depends(get_current_user)):
+    await db.purchases.delete_one({"_id": ObjectId(purchase_id), "userId": user_id})
+    return {"success": True}
+
+# ==========================================
+# Subscription
+# ==========================================
+@router.post("/auth/subscribe")
+async def subscribe(req: SubscribeRequest, user_id: str = Depends(get_current_user)):
+    """Subscribe to a plan."""
+    now = datetime.utcnow()
+    if req.plan == "monthly":
+        end_date = now + timedelta(days=30)
+    elif req.plan == "quarterly":
+        end_date = now + timedelta(days=90)
+    elif req.plan == "yearly":
+        end_date = now + timedelta(days=365)
+    else:
+        raise HTTPException(status_code=400, detail="Plan invalide")
+    
+    subscription = {
+        "plan": req.plan,
+        "status": "active",
+        "startedAt": now.isoformat(),
+        "expiresAt": end_date.isoformat(),
+    }
+    
+    await db.users.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {"subscription": subscription, "updatedAt": now.isoformat()}}
+    )
+    
+    user = await db.users.find_one({"_id": ObjectId(user_id)})
+    return {"success": True, "user": serialize_user(user)}
 
 # ==========================================
 # Helpers

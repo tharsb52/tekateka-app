@@ -103,6 +103,13 @@ export const authAPI = {
   logout: async () => {
     await clearToken();
   },
+
+  subscribe: async (plan: string) => {
+    return apiFetch('/auth/subscribe', {
+      method: 'POST',
+      body: JSON.stringify({ plan }),
+    });
+  },
 };
 
 // ==========================================
@@ -135,6 +142,11 @@ export const salesAPI = {
   add: (sale: any) => apiFetch('/data/sales', {
     method: 'POST',
     body: JSON.stringify(sale),
+  }),
+
+  update: (id: string, updates: any) => apiFetch(`/data/sales/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(updates),
   }),
 
   delete: (id: string) => apiFetch(`/data/sales/${id}`, {
@@ -180,6 +192,27 @@ export const debtsAPI = {
   }),
 
   delete: (id: string) => apiFetch(`/data/debts/${id}`, {
+    method: 'DELETE',
+  }),
+};
+
+// ==========================================
+// Purchases API
+// ==========================================
+export const purchasesAPI = {
+  getAll: () => apiFetch('/data/purchases'),
+
+  add: (purchase: any) => apiFetch('/data/purchases', {
+    method: 'POST',
+    body: JSON.stringify(purchase),
+  }),
+
+  update: (id: string, updates: any) => apiFetch(`/data/purchases/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(updates),
+  }),
+
+  delete: (id: string) => apiFetch(`/data/purchases/${id}`, {
     method: 'DELETE',
   }),
 };
