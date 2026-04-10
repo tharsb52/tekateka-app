@@ -13,7 +13,7 @@ export const translations = {
     sell: 'Vendre',
     products: 'Produits',
     expenses: 'Charges',
-    dashboard: 'Tableau de bord',
+    dashboard: 'Accueil',
     debts: 'Dettes',
     
     // Products

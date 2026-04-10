@@ -88,21 +88,26 @@ export default function CurrencyAmountInput({
                     setShowCurrencyPicker(false);
                   }}
                 >
-                  <Text style={[
-                    styles.pickerSymbol,
-                    currency === c.code && styles.pickerSymbolSelected,
-                  ]}>
-                    {c.symbol}
-                  </Text>
-                  <View style={{ flex: 1 }}>
+                  <View style={styles.pickerRow}>
                     <Text style={[
-                      styles.pickerName,
-                      currency === c.code && styles.pickerNameSelected,
+                      styles.pickerSymbol,
+                      currency === c.code && styles.pickerSymbolSelected,
                     ]}>
-                      {c.name}
+                      {c.symbol}
                     </Text>
-                    <Text style={styles.pickerCode}>{c.code}</Text>
+                    <Text style={[
+                      styles.pickerCode,
+                      currency === c.code && styles.pickerCodeSelected,
+                    ]}>
+                      {c.code}
+                    </Text>
                   </View>
+                  <Text style={[
+                    styles.pickerName,
+                    currency === c.code && styles.pickerNameSelected,
+                  ]} numberOfLines={1}>
+                    {c.name}
+                  </Text>
                   {currency === c.code && (
                     <Ionicons name="checkmark-circle" size={22} color="#2563eb" />
                   )}
@@ -220,18 +225,23 @@ const styles = StyleSheet.create({
   pickerItemSelected: {
     backgroundColor: '#eff6ff',
   },
+  pickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    minWidth: 80,
+  },
   pickerSymbol: {
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: '800',
     color: '#64748b',
-    width: 50,
-    textAlign: 'center',
   },
   pickerSymbolSelected: {
     color: '#2563eb',
   },
   pickerName: {
-    fontSize: 15,
+    flex: 1,
+    fontSize: 14,
     color: '#1e293b',
     fontWeight: '500',
   },
@@ -240,8 +250,11 @@ const styles = StyleSheet.create({
     color: '#2563eb',
   },
   pickerCode: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#94a3b8',
-    marginTop: 2,
+    fontWeight: '600',
+  },
+  pickerCodeSelected: {
+    color: '#60a5fa',
   },
 });
