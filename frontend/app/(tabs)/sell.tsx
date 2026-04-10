@@ -116,8 +116,9 @@ export default function SellScreen() {
   const totalAmount = selectedProduct ? getEffectivePrice(selectedProduct) * parseInt(quantity || '0') : 0;
 
   return (
-    <ScrollView style={styles.container}>
+    <View style={styles.container}>
       <AppHeader />
+      <ScrollView style={styles.scrollContent}>
       <View style={styles.header}>
         <Text style={styles.title}>{i18n.t('sell')}</Text>
         <View style={{ flex: 1 }} />
@@ -323,11 +324,13 @@ export default function SellScreen() {
         </View>
       </Modal>
     </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG },
+  scrollContent: { flex: 1, backgroundColor: BG },
   header: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: BG, borderBottomWidth: 1, borderBottomColor: '#f0d9c0', gap: 10 },
   title: { fontSize: 22, fontWeight: 'bold', color: '#1e293b' },
   historyBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#eff6ff', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },

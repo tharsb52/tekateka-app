@@ -145,9 +145,11 @@ export default function DashboardScreen() {
   }, [urgencyLevel]);
 
   return (
-    <ScrollView style={styles.container}>
-      {/* Unified Dark Header */}
+    <View style={styles.container}>
+      {/* Fixed Dark Header */}
       <AppHeader showSubscription />
+
+      <ScrollView style={styles.scrollContent}>
 
       {/* Date & Slogan row */}
       <View style={styles.subHeader}>
@@ -478,11 +480,16 @@ export default function DashboardScreen() {
       </View>
     </Modal>
     </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+    backgroundColor: BG,
+  },
+  scrollContent: {
     flex: 1,
     backgroundColor: BG,
   },
