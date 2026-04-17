@@ -9,6 +9,8 @@ import {
   Modal,
   TextInput,
   ActivityIndicator,
+  Image,
+  Platform,
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'expo-router';
@@ -19,6 +21,7 @@ import { getOTPProviderInfo } from '../../services/otpService';
 import { getPaymentProviderInfo } from '../../services/paymentService';
 import AppHeader from '../../components/AppHeader';
 import PinScreen from '../../components/PinScreen';
+import * as ImagePicker from 'expo-image-picker';
 
 const BG = '#fef3e7';
 
@@ -29,13 +32,14 @@ const LANGUAGES = [
 ];
 
 export default function SettingsScreen() {
-  const { user, updateUser, logout, isSubscriptionActive, getSubscriptionDaysRemaining, hasPin, checkHasPin, removePin, setupCredentials } = useAuth();
+  const { user, updateUser, logout, isSubscriptionActive, getSubscriptionDaysRemaining, hasPin, checkHasPin, removePin, setupCredentials, updateProfilePhoto } = useAuth();
   const router = useRouter();
   const [langModalVisible, setLangModalVisible] = useState(false);
   const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
   const [pinModalVisible, setPinModalVisible] = useState(false);
   const [pinMode, setPinMode] = useState<'setup' | 'change'>('setup');
   const [removePinConfirm, setRemovePinConfirm] = useState(false);
+  const [photoLoading, setPhotoLoading] = useState(false);
 
   // Credential setup state
   const [credModalVisible, setCredModalVisible] = useState(false);
@@ -68,6 +72,33 @@ export default function SettingsScreen() {
 
   const handleLogout = async () => {
     await logout();
+  };
+
+  const handlePickPhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission requise', 'Autorisez l\'accès à la galerie pour changer votre photo.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.5,
+        base64: true,
+      });
+      if (!result.canceled && result.assets[0]?.base64) {
+        setPhotoLoading(true);
+        const base64 = `data:image/jpeg;base64,${result.assets[0].base64}`;
+        await updateProfilePhoto(base64);
+        setPhotoLoading(false);
+      }
+    } catch (error: any) {
+      setPhotoLoading(false);
+      console.error('Pick photo error:', error);
+      Alert.alert('Erreur', error.message || 'Impossible de charger la photo');
+    }
   };
 
   const handleSetupCredentials = async () => {
@@ -120,9 +151,18 @@ export default function SettingsScreen() {
         <Text style={styles.sectionLabel}>PROFIL</Text>
         <View style={styles.card}>
           <View style={styles.profileRow}>
-            <View style={styles.avatarCircle}>
-              <Ionicons name="person" size={32} color="#2563eb" />
-            </View>
+            <TouchableOpacity style={styles.avatarCircle} onPress={handlePickPhoto} disabled={photoLoading}>
+              {photoLoading ? (
+                <ActivityIndicator size="small" color="#2563eb" />
+              ) : user?.profilePhoto ? (
+                <Image source={{ uri: user.profilePhoto }} style={styles.avatarImage} />
+              ) : (
+                <Ionicons name="person" size={32} color="#2563eb" />
+              )}
+              <View style={styles.cameraBadge}>
+                <Ionicons name="camera" size={14} color="#fff" />
+              </View>
+            </TouchableOpacity>
             <View style={styles.profileInfo}>
               <Text style={styles.profilePhone}>+{user?.phoneNumber || ''}</Text>
               <Text style={styles.profileDate}>
@@ -612,6 +652,26 @@ const styles = StyleSheet.create({
     backgroundColor: '#eff6ff',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    resizeMode: 'cover',
+  },
+  cameraBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#2563eb',
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
   },
   profileInfo: {
     flex: 1,

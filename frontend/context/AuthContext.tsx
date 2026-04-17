@@ -15,6 +15,7 @@ function mapBackendUser(data: any): User {
     email: data.email || undefined,
     username: data.username || undefined,
     hasPassword: data.hasPassword || false,
+    profilePhoto: data.profilePhoto || undefined,
     createdAt: data.createdAt || new Date().toISOString(),
     trialStartDate: data.createdAt || new Date().toISOString(),
     isSubscribed: sub.status === 'active' || (!!sub.plan && sub.plan !== null),
@@ -34,6 +35,7 @@ interface AuthContextType {
   login: (phoneNumber: string, otp: string) => Promise<void>;
   loginWithCredentials: (identifier: string, password: string) => Promise<void>;
   setupCredentials: (email?: string, username?: string, password?: string) => Promise<void>;
+  updateProfilePhoto: (photoBase64: string) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (updates: Partial<User>) => Promise<void>;
   setPinVerified: (v: boolean) => void;
@@ -174,6 +176,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } catch (error: any) {
       console.error('Setup credentials error:', error);
       throw new Error(error.message || 'Erreur de configuration');
+    }
+  };
+
+  // Update profile photo
+  const updateProfilePhoto = async (photoBase64: string) => {
+    try {
+      const result = await authAPI.updateProfilePhoto(photoBase64);
+      if (result.user) {
+        const mappedUser = mapBackendUser(result.user);
+        setUser(mappedUser);
+      }
+    } catch (error: any) {
+      console.error('Update profile photo error:', error);
+      throw new Error(error.message || 'Erreur lors du téléversement');
     }
   };
 
@@ -324,6 +340,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         login,
         loginWithCredentials,
         setupCredentials,
+        updateProfilePhoto,
         logout,
         updateUser,
         setPinVerified,

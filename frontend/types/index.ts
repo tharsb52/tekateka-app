@@ -4,6 +4,7 @@ export interface User {
   email?: string;
   username?: string;
   hasPassword?: boolean;
+  profilePhoto?: string;
   createdAt: string;
   trialStartDate: string;
   isSubscribed: boolean;

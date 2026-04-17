@@ -110,6 +110,13 @@ export const authAPI = {
       body: JSON.stringify({ plan }),
     });
   },
+
+  updateProfilePhoto: async (photoBase64: string) => {
+    return apiFetch('/auth/profile-photo', {
+      method: 'PUT',
+      body: JSON.stringify({ photo: photoBase64 }),
+    });
+  },
 };
 
 // ==========================================

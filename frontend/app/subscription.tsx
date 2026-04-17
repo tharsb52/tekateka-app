@@ -14,6 +14,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { SUBSCRIPTION_PRICES, SubscriptionPlan } from '../types/subscription';
 import { formatCurrency } from '../utils/currencies';
 import { processPayment, getPaymentProviderInfo } from '../services/paymentService';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import AppHeader from '../components/AppHeader';
 
 const BG = '#fef3e7';
 
@@ -110,7 +112,8 @@ export default function SubscriptionScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.safeArea}>
+      <AppHeader />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Navigation Header */}
         {trialExpired ? (
@@ -136,6 +139,7 @@ export default function SubscriptionScreen() {
             }}
           >
             <Ionicons name="arrow-back" size={24} color="#1e293b" />
+            <Text style={{ fontSize: 16, color: '#1e293b', marginLeft: 8, fontWeight: '600' }}>Retour</Text>
           </TouchableOpacity>
         )}
 
@@ -331,11 +335,15 @@ export default function SubscriptionScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: BG,
+  },
   container: {
     flex: 1,
     backgroundColor: BG,

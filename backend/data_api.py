@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Depends, Header
+from fastapi import APIRouter, HTTPException, Depends, Header, Request
 from pydantic import BaseModel, Field
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
@@ -262,6 +262,23 @@ async def update_profile(req: UpdateProfileRequest, user_id: str = Depends(get_c
     if req.username: update["username"] = req.username.lower()
     
     await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": update})
+    user = await db.users.find_one({"_id": ObjectId(user_id)})
+    return {"success": True, "user": serialize_user(user)}
+
+@router.put("/auth/profile-photo")
+async def update_profile_photo(request: Request, user_id: str = Depends(get_current_user)):
+    """Upload profile photo as base64."""
+    body = await request.json()
+    photo = body.get("photo")
+    if not photo:
+        raise HTTPException(status_code=400, detail="Photo requise")
+    # Limit size: ~2MB base64
+    if len(photo) > 3_000_000:
+        raise HTTPException(status_code=400, detail="Photo trop volumineuse (max 2MB)")
+    await db.users.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {"profilePhoto": photo, "updatedAt": datetime.utcnow().isoformat()}}
+    )
     user = await db.users.find_one({"_id": ObjectId(user_id)})
     return {"success": True, "user": serialize_user(user)}
 
@@ -540,5 +557,6 @@ def serialize_user(user):
         "currency": user.get("currency", "USD"),
         "language": user.get("language", "fr"),
         "subscription": user.get("subscription", {}),
+        "profilePhoto": user.get("profilePhoto"),
         "createdAt": user.get("createdAt", ""),
     }
