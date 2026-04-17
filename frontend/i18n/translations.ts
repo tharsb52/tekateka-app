@@ -95,7 +95,7 @@ export const translations = {
     totalCost: 'Coût total',
     purchaseProduct: 'Produit / Article',
     noPurchases: 'Aucun achat enregistré',
-    totalPurchases: 'Total Achats',
+    totalPurchases: 'Total Achats Marchandises',
     realProfit: 'Profit Réel',
     
     // Subscription

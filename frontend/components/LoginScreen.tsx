@@ -127,6 +127,43 @@ export default function LoginScreen() {
             <Text style={styles.subtitle}>{i18n.t('welcome')}</Text>
           </View>
 
+          {/* Success Stories with Photos */}
+          <View style={styles.storiesSection}>
+            <Text style={styles.storiesTitle}>Ils réussissent avec TekaTeka</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.storiesScroll}>
+              <View style={styles.storyCard}>
+                <Image
+                  source={{ uri: 'https://images.unsplash.com/photo-1687422809654-579d81c29d32?w=400' }}
+                  style={styles.storyImage}
+                />
+                <View style={styles.storyOverlay}>
+                  <Text style={styles.storyName}>Marie K.</Text>
+                  <Text style={styles.storyQuote}>"Mes bénéfices ont augmenté de 40%!"</Text>
+                </View>
+              </View>
+              <View style={styles.storyCard}>
+                <Image
+                  source={{ uri: 'https://images.pexels.com/photos/27967669/pexels-photo-27967669.jpeg?auto=compress&cs=tinysrgb&w=400' }}
+                  style={styles.storyImage}
+                />
+                <View style={styles.storyOverlay}>
+                  <Text style={styles.storyName}>Patrick M.</Text>
+                  <Text style={styles.storyQuote}>"Je gère mes courses taxi facilement!"</Text>
+                </View>
+              </View>
+              <View style={styles.storyCard}>
+                <Image
+                  source={{ uri: 'https://images.unsplash.com/photo-1768248559223-cc4ef20363fa?w=400' }}
+                  style={styles.storyImage}
+                />
+                <View style={styles.storyOverlay}>
+                  <Text style={styles.storyName}>Aminata D.</Text>
+                  <Text style={styles.storyQuote}>"Ma boutique est mieux organisée!"</Text>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+
           {/* Tab Switcher */}
           <View style={styles.tabContainer}>
             <TouchableOpacity
@@ -361,6 +398,50 @@ const styles = StyleSheet.create({
   title: { fontSize: 32, fontWeight: 'bold', color: '#1e293b' },
   headerFlagImg: { width: 28, height: 20, borderRadius: 3, resizeMode: 'cover' },
   subtitle: { fontSize: 16, color: '#64748b', marginTop: 4 },
+
+  // Stories section
+  storiesSection: {
+    marginBottom: 16,
+  },
+  storiesTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  storiesScroll: {},
+  storyCard: {
+    width: 160,
+    height: 100,
+    borderRadius: 14,
+    marginRight: 10,
+    overflow: 'hidden',
+  },
+  storyImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  storyOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  storyName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  storyQuote: {
+    fontSize: 10,
+    color: '#e2e8f0',
+    fontStyle: 'italic',
+  },
 
   // Tab switcher
   tabContainer: {

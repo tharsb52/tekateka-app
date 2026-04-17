@@ -216,3 +216,24 @@ export const purchasesAPI = {
     method: 'DELETE',
   }),
 };
+
+// ==========================================
+// Notes API
+// ==========================================
+export const notesAPI = {
+  getAll: () => apiFetch('/data/notes'),
+
+  add: (note: any) => apiFetch('/data/notes', {
+    method: 'POST',
+    body: JSON.stringify(note),
+  }),
+
+  update: (id: string, updates: any) => apiFetch(`/data/notes/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(updates),
+  }),
+
+  delete: (id: string) => apiFetch(`/data/notes/${id}`, {
+    method: 'DELETE',
+  }),
+};

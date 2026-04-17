@@ -9,6 +9,7 @@ import {
   Alert,
   Dimensions,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
@@ -28,7 +29,7 @@ import { cardShadow } from '../../utils/shadows';
 const BG = '#fef3e7';
 
 export default function DashboardScreen() {
-  const { sales, expenses, products, debts, purchases } = useData();
+  const { sales, expenses, products, debts, purchases, refreshData } = useData();
   const { user, getDaysRemaining, isSubscriptionActive, showExpiryReminder, getSubscriptionDaysRemaining, needsSubscription } = useAuth();
   const router = useRouter();
 
@@ -79,7 +80,18 @@ export default function DashboardScreen() {
   const expiryReminder = showExpiryReminder();
   const subDaysLeft = getSubscriptionDaysRemaining();
 
-  // Country flag from phone number
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await refreshData();
+    } catch (e) {
+      console.error('Refresh error:', e);
+    } finally {
+      setRefreshing(false);
+    }
+  };
   const country = getCountryFromPhone(user?.phoneNumber || '');
 
   // Revenue chart data (last 7 days) - converted to user currency
@@ -151,14 +163,21 @@ export default function DashboardScreen() {
 
       <ScrollView style={styles.scrollContent}>
 
-      {/* Date & Slogan row */}
+      {/* Date row + Refresh */}
       <View style={styles.subHeader}>
-        <Text style={styles.slogan}>{i18n.t('slogan')}</Text>
         <Text style={styles.dateTime}>
           {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
           {'  '}
           {new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
         </Text>
+        <TouchableOpacity style={styles.refreshBtn} onPress={handleRefresh} disabled={refreshing}>
+          {refreshing ? (
+            <ActivityIndicator size="small" color="#2563eb" />
+          ) : (
+            <Ionicons name="refresh" size={22} color="#2563eb" />
+          )}
+          <Text style={styles.refreshText}>Actualiser</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Expiry Reminder Banner */}
@@ -197,68 +216,6 @@ export default function DashboardScreen() {
           </View>
         </TouchableOpacity>
       )}
-
-      {/* Success Stories with Photos */}
-      <View style={styles.storiesSection}>
-        <Text style={styles.storiesTitle}>Ils réussissent avec TekaTeka</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.storiesScroll}>
-          <View style={styles.storyCard}>
-            <Image
-              source={{ uri: 'https://images.unsplash.com/photo-1687422809654-579d81c29d32?w=400' }}
-              style={styles.storyImage}
-            />
-            <View style={styles.storyOverlay}>
-              <Text style={styles.storyName}>Marie K.</Text>
-              <Text style={styles.storyLocation}>Kinshasa, RDC</Text>
-              <Text style={styles.storyQuote}>"Mes bénéfices ont augmenté de 40%!"</Text>
-            </View>
-          </View>
-          <View style={styles.storyCard}>
-            <Image
-              source={{ uri: 'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=400' }}
-              style={styles.storyImage}
-            />
-            <View style={styles.storyOverlay}>
-              <Text style={styles.storyName}>Dr. Kouassi</Text>
-              <Text style={styles.storyLocation}>Abidjan, Côte d'Ivoire</Text>
-              <Text style={styles.storyQuote}>"Gestion simplifiée de ma pharmacie"</Text>
-            </View>
-          </View>
-          <View style={styles.storyCard}>
-            <Image
-              source={{ uri: 'https://images.unsplash.com/photo-1576091358783-a212ec293ff3?w=400' }}
-              style={styles.storyImage}
-            />
-            <View style={styles.storyOverlay}>
-              <Text style={styles.storyName}>Sifa M.</Text>
-              <Text style={styles.storyLocation}>Lubumbashi, RDC</Text>
-              <Text style={styles.storyQuote}>"Ma pharmacie est mieux gérée!"</Text>
-            </View>
-          </View>
-          <View style={styles.storyCard}>
-            <Image
-              source={{ uri: 'https://images.pexels.com/photos/27967669/pexels-photo-27967669.jpeg?auto=compress&cs=tinysrgb&w=400' }}
-              style={styles.storyImage}
-            />
-            <View style={styles.storyOverlay}>
-              <Text style={styles.storyName}>Patrick M.</Text>
-              <Text style={styles.storyLocation}>Douala, Cameroun</Text>
-              <Text style={styles.storyQuote}>"Je gère mes courses taxi facilement!"</Text>
-            </View>
-          </View>
-          <View style={styles.storyCard}>
-            <Image
-              source={{ uri: 'https://images.unsplash.com/photo-1768248559223-cc4ef20363fa?w=400' }}
-              style={styles.storyImage}
-            />
-            <View style={styles.storyOverlay}>
-              <Text style={styles.storyName}>Aminata D.</Text>
-              <Text style={styles.storyLocation}>Dakar, Sénégal</Text>
-              <Text style={styles.storyQuote}>"Ma boutique est mieux organisée!"</Text>
-            </View>
-          </View>
-        </ScrollView>
-      </View>
 
       {/* Main Stats Cards */}
       <View style={styles.statsContainer}>
@@ -533,11 +490,29 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 4,
     backgroundColor: BG,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   dateTime: {
     fontSize: 12,
     color: '#64748b',
-    marginTop: 4,
+  },
+  refreshBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#eff6ff',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+  },
+  refreshText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#2563eb',
   },
   trialBadge: {
     backgroundColor: '#fef3c7',

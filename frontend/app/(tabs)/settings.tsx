@@ -134,6 +134,23 @@ export default function SettingsScreen() {
 
         {/* Subscription Section */}
         <Text style={styles.sectionLabel}>ABONNEMENT</Text>
+
+        {/* Notes shortcut */}
+        <TouchableOpacity style={[styles.card, { marginBottom: 12 }]} onPress={() => router.push('/notes')}>
+          <View style={styles.settingRow}>
+            <View style={styles.settingLeft}>
+              <View style={[styles.iconCircle, { backgroundColor: '#fff9c4' }]}>
+                <Ionicons name="document-text" size={22} color="#f59e0b" />
+              </View>
+              <View>
+                <Text style={styles.settingTitle}>Mes Notes</Text>
+                <Text style={styles.settingSubtitle}>Prenez des notes rapidement</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={22} color="#94a3b8" />
+          </View>
+        </TouchableOpacity>
+
         <TouchableOpacity style={styles.card} onPress={() => router.push('/subscription')}>
           <View style={styles.settingRow}>
             <View style={styles.settingLeft}>

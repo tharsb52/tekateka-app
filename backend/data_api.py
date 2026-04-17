@@ -31,7 +31,7 @@ db = client[DB_NAME]
 # Auth config
 SECRET_KEY = os.getenv("JWT_SECRET", "tekateka-secret-key-2025-change-in-production")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_DAYS = 90
+ACCESS_TOKEN_EXPIRE_DAYS = 7
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -77,6 +77,11 @@ class PurchaseModel(BaseModel):
     totalCost: float = 0
     currency: str = "USD"
     notes: Optional[str] = None
+
+class NoteModel(BaseModel):
+    title: str = ""
+    content: str = ""
+    color: str = "#fff9c4"
 
 class ProductModel(BaseModel):
     name: str
@@ -434,6 +439,40 @@ async def update_purchase(purchase_id: str, updates: dict, user_id: str = Depend
 @router.delete("/data/purchases/{purchase_id}")
 async def delete_purchase(purchase_id: str, user_id: str = Depends(get_current_user)):
     await db.purchases.delete_one({"_id": ObjectId(purchase_id), "userId": user_id})
+    return {"success": True}
+
+# ==========================================
+# Notes CRUD
+# ==========================================
+@router.get("/data/notes")
+async def get_notes(user_id: str = Depends(get_current_user)):
+    notes = await db.notes.find({"userId": user_id}).sort("updatedAt", -1).to_list(5000)
+    return [serialize_doc(n) for n in notes]
+
+@router.post("/data/notes")
+async def add_note(note: NoteModel, user_id: str = Depends(get_current_user)):
+    doc = note.dict()
+    doc["userId"] = user_id
+    now = datetime.utcnow().isoformat()
+    doc["createdAt"] = now
+    doc["updatedAt"] = now
+    result = await db.notes.insert_one(doc)
+    doc["id"] = str(result.inserted_id)
+    return serialize_doc(doc)
+
+@router.put("/data/notes/{note_id}")
+async def update_note(note_id: str, updates: dict, user_id: str = Depends(get_current_user)):
+    updates.pop("id", None)
+    updates.pop("_id", None)
+    updates.pop("userId", None)
+    updates["updatedAt"] = datetime.utcnow().isoformat()
+    await db.notes.update_one({"_id": ObjectId(note_id), "userId": user_id}, {"$set": updates})
+    doc = await db.notes.find_one({"_id": ObjectId(note_id)})
+    return serialize_doc(doc) if doc else {}
+
+@router.delete("/data/notes/{note_id}")
+async def delete_note(note_id: str, user_id: str = Depends(get_current_user)):
+    await db.notes.delete_one({"_id": ObjectId(note_id), "userId": user_id})
     return {"success": True}
 
 # ==========================================
