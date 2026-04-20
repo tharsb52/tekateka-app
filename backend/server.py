@@ -19,6 +19,7 @@ from reporting import router as reporting_router
 from otp_service import send_otp, verify_otp
 from data_api import router as data_router
 from admin_api import router as admin_router
+from payment_api import router as payment_router
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -161,6 +162,9 @@ app.include_router(data_router, prefix="/api")
 
 # Include admin API router (backoffice)
 app.include_router(admin_router, prefix="/api")
+
+# Include payment API router
+app.include_router(payment_router, prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,

@@ -244,3 +244,30 @@ export const notesAPI = {
     method: 'DELETE',
   }),
 };
+
+// ==========================================
+// Payments API
+// ==========================================
+export const paymentsAPI = {
+  subscriptionPay: (data: any) => apiFetch('/payments/subscribe', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+
+  subscriptionConfirm: (txRef: string) => apiFetch('/payments/subscribe/confirm', {
+    method: 'POST',
+    body: JSON.stringify({ txRef }),
+  }),
+
+  collect: (data: any) => apiFetch('/payments/collect', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+
+  collectConfirm: (txRef: string) => apiFetch('/payments/collect/confirm', {
+    method: 'POST',
+    body: JSON.stringify({ txRef }),
+  }),
+
+  history: () => apiFetch('/payments/history'),
+};

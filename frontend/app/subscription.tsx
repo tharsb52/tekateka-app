@@ -7,6 +7,7 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
@@ -16,6 +17,7 @@ import { formatCurrency } from '../utils/currencies';
 import { processPayment, getPaymentProviderInfo } from '../services/paymentService';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AppHeader from '../components/AppHeader';
+import { paymentsAPI } from '../services/apiService';
 
 const BG = '#fef3e7';
 
@@ -67,45 +69,40 @@ export default function SubscriptionScreen() {
     },
   ];
 
-  const handleSubscribe = async () => {
+  const [paymentMethodModal, setPaymentMethodModal] = useState(false);
+
+  const handleSubscribe = () => {
+    setPaymentMethodModal(true);
+  };
+
+  const processSubscriptionPayment = async (method: 'mobile_money' | 'card') => {
+    setPaymentMethodModal(false);
     setLoading(true);
-    
     const plan = plans.find(p => p.id === selectedPlan);
     
     try {
-      // Process payment via payment service
-      const paymentResult = await processPayment({
-        amount: plan?.price || 0,
-        currency,
-        phoneNumber: user?.phoneNumber || '',
+      // 1. Initiate payment
+      const paymentResult = await paymentsAPI.subscriptionPay({
         plan: selectedPlan,
-        description: `Abonnement TekaTeka ${plan?.name}`,
+        method,
+        currency,
+        phone: user?.phoneNumber || '',
       });
 
       if (paymentResult.success) {
-        // Activate subscription
-        await subscribe(selectedPlan);
-
-        const endDate = new Date();
-        if (selectedPlan === 'monthly') endDate.setMonth(endDate.getMonth() + 1);
-        if (selectedPlan === 'quarterly') endDate.setMonth(endDate.getMonth() + 3);
-        if (selectedPlan === 'yearly') endDate.setFullYear(endDate.getFullYear() + 1);
-
-        Alert.alert(
-          'Abonnement Activé !',
-          `Plan ${plan?.name} actif jusqu'au ${endDate.toLocaleDateString('fr-FR')}.\n\n${paymentProviderInfo.isMock ? '(Paiement simulé - mode test)' : `Transaction: ${paymentResult.transactionId}`}`,
-          [
-            {
-              text: 'Continuer',
-              onPress: () => router.replace('/(tabs)/dashboard'),
-            },
-          ]
-        );
-      } else {
-        Alert.alert('Échec du paiement', paymentResult.message);
+        // 2. Confirm payment (sandbox auto-confirms)
+        const confirmResult = await paymentsAPI.subscriptionConfirm(paymentResult.txRef);
+        
+        if (confirmResult.success) {
+          Alert.alert(
+            'Abonnement activé !',
+            `Plan ${plan?.name} activé avec succès.\n${paymentResult.sandbox ? '(Mode test - paiement simulé)' : `Transaction: ${paymentResult.txRef}`}\n\n${method === 'mobile_money' ? 'Mobile Money' : 'Carte bancaire'}`,
+            [{ text: 'Continuer', onPress: () => router.replace('/(tabs)/dashboard') }]
+          );
+        }
       }
-    } catch (error) {
-      Alert.alert('Erreur', 'Échec de l\'activation. Veuillez réessayer.');
+    } catch (error: any) {
+      Alert.alert('Erreur', error.message || 'Échec du paiement. Veuillez réessayer.');
     } finally {
       setLoading(false);
     }
@@ -335,6 +332,57 @@ export default function SubscriptionScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Payment Method Modal */}
+      <Modal visible={paymentMethodModal} animationType="slide" transparent>
+        <View style={styles.payModalOverlay}>
+          <View style={styles.payModalContent}>
+            <View style={styles.payModalHeader}>
+              <Text style={styles.payModalTitle}>Choisir le mode de paiement</Text>
+              <TouchableOpacity onPress={() => setPaymentMethodModal(false)}>
+                <Ionicons name="close" size={28} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.payModalAmount}>
+              {formatCurrency(plans.find(p => p.id === selectedPlan)?.price || 0, currency)} - {plans.find(p => p.id === selectedPlan)?.name}
+            </Text>
+
+            <TouchableOpacity 
+              style={styles.payMethodBtn}
+              onPress={() => processSubscriptionPayment('mobile_money')}
+            >
+              <View style={[styles.payMethodIcon, { backgroundColor: '#fef3c7' }]}>
+                <Ionicons name="phone-portrait" size={28} color="#f59e0b" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.payMethodTitle}>Mobile Money</Text>
+                <Text style={styles.payMethodSub}>MTN MoMo, Orange Money, Airtel, M-Pesa</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={22} color="#94a3b8" />
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.payMethodBtn}
+              onPress={() => processSubscriptionPayment('card')}
+            >
+              <View style={[styles.payMethodIcon, { backgroundColor: '#eff6ff' }]}>
+                <Ionicons name="card" size={28} color="#2563eb" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.payMethodTitle}>Carte bancaire</Text>
+                <Text style={styles.payMethodSub}>Visa, Mastercard</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={22} color="#94a3b8" />
+            </TouchableOpacity>
+
+            <View style={styles.sandboxBadge}>
+              <Ionicons name="information-circle" size={18} color="#f59e0b" />
+              <Text style={styles.sandboxText}>Mode test - les paiements sont simulés</Text>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -652,5 +700,78 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     color: '#475569',
+  },
+  payModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  payModalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+  },
+  payModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  payModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  payModalAmount: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#2563eb',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  payMethodBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    padding: 16,
+    backgroundColor: '#f8fafc',
+    borderRadius: 14,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+  },
+  payMethodIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  payMethodTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  payMethodSub: {
+    fontSize: 12,
+    color: '#94a3b8',
+    marginTop: 2,
+  },
+  sandboxBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fef3c7',
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#fbbf24',
+    marginTop: 4,
+  },
+  sandboxText: {
+    fontSize: 13,
+    color: '#92400e',
+    flex: 1,
   },
 });

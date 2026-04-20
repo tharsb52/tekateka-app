@@ -31,6 +31,38 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 router = APIRouter()
 
 
+@router.post("/admin/change-password")
+async def change_admin_password(request: Request):
+    """Change admin password."""
+    global ADMIN_PASSWORD
+    body = await request.json()
+    current = body.get("currentPassword", "")
+    new_pw = body.get("newPassword", "")
+    if current != ADMIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="Mot de passe actuel incorrect")
+    if len(new_pw) < 6:
+        raise HTTPException(status_code=400, detail="Le nouveau mot de passe doit contenir au moins 6 caractères")
+    ADMIN_PASSWORD = new_pw
+    # Persist to .env
+    try:
+        env_path = ROOT_DIR / '.env'
+        lines = env_path.read_text().splitlines()
+        new_lines = []
+        found = False
+        for line in lines:
+            if line.startswith("ADMIN_PASSWORD"):
+                new_lines.append(f"ADMIN_PASSWORD={new_pw}")
+                found = True
+            else:
+                new_lines.append(line)
+        if not found:
+            new_lines.append(f"ADMIN_PASSWORD={new_pw}")
+        env_path.write_text("\n".join(new_lines) + "\n")
+    except Exception as e:
+        logger.warning(f"Could not persist password to .env: {e}")
+    return {"success": True}
+
+
 def verify_admin(password: str = Header(None, alias="X-Admin-Password"),
                  admin_pass: str = Header(None, alias="admin-password")):
     """Verify admin password from header or query."""
@@ -209,6 +241,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .dash-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:12px}
 .dash-header h1{font-size:24px;color:#60a5fa}
 .dash-header .logout{background:#334155;border:none;color:#94a3b8;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:13px}
+.dash-header .chg-pw{background:#1e3a5f;border:none;color:#60a5fa;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:13px;margin-right:8px}
+.pw-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;align-items:center;justify-content:center}
+.pw-modal.show{display:flex}
+.pw-box{background:#1e293b;border-radius:16px;padding:28px;width:360px;border:1px solid #334155}
+.pw-box h3{color:#f1f5f9;font-size:18px;margin-bottom:16px}
+.pw-box input{width:100%;padding:12px;border-radius:10px;border:2px solid #334155;background:#0f172a;color:#e2e8f0;font-size:14px;margin-bottom:10px;outline:none;box-sizing:border-box}
+.pw-box .pw-btns{display:flex;gap:10px;margin-top:8px}
+.pw-box .pw-btns button{flex:1;padding:10px;border-radius:10px;border:none;font-size:14px;font-weight:600;cursor:pointer}
+.pw-msg{font-size:13px;margin-bottom:8px;display:none;padding:8px;border-radius:8px}
 .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px}
 .stat-card{background:#1e293b;border-radius:16px;padding:20px;border-left:4px solid #3b82f6}
 .stat-card.green{border-left-color:#10b981}
@@ -256,7 +297,20 @@ tr:hover td{background:#1e293b}
 <div class="dashboard" id="dashboard">
 <div class="dash-header">
 <h1>TekaTeka - Backoffice</h1>
-<button class="logout" onclick="doLogout()">Déconnexion</button>
+<div><button class="chg-pw" onclick="showPwModal()">Changer le mot de passe</button><button class="logout" onclick="doLogout()">Déconnexion</button></div>
+</div>
+<div class="pw-modal" id="pwModal">
+<div class="pw-box">
+<h3>Changer le mot de passe</h3>
+<div class="pw-msg" id="pwMsg"></div>
+<input type="password" id="pwCurrent" placeholder="Mot de passe actuel">
+<input type="password" id="pwNew" placeholder="Nouveau mot de passe (min 6 car.)">
+<input type="password" id="pwConfirm" placeholder="Confirmer le nouveau mot de passe">
+<div class="pw-btns">
+<button style="background:#334155;color:#94a3b8" onclick="hidePwModal()">Annuler</button>
+<button style="background:#3b82f6;color:#fff" onclick="changePw()">Enregistrer</button>
+</div>
+</div>
 </div>
 <div id="content"><div class="loading">Chargement des données...</div></div>
 </div>
@@ -277,6 +331,24 @@ async function doLogin(){
   }catch(e){document.getElementById('loginError').style.display='block'}
 }
 function doLogout(){adminPass='';document.getElementById('loginPage').style.display='flex';document.getElementById('dashboard').style.display='none';document.getElementById('adminPass').value=''}
+function showPwModal(){document.getElementById('pwModal').classList.add('show');document.getElementById('pwCurrent').value='';document.getElementById('pwNew').value='';document.getElementById('pwConfirm').value='';document.getElementById('pwMsg').style.display='none'}
+function hidePwModal(){document.getElementById('pwModal').classList.remove('show')}
+async function changePw(){
+  const cur=document.getElementById('pwCurrent').value;
+  const nw=document.getElementById('pwNew').value;
+  const cf=document.getElementById('pwConfirm').value;
+  const msg=document.getElementById('pwMsg');
+  if(!cur||!nw){msg.textContent='Remplissez tous les champs';msg.style.display='block';msg.style.background='#7f1d1d';msg.style.color='#fca5a5';return}
+  if(nw.length<6){msg.textContent='Min. 6 caractères';msg.style.display='block';msg.style.background='#7f1d1d';msg.style.color='#fca5a5';return}
+  if(nw!==cf){msg.textContent='Les mots de passe ne correspondent pas';msg.style.display='block';msg.style.background='#7f1d1d';msg.style.color='#fca5a5';return}
+  try{
+    const r=await fetch(API+'/admin/change-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({currentPassword:cur,newPassword:nw})});
+    if(!r.ok){const e=await r.json();throw new Error(e.detail||'Erreur')}
+    adminPass=nw;
+    msg.textContent='Mot de passe modifié avec succès !';msg.style.display='block';msg.style.background='#064e3b';msg.style.color='#34d399';
+    setTimeout(hidePwModal,1500);
+  }catch(e){msg.textContent=e.message;msg.style.display='block';msg.style.background='#7f1d1d';msg.style.color='#fca5a5'}
+}
 async function loadDashboard(){
   const r=await post(API+'/admin/stats');
   const d=await r.json();
