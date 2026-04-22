@@ -249,6 +249,18 @@ backend:
           agent: "testing"
           comment: "Subscription endpoint working perfectly. POST /api/auth/subscribe with plan='monthly' successfully activates subscription. User profile correctly shows active subscription status. Subscription data properly stored and retrieved."
 
+  - task: "Sales Payment Methods Support"
+    implemented: true
+    working: true
+    file: "data_api.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Sales endpoint with multiple payment methods working perfectly. Successfully tested POST /api/data/sales with paymentMethod values: 'cash', 'mobileMoney', and 'card'. All payment methods are properly accepted, stored, and retrieved. PaymentMethod field is present in all sale responses. Backend correctly handles all three payment method types as requested in the main agent's update."
+
 frontend:
   - task: "Login Screen with Dual Tabs"
     implemented: true
@@ -364,3 +376,7 @@ agent_communication:
       message: "FRONTEND TESTING COMPLETED SUCCESSFULLY: All 7 critical test scenarios passed. ✅ Login screen with dual tabs working perfectly. ✅ Phone OTP login flow functional (tested with codes 6100, 1009). ✅ Dashboard loads with MongoDB data and all 6 tabs navigate correctly. ✅ Settings page shows ACCÈS COLLÈGUE section properly. ✅ Credential login tab ready for test@tekateka.com/Test1234!. ✅ French orthography correct with proper accents. ✅ Mobile responsive design optimized for 390x844 viewport. App is in CI mode so state resets between page refreshes, but all core functionality verified working. Ready for production use."
     - agent: "testing"
       message: "MOBILE APP TESTING COMPLETED (390x844 viewport): ✅ Login Screen UI - Success stories section visible with Marie K., Patrick M., Aminata D. photos and quotes. ✅ Dual tabs 'Connexion Téléphone' and 'Connexion Mail' working perfectly. ✅ Phone tab selected by default. ✅ OTP Login Flow - Phone number 111000111 accepted, OTP codes displayed in yellow box (tested codes: 9387, 9454). ✅ Dashboard navigation and 'Actualiser' refresh button functional. ✅ All 6 tabs accessible (Accueil, Vendre, Produits, Charges, Dettes, Plus). ✅ Settings page 'ACCÈS COLLÈGUE' section visible with proper French accents. ✅ 'Mes Notes' button opens Notes page successfully. ✅ French orthography verified throughout UI with proper accents (é, è, ê, à, ç). ✅ Mobile responsive design optimized for African merchants. All critical test scenarios PASSED. App ready for production deployment."
+    - agent: "main"
+      message: "NEW CHANGES - Keyboard & Payment Method Update: 1) Fixed keyboard covering input fields - Added KeyboardAvoidingView + TouchableWithoutFeedback + ScrollView(keyboardShouldPersistTaps=handled) to ALL modal forms: products.tsx, sell.tsx (edit modal), expenses.tsx, debts.tsx. 2) Added 'Carte bancaire' as 3rd payment method option in sell.tsx alongside Cash and Mobile Money. Backend SaleModel already supports paymentMethod field. Please test: POST /api/data/sales with paymentMethod='card' to verify backend accepts it."
+    - agent: "testing"
+      message: "PAYMENT METHODS TESTING COMPLETED SUCCESSFULLY: ✅ All 7 test steps passed perfectly. ✅ Phone login authentication working (token obtained). ✅ Test product creation successful (ID: 69e9207eff3c2c73e200da34). ✅ Sales with paymentMethod 'cash' working correctly. ✅ Sales with paymentMethod 'mobileMoney' working correctly. ✅ Sales with paymentMethod 'card' working correctly. ✅ All 3 sales verified with correct paymentMethod values stored in database. ✅ PaymentMethod field present in all sale responses. Backend accepts and stores all payment methods (cash, mobileMoney, card) as requested. The 'Carte bancaire' payment method integration is fully functional."

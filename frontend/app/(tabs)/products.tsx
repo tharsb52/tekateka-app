@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   TextInput, Alert, Modal, Switch, ActivityIndicator,
+  KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback,
 } from 'react-native';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
@@ -187,6 +188,8 @@ export default function ProductsScreen() {
 
       {/* Add/Edit Modal */}
       <Modal visible={modalVisible} animationType="slide" transparent>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
@@ -198,7 +201,7 @@ export default function ProductsScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalForm}>
+            <ScrollView style={styles.modalForm} keyboardShouldPersistTaps="handled">
               <View style={styles.fieldRow}>
                 <Text style={styles.label}>Nom du produit *</Text>
                 <VoiceInputButton onTranscript={(t) => setFormData({ ...formData, name: t })} />
@@ -273,6 +276,8 @@ export default function ProductsScreen() {
             </View>
           </View>
         </View>
+        </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

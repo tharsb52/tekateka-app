@@ -9,6 +9,9 @@ import {
   Alert,
   Modal,
   Platform,
+  KeyboardAvoidingView,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useData } from '../../context/DataContext';
@@ -285,6 +288,8 @@ export default function DebtsScreen() {
 
       {/* Add/Edit Debt Modal */}
       <Modal visible={modalVisible} animationType="slide" transparent>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
@@ -296,7 +301,7 @@ export default function DebtsScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalForm}>
+            <ScrollView style={styles.modalForm} keyboardShouldPersistTaps="handled">
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
                 <Text style={styles.label}>{i18n.t('debtorName')} *</Text>
                 <VoiceInputButton onTranscript={(t) => setFormData({ ...formData, debtorName: t })} />
@@ -362,6 +367,8 @@ export default function DebtsScreen() {
             </View>
           </View>
         </View>
+        </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

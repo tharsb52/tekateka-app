@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  TextInput, Alert, Modal,
+  TextInput, Alert, Modal, KeyboardAvoidingView, Platform,
+  Keyboard, TouchableWithoutFeedback,
 } from 'react-native';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
@@ -21,7 +22,7 @@ export default function SellScreen() {
   const { user } = useAuth();
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [quantity, setQuantity] = useState('1');
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'mobileMoney'>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'mobileMoney' | 'card'>('cash');
   const [currency, setCurrency] = useState(user?.currency || 'USD');
   const [showHistory, setShowHistory] = useState(false);
   const [editSaleModal, setEditSaleModal] = useState(false);
@@ -241,14 +242,14 @@ export default function SellScreen() {
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>{i18n.t('paymentMethod')}</Text>
                 <View style={styles.paymentRow}>
-                  {(['cash', 'mobileMoney'] as const).map((m) => (
+                  {(['cash', 'mobileMoney', 'card'] as const).map((m) => (
                     <TouchableOpacity key={m}
                       style={[styles.paymentButton, paymentMethod === m && styles.paymentButtonSelected]}
                       onPress={() => setPaymentMethod(m)}>
-                      <Ionicons name={m === 'cash' ? 'cash' : 'phone-portrait'} size={22}
+                      <Ionicons name={m === 'cash' ? 'cash' : m === 'mobileMoney' ? 'phone-portrait' : 'card'} size={22}
                         color={paymentMethod === m ? '#fff' : '#2563eb'} />
                       <Text style={[styles.paymentText, paymentMethod === m && styles.paymentTextSelected]}>
-                        {i18n.t(m)}
+                        {m === 'cash' ? i18n.t('cash') : m === 'mobileMoney' ? i18n.t('mobileMoney') : 'Carte'}
                       </Text>
                     </TouchableOpacity>
                   ))}
@@ -288,6 +289,8 @@ export default function SellScreen() {
 
       {/* Edit Sale Modal */}
       <Modal visible={editSaleModal} animationType="slide" transparent>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
@@ -297,7 +300,7 @@ export default function SellScreen() {
               </TouchableOpacity>
             </View>
             {editingSale && (
-              <View style={{ padding: 20 }}>
+              <ScrollView style={{ padding: 20 }} keyboardShouldPersistTaps="handled">
                 <Text style={styles.editLabel}>Produit: {editingSale.productName}</Text>
                 <Text style={styles.editLabel}>Prix unitaire: {formatCurrency(editingSale.price, editingSale.currency)}</Text>
                 <Text style={styles.editLabel}>Date: {(() => { try { return format(new Date(editingSale.createdAt), 'dd/MM/yyyy HH:mm'); } catch { return ''; }})()}</Text>
@@ -310,7 +313,7 @@ export default function SellScreen() {
                 {editQty && (
                   <Text style={styles.editTotal}>Nouveau total: {formatCurrency(editingSale.price * (parseInt(editQty) || 0), editingSale.currency)}</Text>
                 )}
-              </View>
+              </ScrollView>
             )}
             <View style={styles.modalActions}>
               <TouchableOpacity style={styles.cancelButton} onPress={() => setEditSaleModal(false)}>
@@ -322,6 +325,8 @@ export default function SellScreen() {
             </View>
           </View>
         </View>
+        </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
     </ScrollView>
     </View>
@@ -347,8 +352,8 @@ const styles = StyleSheet.create({
   quantityContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16 },
   quantityButton: { backgroundColor: '#2563eb', width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   quantityInput: { backgroundColor: '#fff', borderWidth: 2, borderColor: '#e2e8f0', borderRadius: 12, padding: 14, fontSize: 24, fontWeight: 'bold', textAlign: 'center', minWidth: 90 },
-  paymentRow: { flexDirection: 'row', gap: 12 },
-  paymentButton: { flex: 1, backgroundColor: '#fff', borderWidth: 2, borderColor: '#e2e8f0', borderRadius: 12, padding: 14, alignItems: 'center', gap: 6 },
+  paymentRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  paymentButton: { flex: 1, minWidth: 100, backgroundColor: '#fff', borderWidth: 2, borderColor: '#e2e8f0', borderRadius: 12, padding: 12, alignItems: 'center', gap: 4 },
   paymentButtonSelected: { backgroundColor: '#2563eb', borderColor: '#2563eb' },
   paymentText: { fontSize: 14, fontWeight: '600', color: '#64748b' },
   paymentTextSelected: { color: '#fff' },

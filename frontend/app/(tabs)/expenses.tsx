@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  TextInput, Alert, Modal,
+  TextInput, Alert, Modal, KeyboardAvoidingView, Platform,
+  Keyboard, TouchableWithoutFeedback,
 } from 'react-native';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
@@ -145,6 +146,8 @@ export default function ExpensesScreen() {
 
       {/* Add/Edit Modal */}
       <Modal visible={modalVisible} animationType="slide" transparent>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
@@ -154,7 +157,7 @@ export default function ExpensesScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalForm}>
+            <ScrollView style={styles.modalForm} keyboardShouldPersistTaps="handled">
               <Text style={styles.label}>Categorie</Text>
               <View style={styles.categoryGrid}>
                 {EXPENSE_CATEGORIES.map((cat) => (
@@ -222,6 +225,8 @@ export default function ExpensesScreen() {
             </View>
           </View>
         </View>
+        </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
