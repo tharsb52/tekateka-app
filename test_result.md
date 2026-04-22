@@ -346,6 +346,18 @@ frontend:
           agent: "testing"
           comment: "Mobile responsive design working perfectly on 390x844 viewport. UI elements properly sized and positioned for mobile use. Touch interactions, form inputs, and navigation optimized for mobile devices."
 
+  - task: "Debt Date Picker Functionality"
+    implemented: true
+    working: "NA"
+    file: "app/(tabs)/debts.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Custom DatePickerModal component implemented with UP/DOWN arrows for Day, Month (French names), and Year. Two scenarios: 1) Add/edit debt form calendar button, 2) Quick date change orange 'Date' button on debt cards. Needs testing for future/past date functionality and proper modal rendering."
+
 metadata:
   created_by: "testing_agent"
   version: "1.0"
@@ -354,13 +366,7 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Login Screen with Dual Tabs"
-    - "Phone OTP Login Flow"
-    - "Dashboard Navigation and Data Display"
-    - "Settings Page ACCÈS COLLÈGUE Section"
-    - "Credential Login (Collegue Tab)"
-    - "French Localization and Orthography"
-    - "Mobile Responsive Design"
+    - "Debt Date Picker Functionality"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"

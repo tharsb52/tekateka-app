@@ -13,7 +13,7 @@ import {
   Keyboard,
   TouchableWithoutFeedback,
 } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import CalendarPicker from '../../components/CalendarPicker';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import i18n from '../../utils/i18n';
@@ -33,10 +33,9 @@ export default function DebtsScreen() {
   const { user } = useAuth();
   const [modalVisible, setModalVisible] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showQuickDatePicker, setShowQuickDatePicker] = useState(false);
   const [editingDebt, setEditingDebt] = useState<any>(null);
   const [quickDateDebt, setQuickDateDebt] = useState<any>(null);
-  const [quickDate, setQuickDate] = useState(new Date());
-  const [showQuickDatePicker, setShowQuickDatePicker] = useState(false);
   const [formData, setFormData] = useState({
     debtorName: '',
     amount: '',
@@ -106,11 +105,9 @@ export default function DebtsScreen() {
     }
   };
 
-  const onDateChange = (event: any, selectedDate?: Date) => {
-    setShowDatePicker(Platform.OS === 'ios');
-    if (selectedDate) {
-      setFormData({ ...formData, dueDate: selectedDate });
-    }
+  const onDateChange = (selectedDate: Date) => {
+    setFormData({ ...formData, dueDate: selectedDate });
+    setShowDatePicker(false);
   };
 
   const handleMarkAsPaid = async (debtId: string, debtorName: string, amount: number) => {
@@ -127,14 +124,12 @@ export default function DebtsScreen() {
 
   const openQuickDateChange = (debt: any) => {
     setQuickDateDebt(debt);
-    setQuickDate(debt.dueDate ? new Date(debt.dueDate) : new Date());
     setShowQuickDatePicker(true);
   };
 
-  const handleQuickDateChange = async (event: any, selectedDate?: Date) => {
-    if (Platform.OS !== 'ios') setShowQuickDatePicker(false);
-    if (selectedDate && quickDateDebt) {
-      setQuickDate(selectedDate);
+  const handleQuickDateConfirm = async (selectedDate: Date) => {
+    setShowQuickDatePicker(false);
+    if (quickDateDebt) {
       await updateDebt(quickDateDebt.id, { dueDate: selectedDate.toISOString() });
       Alert.alert(i18n.t('success'), `Échéance mise à jour au ${format(selectedDate, 'dd/MM/yyyy')}`);
       setQuickDateDebt(null);
@@ -142,8 +137,21 @@ export default function DebtsScreen() {
   };
 
   const handleDelete = (debtId: string, debtorName: string) => {
-    deleteDebt(debtId);
-    Alert.alert(i18n.t('success'), `Dette de "${debtorName}" supprimée`);
+    Alert.alert(
+      'Supprimer la dette',
+      `Voulez-vous vraiment supprimer la dette de "${debtorName}" ?`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Supprimer',
+          style: 'destructive',
+          onPress: () => {
+            deleteDebt(debtId);
+            Alert.alert(i18n.t('success'), `Dette de "${debtorName}" supprimée`);
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -256,9 +264,17 @@ export default function DebtsScreen() {
                       </View>
                     ) : null}
                   </View>
-                  <Text style={[styles.debtAmount, styles.paidText]}>
-                    {formatCurrency(debt.amount, debt.currency)}
-                  </Text>
+                  <View style={{ alignItems: 'flex-end', gap: 8 }}>
+                    <Text style={[styles.debtAmount, styles.paidText]}>
+                      {formatCurrency(debt.amount, debt.currency)}
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.deleteButton}
+                      onPress={() => handleDelete(debt.id, debt.debtorName)}
+                    >
+                      <Ionicons name="trash" size={18} color="#dc2626" />
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
             ))}
@@ -277,14 +293,13 @@ export default function DebtsScreen() {
       </ScrollView>
 
       {/* Quick Date Picker */}
-      {showQuickDatePicker && (
-        <DateTimePicker
-          value={quickDate}
-          mode="date"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          onChange={handleQuickDateChange}
-        />
-      )}
+      <CalendarPicker
+        visible={showQuickDatePicker}
+        date={quickDateDebt?.dueDate ? new Date(quickDateDebt.dueDate) : new Date()}
+        title="Modifier l'échéance"
+        onConfirm={handleQuickDateConfirm}
+        onCancel={() => { setShowQuickDatePicker(false); setQuickDateDebt(null); }}
+      />
 
       {/* Add/Edit Debt Modal */}
       <Modal visible={modalVisible} animationType="slide" transparent>
@@ -342,16 +357,14 @@ export default function DebtsScreen() {
                   {format(formData.dueDate, 'dd/MM/yyyy')}
                 </Text>
               </TouchableOpacity>
-              
-              {showDatePicker && (
-                <DateTimePicker
-                  value={formData.dueDate}
-                  mode="date"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  onChange={onDateChange}
-                  minimumDate={new Date()}
-                />
-              )}
+
+              <CalendarPicker
+                visible={showDatePicker}
+                date={formData.dueDate}
+                title="Date d'échéance"
+                onConfirm={(d) => onDateChange(d)}
+                onCancel={() => setShowDatePicker(false)}
+              />
             </ScrollView>
 
             <View style={styles.modalActions}>
