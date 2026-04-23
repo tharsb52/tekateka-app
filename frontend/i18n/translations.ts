@@ -8,6 +8,7 @@ export const translations = {
     verifyOTP: 'Vérifier le code',
     enterOTP: 'Entrez le code SMS',
     login: 'Connexion',
+    logout: 'Déconnexion',
     
     // Navigation
     sell: 'Vendre',
@@ -15,6 +16,8 @@ export const translations = {
     expenses: 'Charges',
     dashboard: 'Accueil',
     debts: 'Dettes',
+    settings: 'Plus',
+    notes: 'Notes',
     
     // Products
     addProduct: 'Ajouter Produit',
@@ -41,8 +44,12 @@ export const translations = {
     paymentMethod: 'Mode de paiement',
     cash: 'Espèces',
     mobileMoney: 'Mobile Money',
+    card: 'Carte',
     recordSale: 'Enregistrer la vente',
     totalAmount: 'Montant total',
+    salesHistory: 'Historique des ventes',
+    noSales: 'Aucune vente',
+    editSale: 'Modifier la vente',
     
     // Expenses
     addExpense: 'Ajouter Charge',
@@ -72,6 +79,9 @@ export const translations = {
     profit: 'Bénéfice',
     loss: 'Perte',
     slogan: 'Passe du carnet au contrôle total de ton business',
+    refresh: 'Actualiser',
+    today: "Aujourd'hui",
+    yesterday: 'Hier',
     
     // Debts
     addDebt: 'Ajouter Dette',
@@ -79,12 +89,14 @@ export const translations = {
     debtorName: 'Nom du débiteur',
     debtAmount: 'Montant',
     debtDescription: 'Description',
-    dueDate: 'Date d\'échéance',
-    markAsPaid: 'Marquer comme payé',
+    dueDate: "Date d'échéance",
+    markAsPaid: 'Payé',
     totalDebts: 'Total Dettes',
     unpaidDebts: 'Dettes Non Payées',
     paidDebts: 'Dettes Payées',
-    debtPaidRevenue: 'Dette payée ajoutée au chiffre d\'affaires',
+    debtPaidRevenue: "Dette payée ajoutée au chiffre d'affaires",
+    deleteDebt: 'Supprimer la dette',
+    deleteDebtConfirm: 'Voulez-vous vraiment supprimer cette dette ?',
     
     // Purchases
     purchases: 'Achats',
@@ -100,8 +112,23 @@ export const translations = {
     
     // Subscription
     trialDaysLeft: 'Jours restants',
-    subscribe: 'S\'abonner',
+    subscribe: "S'abonner",
     subscriptionRequired: 'Abonnement requis',
+    monthly: 'Mensuel',
+    quarterly: 'Trimestriel',
+    yearly: 'Annuel',
+    
+    // Settings
+    language: 'Langue',
+    chooseLanguage: 'Choisir la langue',
+    chooseCurrency: 'Choisir la devise',
+    profile: 'Profil',
+    profilePhoto: 'Photo de profil',
+    colleagueAccess: 'Accès collègue',
+    myNotes: 'Mes Notes',
+    subscription: 'Abonnement',
+    security: 'Sécurité',
+    pinCode: 'Code PIN',
     
     // Common
     delete: 'Supprimer',
@@ -112,119 +139,14 @@ export const translations = {
     loading: 'Chargement...',
     noData: 'Aucune donnée',
     currency: 'Devise',
-  },
-  ln: {
-    // Authentication
-    welcome: 'Boyei malamu na TekaTeka',
-    phoneNumber: 'Numéro ya téléphone',
-    enterPhone: 'Koma numéro na yo',
-    sendOTP: 'Tinda code',
-    verifyOTP: 'Vérifier code',
-    enterOTP: 'Koma code oyo ozwi',
-    login: 'Kokota',
-    
-    // Navigation
-    sell: 'Teka',
-    products: 'Biloko',
-    expenses: 'Ba dépenses',
-    dashboard: 'Tableau',
-    
-    // Products
-    addProduct: 'Bakisa Produit',
-    editProduct: 'Bongola Produit',
-    deleteProduct: 'Longola',
-    productName: 'Kombo ya produit',
-    price: 'Prix',
-    stock: 'Stock',
-    category: 'Catégorie',
-    save: 'Bomba',
-    cancel: 'Tika',
-    
-    // Categories
-    food: 'Biloko ya kolia',
-    drinks: 'Masanga',
-    clothes: 'Bilamba',
-    cosmetics: 'Biloko ya kitoko',
-    electronics: 'Électronique',
-    other: 'Ndenge mosusu',
-    
-    // Sales
-    selectProduct: 'Pona produit',
-    quantity: 'Motango',
-    paymentMethod: 'Lolenge ya kofuta',
-    cash: 'Mbongo ya maboko',
-    mobileMoney: 'Mobile Money',
-    recordSale: 'Bomba vente',
-    totalAmount: 'Total',
-    
-    // Expenses
-    addExpense: 'Bakisa Dépense',
-    expenseAmount: 'Mbongo',
-    expenseCategory: 'Type ya dépense',
-    customExpense: 'Dépense ya yo moko',
-    
-    // Expense Categories
-    inventory: 'Kosomba marchandises',
-    transport: 'Transport',
-    rent: 'Loyer',
-    electricity: 'Électricité',
-    water: 'Mai',
-    internet: 'Internet',
-    salaries: 'Salaire',
-    mobileMoneyFees: 'Commission mobile money',
-    taxes: 'Taxes',
-    maintenance: 'Réparations',
-    supplies: 'Fournitures',
-    miscellaneous: 'Ba dépenses mosusu',
-    
-    // Dashboard
-    totalSales: 'Total ya ba ventes',
-    totalExpenses: 'Total ya ba dépenses',
-    netProfit: 'Bénéfice',
-    topProducts: 'Ba produits ya malamu',
-    profit: 'Bénéfice',
-    loss: 'Perte',
-    
-    // Subscription
-    trialDaysLeft: 'Mikolo etikali',
-    subscribe: 'Futa abonnement',
-    subscriptionRequired: 'Abonnement esengeli',
-    
-    // Debts
-    debts: 'Ba niongo',
-    addDebt: 'Bakisa niongo',
-    editDebt: 'Bongola niongo',
-    debtorName: 'Kombo ya moto',
-    debtAmount: 'Mbongo',
-    debtDescription: 'Makundoli',
-    dueDate: 'Mokolo ya kofuta',
-    markAsPaid: 'Efulami',
-    totalDebts: 'Total ya ba niongo',
-    unpaidDebts: 'Ba niongo eefulami te',
-    paidDebts: 'Ba niongo eefulami',
-    debtPaidRevenue: 'Niongo ebakisami na chiffre d\'affaires',
-    
-    // Purchases
-    purchases: 'Bisombi',
-    addPurchase: 'Bakisa sombi',
-    editPurchase: 'Bongola sombi',
-    supplier: 'Moto ya kotekela',
-    unitPrice: 'Prix ya moko',
-    totalCost: 'Total ya prix',
-    purchaseProduct: 'Produit / Eloko',
-    noPurchases: 'Sombi moko te',
-    totalPurchases: 'Total ya bisombi',
-    realProfit: 'Bénéfice ya solo',
-    
-    // Common
-    delete: 'Longola',
-    edit: 'Bongola',
-    confirm: 'Ndima',
-    success: 'Malamu',
-    error: 'Erreur',
-    loading: 'Ezali ko charger...',
-    noData: 'Eloko moko te',
-    currency: 'Mbongo',
+    close: 'Fermer',
+    history: 'Historique',
+    amount: 'Montant',
+    date: 'Date',
+    name: 'Nom',
+    description: 'Description',
+    optional: 'optionnel',
+    required: 'requis',
   },
   en: {
     // Authentication
@@ -235,12 +157,16 @@ export const translations = {
     verifyOTP: 'Verify code',
     enterOTP: 'Enter the SMS code',
     login: 'Login',
+    logout: 'Log out',
     
     // Navigation
     sell: 'Sell',
     products: 'Products',
     expenses: 'Expenses',
-    dashboard: 'Dashboard',
+    dashboard: 'Home',
+    debts: 'Debts',
+    settings: 'More',
+    notes: 'Notes',
     
     // Products
     addProduct: 'Add Product',
@@ -262,13 +188,17 @@ export const translations = {
     other: 'Other',
     
     // Sales
-    selectProduct: 'Select product',
+    selectProduct: 'Select a product',
     quantity: 'Quantity',
     paymentMethod: 'Payment method',
     cash: 'Cash',
     mobileMoney: 'Mobile Money',
+    card: 'Card',
     recordSale: 'Record sale',
     totalAmount: 'Total amount',
+    salesHistory: 'Sales history',
+    noSales: 'No sales',
+    editSale: 'Edit sale',
     
     // Expenses
     addExpense: 'Add Expense',
@@ -297,25 +227,25 @@ export const translations = {
     topProducts: 'Top Products',
     profit: 'Profit',
     loss: 'Loss',
-    
-    // Subscription (en)
-    trialDaysLeft: 'Days remaining',
-    subscribe: 'Subscribe',
-    subscriptionRequired: 'Subscription required',
+    slogan: 'From notebook to full control of your business',
+    refresh: 'Refresh',
+    today: 'Today',
+    yesterday: 'Yesterday',
     
     // Debts
-    debts: 'Debts',
     addDebt: 'Add Debt',
     editDebt: 'Edit Debt',
     debtorName: 'Debtor name',
     debtAmount: 'Amount',
     debtDescription: 'Description',
     dueDate: 'Due date',
-    markAsPaid: 'Mark as paid',
+    markAsPaid: 'Paid',
     totalDebts: 'Total Debts',
     unpaidDebts: 'Unpaid Debts',
     paidDebts: 'Paid Debts',
     debtPaidRevenue: 'Paid debt added to revenue',
+    deleteDebt: 'Delete debt',
+    deleteDebtConfirm: 'Are you sure you want to delete this debt?',
     
     // Purchases
     purchases: 'Purchases',
@@ -329,6 +259,26 @@ export const translations = {
     totalPurchases: 'Total Purchases',
     realProfit: 'Real Profit',
     
+    // Subscription
+    trialDaysLeft: 'Days remaining',
+    subscribe: 'Subscribe',
+    subscriptionRequired: 'Subscription required',
+    monthly: 'Monthly',
+    quarterly: 'Quarterly',
+    yearly: 'Yearly',
+    
+    // Settings
+    language: 'Language',
+    chooseLanguage: 'Choose language',
+    chooseCurrency: 'Choose currency',
+    profile: 'Profile',
+    profilePhoto: 'Profile photo',
+    colleagueAccess: 'Colleague access',
+    myNotes: 'My Notes',
+    subscription: 'Subscription',
+    security: 'Security',
+    pinCode: 'PIN code',
+    
     // Common
     delete: 'Delete',
     edit: 'Edit',
@@ -338,5 +288,311 @@ export const translations = {
     loading: 'Loading...',
     noData: 'No data',
     currency: 'Currency',
+    close: 'Close',
+    history: 'History',
+    amount: 'Amount',
+    date: 'Date',
+    name: 'Name',
+    description: 'Description',
+    optional: 'optional',
+    required: 'required',
+  },
+  ln: {
+    // Authentication
+    welcome: 'Boyei malamu na TekaTeka',
+    phoneNumber: 'Numéro ya téléphone',
+    enterPhone: 'Koma numéro na yo',
+    sendOTP: 'Tinda code',
+    verifyOTP: 'Vérifier code',
+    enterOTP: 'Koma code oyo ozwi',
+    login: 'Kokota',
+    logout: 'Kobima',
+    
+    // Navigation
+    sell: 'Teka',
+    products: 'Biloko',
+    expenses: 'Ba dépenses',
+    dashboard: 'Ndako',
+    debts: 'Ba niongo',
+    settings: 'Mosusu',
+    notes: 'Ba notes',
+    
+    // Products
+    addProduct: 'Bakisa eloko',
+    editProduct: 'Bongola eloko',
+    deleteProduct: 'Longola',
+    productName: 'Kombo ya eloko',
+    price: 'Prix',
+    stock: 'Stock',
+    category: 'Lolenge',
+    save: 'Bomba',
+    cancel: 'Tika',
+    
+    // Categories
+    food: 'Biloko ya kolia',
+    drinks: 'Masanga',
+    clothes: 'Bilamba',
+    cosmetics: 'Biloko ya kitoko',
+    electronics: 'Biloko ya courant',
+    other: 'Ndenge mosusu',
+    
+    // Sales
+    selectProduct: 'Pona eloko',
+    quantity: 'Motango',
+    paymentMethod: 'Lolenge ya kofuta',
+    cash: 'Mbongo cash',
+    mobileMoney: 'Mobile Money',
+    card: 'Carte',
+    recordSale: 'Bomba vente',
+    totalAmount: 'Total',
+    salesHistory: 'Lisolo ya ba ventes',
+    noSales: 'Vente moko te',
+    editSale: 'Bongola vente',
+    
+    // Expenses
+    addExpense: 'Bakisa dépense',
+    expenseAmount: 'Mbongo',
+    expenseCategory: 'Lolenge ya dépense',
+    customExpense: 'Dépense ya yo moko',
+    
+    // Expense Categories
+    inventory: 'Kosomba biloko',
+    transport: 'Transport',
+    rent: 'Loyer',
+    electricity: 'Courant',
+    water: 'Mai',
+    internet: 'Internet',
+    salaries: 'Ba salaire',
+    mobileMoneyFees: 'Commission mobile money',
+    taxes: 'Taxes',
+    maintenance: 'Kobongisa',
+    supplies: 'Biloko ya mosala',
+    miscellaneous: 'Ba dépenses mosusu',
+    
+    // Dashboard
+    totalSales: 'Total ya ba ventes',
+    totalExpenses: 'Total ya ba dépenses',
+    netProfit: 'Bénéfice',
+    topProducts: 'Biloko ya malamu',
+    profit: 'Bénéfice',
+    loss: 'Perte',
+    slogan: 'Longwa na kaye tii na contrôle ya business na yo',
+    refresh: 'Suka lisusu',
+    today: 'Lelo',
+    yesterday: 'Lobi',
+    
+    // Debts
+    addDebt: 'Bakisa niongo',
+    editDebt: 'Bongola niongo',
+    debtorName: 'Kombo ya moto',
+    debtAmount: 'Mbongo',
+    debtDescription: 'Makundoli',
+    dueDate: 'Mokolo ya kofuta',
+    markAsPaid: 'Efutami',
+    totalDebts: 'Total ya ba niongo',
+    unpaidDebts: 'Ba niongo efutami te',
+    paidDebts: 'Ba niongo efutami',
+    debtPaidRevenue: "Niongo efutami, ebakisami na mbongo ya commerce",
+    deleteDebt: 'Longola niongo',
+    deleteDebtConfirm: 'Olingi solo kolongola niongo oyo?',
+    
+    // Purchases
+    purchases: 'Bisombi',
+    addPurchase: 'Bakisa sombi',
+    editPurchase: 'Bongola sombi',
+    supplier: 'Moto ya kotekela',
+    unitPrice: 'Prix ya moko',
+    totalCost: 'Total ya prix',
+    purchaseProduct: 'Eloko',
+    noPurchases: 'Sombi moko te',
+    totalPurchases: 'Total ya bisombi',
+    realProfit: 'Bénéfice ya solo',
+    
+    // Subscription
+    trialDaysLeft: 'Mikolo etikali',
+    subscribe: 'Futa abonnement',
+    subscriptionRequired: 'Abonnement esengeli',
+    monthly: 'Sanza moko',
+    quarterly: 'Sanza misato',
+    yearly: 'Mbula moko',
+    
+    // Settings
+    language: 'Monoko',
+    chooseLanguage: 'Pona monoko',
+    chooseCurrency: 'Pona mbongo',
+    profile: 'Profil',
+    profilePhoto: 'Foto ya profil',
+    colleagueAccess: 'Nzela ya moninga',
+    myNotes: 'Ba notes na ngai',
+    subscription: 'Abonnement',
+    security: 'Sécurité',
+    pinCode: 'Code PIN',
+    
+    // Common
+    delete: 'Longola',
+    edit: 'Bongola',
+    confirm: 'Ndima',
+    success: 'Malamu',
+    error: 'Erreur',
+    loading: 'Ezali ko charger...',
+    noData: 'Eloko moko te',
+    currency: 'Mbongo',
+    close: 'Kanga',
+    history: 'Lisolo',
+    amount: 'Mbongo',
+    date: 'Mokolo',
+    name: 'Kombo',
+    description: 'Makundoli',
+    optional: 'si olingi',
+    required: 'esengeli',
+  },
+  sw: {
+    // Authentication
+    welcome: 'Karibu TekaTeka',
+    phoneNumber: 'Nambari ya simu',
+    enterPhone: 'Ingiza nambari yako',
+    sendOTP: 'Tuma msimbo',
+    verifyOTP: 'Thibitisha msimbo',
+    enterOTP: 'Ingiza msimbo wa SMS',
+    login: 'Ingia',
+    logout: 'Toka',
+    
+    // Navigation
+    sell: 'Uza',
+    products: 'Bidhaa',
+    expenses: 'Gharama',
+    dashboard: 'Nyumbani',
+    debts: 'Madeni',
+    settings: 'Zaidi',
+    notes: 'Maelezo',
+    
+    // Products
+    addProduct: 'Ongeza bidhaa',
+    editProduct: 'Hariri bidhaa',
+    deleteProduct: 'Futa',
+    productName: 'Jina la bidhaa',
+    price: 'Bei',
+    stock: 'Hifadhi',
+    category: 'Aina',
+    save: 'Hifadhi',
+    cancel: 'Ghairi',
+    
+    // Categories
+    food: 'Chakula',
+    drinks: 'Vinywaji',
+    clothes: 'Nguo',
+    cosmetics: 'Vipodozi',
+    electronics: 'Elektroniki',
+    other: 'Nyingine',
+    
+    // Sales
+    selectProduct: 'Chagua bidhaa',
+    quantity: 'Kiasi',
+    paymentMethod: 'Njia ya malipo',
+    cash: 'Taslimu',
+    mobileMoney: 'Mobile Money',
+    card: 'Kadi',
+    recordSale: 'Rekodi mauzo',
+    totalAmount: 'Jumla',
+    salesHistory: 'Historia ya mauzo',
+    noSales: 'Hakuna mauzo',
+    editSale: 'Hariri mauzo',
+    
+    // Expenses
+    addExpense: 'Ongeza gharama',
+    expenseAmount: 'Kiasi',
+    expenseCategory: 'Aina ya gharama',
+    customExpense: 'Gharama maalum',
+    
+    // Expense Categories
+    inventory: 'Ununuzi wa bidhaa',
+    transport: 'Usafiri',
+    rent: 'Kodi',
+    electricity: 'Umeme',
+    water: 'Maji',
+    internet: 'Mtandao',
+    salaries: 'Mishahara',
+    mobileMoneyFees: 'Ada za mobile money',
+    taxes: 'Kodi za serikali',
+    maintenance: 'Matengenezo',
+    supplies: 'Vifaa',
+    miscellaneous: 'Gharama nyingine',
+    
+    // Dashboard
+    totalSales: 'Jumla ya mauzo',
+    totalExpenses: 'Jumla ya gharama',
+    netProfit: 'Faida halisi',
+    topProducts: 'Bidhaa bora',
+    profit: 'Faida',
+    loss: 'Hasara',
+    slogan: 'Kutoka daftari hadi udhibiti kamili wa biashara yako',
+    refresh: 'Sasisha',
+    today: 'Leo',
+    yesterday: 'Jana',
+    
+    // Debts
+    addDebt: 'Ongeza deni',
+    editDebt: 'Hariri deni',
+    debtorName: 'Jina la mdaiwa',
+    debtAmount: 'Kiasi',
+    debtDescription: 'Maelezo',
+    dueDate: 'Tarehe ya mwisho',
+    markAsPaid: 'Limelipwa',
+    totalDebts: 'Jumla ya madeni',
+    unpaidDebts: 'Madeni hayajalipwa',
+    paidDebts: 'Madeni yaliyolipwa',
+    debtPaidRevenue: 'Deni limelipwa, limeongezwa kwenye mapato',
+    deleteDebt: 'Futa deni',
+    deleteDebtConfirm: 'Una uhakika unataka kufuta deni hili?',
+    
+    // Purchases
+    purchases: 'Manunuzi',
+    addPurchase: 'Ongeza ununuzi',
+    editPurchase: 'Hariri ununuzi',
+    supplier: 'Msambazaji',
+    unitPrice: 'Bei ya kitu kimoja',
+    totalCost: 'Jumla ya gharama',
+    purchaseProduct: 'Bidhaa',
+    noPurchases: 'Hakuna manunuzi',
+    totalPurchases: 'Jumla ya manunuzi',
+    realProfit: 'Faida halisi',
+    
+    // Subscription
+    trialDaysLeft: 'Siku zilizobaki',
+    subscribe: 'Jiandikishe',
+    subscriptionRequired: 'Usajili unahitajika',
+    monthly: 'Kila mwezi',
+    quarterly: 'Kila miezi mitatu',
+    yearly: 'Kila mwaka',
+    
+    // Settings
+    language: 'Lugha',
+    chooseLanguage: 'Chagua lugha',
+    chooseCurrency: 'Chagua sarafu',
+    profile: 'Wasifu',
+    profilePhoto: 'Picha ya wasifu',
+    colleagueAccess: 'Ufikiaji wa mwenzako',
+    myNotes: 'Maelezo yangu',
+    subscription: 'Usajili',
+    security: 'Usalama',
+    pinCode: 'Msimbo wa PIN',
+    
+    // Common
+    delete: 'Futa',
+    edit: 'Hariri',
+    confirm: 'Thibitisha',
+    success: 'Imefanikiwa',
+    error: 'Kosa',
+    loading: 'Inapakia...',
+    noData: 'Hakuna data',
+    currency: 'Sarafu',
+    close: 'Funga',
+    history: 'Historia',
+    amount: 'Kiasi',
+    date: 'Tarehe',
+    name: 'Jina',
+    description: 'Maelezo',
+    optional: 'si lazima',
+    required: 'lazima',
   },
 };

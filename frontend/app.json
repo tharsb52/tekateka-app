@@ -1,27 +1,31 @@
 {
   "expo": {
-    "name": "frontend",
-    "slug": "frontend",
+    "name": "TekaTeka",
+    "slug": "tekateka",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
+    "scheme": "tekateka",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.tekateka.app",
       "infoPlist": {
         "NSSpeechRecognitionUsageDescription": "Dictez vos produits et ventes facilement",
-        "NSMicrophoneUsageDescription": "Enregistrez vos donnees en parlant"
+        "NSMicrophoneUsageDescription": "Enregistrez vos donnees en parlant",
+        "NSCameraUsageDescription": "Prenez une photo de profil",
+        "NSPhotoLibraryUsageDescription": "Choisissez une photo de profil"
       }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000"
+        "backgroundColor": "#fef3e7"
       },
       "edgeToEdgeEnabled": true,
-      "permissions": ["RECORD_AUDIO"]
+      "permissions": ["RECORD_AUDIO", "CAMERA", "READ_EXTERNAL_STORAGE"],
+      "package": "com.tekateka.app"
     },
     "web": {
       "bundler": "metro",
@@ -34,12 +38,11 @@
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
+          "imageWidth": 250,
           "resizeMode": "contain",
-          "backgroundColor": "#000"
+          "backgroundColor": "#fef3e7"
         }
       ],
-      "@react-native-community/datetimepicker",
       "expo-speech-recognition",
       [
         "expo-notifications",
@@ -47,10 +50,22 @@
           "icon": "./assets/images/icon.png",
           "color": "#2563eb"
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Choisissez une photo de profil",
+          "cameraPermission": "Prenez une photo de profil"
+        }
       ]
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "your-project-id"
+      }
     }
   }
 }

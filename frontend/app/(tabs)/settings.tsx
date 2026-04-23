@@ -29,6 +29,7 @@ const LANGUAGES = [
   { code: 'fr', name: 'Français', flag: '🇫🇷' },
   { code: 'en', name: 'English', flag: '🇬🇧' },
   { code: 'ln', name: 'Lingala', flag: '🇨🇩' },
+  { code: 'sw', name: 'Kiswahili', flag: '🇰🇪' },
 ];
 
 export default function SettingsScreen() {
