@@ -382,6 +382,34 @@ export default function SettingsScreen() {
               </View>
             </View>
           </View>
+
+          <View style={styles.divider} />
+
+          <TouchableOpacity style={styles.settingRow} onPress={() => router.push('/privacy')}>
+            <View style={styles.settingLeft}>
+              <View style={[styles.iconCircle, { backgroundColor: '#ede9fe' }]}>
+                <Ionicons name="shield-checkmark" size={22} color="#7c3aed" />
+              </View>
+              <View>
+                <Text style={styles.settingTitle}>Politique de Confidentialité</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={22} color="#94a3b8" />
+          </TouchableOpacity>
+
+          <View style={styles.divider} />
+
+          <TouchableOpacity style={styles.settingRow} onPress={() => router.push('/terms')}>
+            <View style={styles.settingLeft}>
+              <View style={[styles.iconCircle, { backgroundColor: '#fef3c7' }]}>
+                <Ionicons name="document-text" size={22} color="#f59e0b" />
+              </View>
+              <View>
+                <Text style={styles.settingTitle}>Conditions d'Utilisation</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={22} color="#94a3b8" />
+          </TouchableOpacity>
         </View>
 
         {/* Logout */}
