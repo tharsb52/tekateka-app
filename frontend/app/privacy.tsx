@@ -79,7 +79,7 @@ export default function PrivacyPolicyScreen() {
 
         <Text style={styles.sectionTitle}>10. Contact</Text>
         <Text style={styles.paragraph}>
-          Pour toute question relative à cette politique, contactez-nous à : support@tekateka.app
+          Pour toute question relative à cette politique, contactez-nous à : mtharcisse@thenoly.com
         </Text>
 
         <View style={{ height: 60 }} />

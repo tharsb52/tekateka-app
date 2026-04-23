@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Image,
   Platform,
+  Linking,
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'expo-router';
@@ -406,6 +407,26 @@ export default function SettingsScreen() {
               </View>
               <View>
                 <Text style={styles.settingTitle}>Conditions d'Utilisation</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={22} color="#94a3b8" />
+          </TouchableOpacity>
+
+          <View style={styles.divider} />
+
+          <TouchableOpacity style={styles.settingRow} onPress={() => {
+            const email = 'mtharcisse@thenoly.com';
+            const subject = encodeURIComponent('TekaTeka - Support');
+            const body = encodeURIComponent(`Bonjour,\n\nJ'utilise TekaTeka et j'ai besoin d'aide.\n\nTéléphone: ${user?.phoneNumber || ''}\n\nMa question:\n\n`);
+            Linking.openURL(`mailto:${email}?subject=${subject}&body=${body}`);
+          }}>
+            <View style={styles.settingLeft}>
+              <View style={[styles.iconCircle, { backgroundColor: '#d1fae5' }]}>
+                <Ionicons name="mail" size={22} color="#10b981" />
+              </View>
+              <View>
+                <Text style={styles.settingTitle}>Contacter le support</Text>
+                <Text style={styles.settingSubtitle}>mtharcisse@thenoly.com</Text>
               </View>
             </View>
             <Ionicons name="chevron-forward" size={22} color="#94a3b8" />
