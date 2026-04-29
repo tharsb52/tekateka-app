@@ -287,6 +287,7 @@ tr:hover td{background:#1e293b}
 <body>
 <div class="login-page" id="loginPage">
 <div class="login-box">
+<div style="text-align:center;margin-bottom:16px"><div style="font-size:48px;font-weight:900;color:#f59e0b">TK</div></div>
 <h1>TekaTeka Admin</h1>
 <p>Backoffice de gestion</p>
 <div class="login-error" id="loginError">Mot de passe incorrect</div>
@@ -296,8 +297,8 @@ tr:hover td{background:#1e293b}
 </div>
 <div class="dashboard" id="dashboard">
 <div class="dash-header">
-<h1>TekaTeka - Backoffice</h1>
-<div><button class="chg-pw" onclick="showPwModal()">Changer le mot de passe</button><button class="logout" onclick="doLogout()">Déconnexion</button></div>
+<h1><span style="color:#f59e0b;font-weight:900;margin-right:8px">TK</span> TekaTeka - Backoffice</h1>
+<div><a href="/api/admin/ambassador-panel" style="background:#f59e0b;color:#0f172a;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;margin-right:8px">Ambassadeurs</a><button class="chg-pw" onclick="showPwModal()">Changer le mot de passe</button><button class="logout" onclick="doLogout()">Déconnexion</button></div>
 </div>
 <div class="pw-modal" id="pwModal">
 <div class="pw-box">

@@ -63,6 +63,7 @@ td{padding:10px 12px;border-bottom:1px solid #1e293b}
 <body>
 <div class="login-container" id="loginSection">
   <div class="login-box">
+    <div style="text-align:center;margin-bottom:12px"><div style="font-size:48px;font-weight:900;color:#f59e0b">TK</div></div>
     <h1>TekaTeka Admin</h1>
     <p>Gestion des Ambassadeurs & Codes</p>
     <input type="password" id="adminPwd" placeholder="Mot de passe admin" onkeypress="if(event.key==='Enter')doLogin()">
@@ -73,7 +74,7 @@ td{padding:10px 12px;border-bottom:1px solid #1e293b}
 
 <div class="app" id="appSection">
   <div class="header">
-    <h1>Gestion Ambassadeurs</h1>
+    <h1><span style="color:#f59e0b;font-weight:900;margin-right:8px">TK</span> Gestion Ambassadeurs</h1>
     <button class="logout" onclick="doLogout()">Déconnexion</button>
   </div>
 

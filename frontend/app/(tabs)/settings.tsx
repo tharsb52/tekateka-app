@@ -473,16 +473,23 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             </View>
             <Text style={{ fontSize: 14, color: '#64748b', textAlign: 'center', marginBottom: 20 }}>
-              Montrez ce code à un ambassadeur pour activer votre abonnement
+              Montrez ce code à un ambassadeur TekaTeka pour activer votre abonnement
             </Text>
-            <View style={{ backgroundColor: '#fff', padding: 20, borderRadius: 16 }}>
-              <View style={{ width: 200, height: 200, backgroundColor: '#f1f5f9', borderRadius: 8, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 11, color: '#64748b', textAlign: 'center', marginBottom: 8 }}>ID Client</Text>
-                <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#1e293b', textAlign: 'center' }} selectable>{user?.id || 'N/A'}</Text>
+            <View style={{ backgroundColor: '#fff', padding: 24, borderRadius: 20, alignItems: 'center', width: '100%' }}>
+              <View style={{ width: 250, height: 250, backgroundColor: '#000', borderRadius: 12, alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                {/* QR Pattern visual representation */}
+                <View style={{ width: '100%', height: '100%', backgroundColor: '#fff', borderRadius: 8, alignItems: 'center', justifyContent: 'center', padding: 12 }}>
+                  <Ionicons name="qr-code" size={120} color="#000" />
+                  <Text style={{ fontSize: 10, color: '#333', marginTop: 8, fontFamily: 'monospace' }}>{user?.id || 'N/A'}</Text>
+                </View>
+              </View>
+              <View style={{ marginTop: 16, backgroundColor: '#f1f5f9', borderRadius: 10, padding: 12, width: '100%', alignItems: 'center' }}>
+                <Text style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Votre identifiant client :</Text>
+                <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#1e293b', letterSpacing: 0.5 }} selectable>{user?.id || 'N/A'}</Text>
               </View>
             </View>
             <Text style={{ fontSize: 12, color: '#94a3b8', marginTop: 16, textAlign: 'center' }}>
-              ID: {user?.id || 'N/A'}
+              L'ambassadeur scannera ce code ou copiera votre ID
             </Text>
           </View>
         </View>
