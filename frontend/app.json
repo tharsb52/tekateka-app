@@ -47,7 +47,6 @@
           "backgroundColor": "#fef3e7"
         }
       ],
-      "expo-speech-recognition",
       [
         "expo-notifications",
         {
