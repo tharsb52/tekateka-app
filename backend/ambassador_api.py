@@ -40,18 +40,18 @@ router = APIRouter()
 # Pricing Configuration
 # ==========================================
 PRICING_TIERS = {
-    "early": {  # First 200 clients
-        "monthly": {"price": 5, "commission": 1},
-        "quarterly": {"price": 14, "commission": 3},
-        "yearly": {"price": 55, "commission": 5},
+    "early": {  # First 500 clients (promo)
+        "monthly": {"appPrice": 10, "ambassadorPrice": 8, "commission": 2},
+        "quarterly": {"appPrice": 25, "ambassadorPrice": 20, "commission": 3},
+        "yearly": {"appPrice": 60, "ambassadorPrice": 50, "commission": 5},
     },
-    "standard": {  # After 200 clients
-        "monthly": {"price": 12, "commission": 2},
-        "quarterly": {"price": 30, "commission": 5},
-        "yearly": {"price": 110, "commission": 10},
+    "standard": {  # After 500 clients
+        "monthly": {"appPrice": 15, "ambassadorPrice": 12, "commission": 2},
+        "quarterly": {"appPrice": 30, "ambassadorPrice": 28, "commission": 3},
+        "yearly": {"appPrice": 65, "ambassadorPrice": 60, "commission": 5},
     },
 }
-EARLY_CLIENT_THRESHOLD = 200
+EARLY_CLIENT_THRESHOLD = 500
 COMMISSION_MULTIPLIER_THRESHOLD = 50  # Sales count for 1.5x multiplier
 COMMISSION_MULTIPLIER = 1.5
 CODE_VALIDITY_DAYS = 30
@@ -111,7 +111,7 @@ async def get_ambassador_commission(ambassador_id: str, plan: str):
     tier = await get_current_pricing_tier()
     base_commission = PRICING_TIERS[tier][plan]["commission"]
     
-    # Check if ambassador qualifies for multiplier
+    # Check if ambassador qualifies for multiplier (50+ sales = x1.5)
     total_sales = await db.ambassador_sales.count_documents({"ambassadorId": ambassador_id})
     if total_sales >= COMMISSION_MULTIPLIER_THRESHOLD:
         return base_commission * COMMISSION_MULTIPLIER
@@ -339,7 +339,7 @@ async def activate_code(body: dict):
     # Calculate commission
     commission = await get_ambassador_commission(amb_id, plan)
     tier = await get_current_pricing_tier()
-    price = PRICING_TIERS[tier][plan]["price"]
+    price = PRICING_TIERS[tier][plan]["ambassadorPrice"]
     
     # Mark code as used
     await db.activation_codes.update_one(
