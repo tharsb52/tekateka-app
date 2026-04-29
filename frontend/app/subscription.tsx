@@ -8,6 +8,7 @@ import {
   Alert,
   ActivityIndicator,
   Modal,
+  TextInput,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
@@ -70,12 +71,52 @@ export default function SubscriptionScreen() {
   ];
 
   const [paymentMethodModal, setPaymentMethodModal] = useState(false);
+  const [activationCode, setActivationCode] = useState('');
+  const [codeLoading, setCodeLoading] = useState(false);
 
   const handleSubscribe = () => {
     setPaymentMethodModal(true);
   };
 
-  const processSubscriptionPayment = async (method: 'mobile_money' | 'card') => {
+  const handleActivateCode = async () => {
+    if (!activationCode.trim()) {
+      Alert.alert('Erreur', 'Veuillez entrer un code d\'activation');
+      return;
+    }
+    setCodeLoading(true);
+    try {
+      const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+      const res = await fetch(`${backendUrl}/api/subscription/activate-code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user?.id, code: activationCode.trim() }),
+      });
+      const responseText = await res.text();
+      let data;
+      try { data = JSON.parse(responseText); } catch { 
+        Alert.alert('Erreur', 'Serveur inaccessible'); 
+        setCodeLoading(false); 
+        return; 
+      }
+      if (!res.ok) {
+        Alert.alert('Erreur', data.detail || 'Code invalide');
+      } else {
+        setPaymentMethodModal(false);
+        setActivationCode('');
+        Alert.alert(
+          'Abonnement activé !',
+          data.message,
+          [{ text: 'Continuer', onPress: () => router.replace('/(tabs)/dashboard') }]
+        );
+      }
+    } catch (e: any) {
+      Alert.alert('Erreur', e.message || 'Erreur de connexion');
+    } finally {
+      setCodeLoading(false);
+    }
+  };
+
+  const processSubscriptionPayment = async (method: 'card') => {
     setPaymentMethodModal(false);
     setLoading(true);
     const plan = plans.find(p => p.id === selectedPlan);
@@ -338,7 +379,7 @@ export default function SubscriptionScreen() {
         <View style={styles.payModalOverlay}>
           <View style={styles.payModalContent}>
             <View style={styles.payModalHeader}>
-              <Text style={styles.payModalTitle}>Choisir le mode de paiement</Text>
+              <Text style={styles.payModalTitle}>Activer mon abonnement</Text>
               <TouchableOpacity onPress={() => setPaymentMethodModal(false)}>
                 <Ionicons name="close" size={28} color="#64748b" />
               </TouchableOpacity>
@@ -348,20 +389,40 @@ export default function SubscriptionScreen() {
               {formatCurrency(plans.find(p => p.id === selectedPlan)?.price || 0, currency)} - {plans.find(p => p.id === selectedPlan)?.name}
             </Text>
 
-            <TouchableOpacity 
-              style={styles.payMethodBtn}
-              onPress={() => processSubscriptionPayment('mobile_money')}
-            >
-              <View style={[styles.payMethodIcon, { backgroundColor: '#fef3c7' }]}>
-                <Ionicons name="phone-portrait" size={28} color="#f59e0b" />
+            {/* Activation Code Section */}
+            <View style={{ marginBottom: 16 }}>
+              <Text style={{ fontSize: 15, fontWeight: '600', color: '#1e293b', marginBottom: 10 }}>
+                Code d'activation (acheté auprès d'un ambassadeur)
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TextInput
+                  style={{ flex: 1, backgroundColor: '#f1f5f9', borderRadius: 12, paddingHorizontal: 16, height: 50, fontSize: 16, fontWeight: '600', letterSpacing: 1, borderWidth: 1, borderColor: '#e2e8f0' }}
+                  placeholder="TK-XXXX-XXXX"
+                  placeholderTextColor="#94a3b8"
+                  value={activationCode}
+                  onChangeText={setActivationCode}
+                  autoCapitalize="characters"
+                />
+                <TouchableOpacity
+                  style={{ backgroundColor: '#059669', borderRadius: 12, width: 50, height: 50, alignItems: 'center', justifyContent: 'center' }}
+                  onPress={handleActivateCode}
+                  disabled={codeLoading}
+                >
+                  {codeLoading ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Ionicons name="checkmark" size={24} color="#fff" />
+                  )}
+                </TouchableOpacity>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.payMethodTitle}>Mobile Money</Text>
-                <Text style={styles.payMethodSub}>MTN MoMo, Orange Money, Airtel, M-Pesa</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={22} color="#94a3b8" />
-            </TouchableOpacity>
+              <Text style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>
+                Entrez le code reçu de votre ambassadeur TekaTeka
+              </Text>
+            </View>
 
+            <View style={{ height: 1, backgroundColor: '#e2e8f0', marginVertical: 12 }} />
+
+            {/* Card Payment */}
             <TouchableOpacity 
               style={styles.payMethodBtn}
               onPress={() => processSubscriptionPayment('card')}
@@ -371,14 +432,14 @@ export default function SubscriptionScreen() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.payMethodTitle}>Carte bancaire</Text>
-                <Text style={styles.payMethodSub}>Visa, Mastercard</Text>
+                <Text style={styles.payMethodSub}>Visa, Mastercard (Stripe)</Text>
               </View>
               <Ionicons name="chevron-forward" size={22} color="#94a3b8" />
             </TouchableOpacity>
 
             <View style={styles.sandboxBadge}>
-              <Ionicons name="information-circle" size={18} color="#f59e0b" />
-              <Text style={styles.sandboxText}>Mode test - les paiements sont simulés</Text>
+              <Ionicons name="information-circle" size={18} color="#64748b" />
+              <Text style={styles.sandboxText}>Le paiement par carte sera disponible prochainement</Text>
             </View>
           </View>
         </View>

@@ -395,6 +395,115 @@ async def activate_code(body: dict):
     }
 
 # ==========================================
+# Client Self-Activate with Code
+# ==========================================
+@router.post("/subscription/activate-code")
+async def client_activate_code(body: dict):
+    """Allow a user to self-activate using a code bought from an ambassador"""
+    user_id = body.get("userId", "")
+    code_str = body.get("code", "").strip().upper()
+    
+    if not user_id or not code_str:
+        raise HTTPException(status_code=400, detail="ID utilisateur et code requis")
+    
+    # Find the code
+    code_doc = await db.activation_codes.find_one({
+        "code": code_str,
+        "status": "unused",
+        "expiresAt": {"$gt": datetime.utcnow()}
+    })
+    
+    if not code_doc:
+        # Check if code exists but is used
+        used_code = await db.activation_codes.find_one({"code": code_str, "status": "used"})
+        if used_code:
+            raise HTTPException(status_code=400, detail="Ce code a déjà été utilisé")
+        expired_code = await db.activation_codes.find_one({"code": code_str})
+        if expired_code:
+            raise HTTPException(status_code=400, detail="Ce code est expiré")
+        raise HTTPException(status_code=404, detail="Code invalide. Vérifiez le code et réessayez.")
+    
+    # Verify user exists
+    try:
+        user = await db.users.find_one({"_id": ObjectId(user_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="ID utilisateur invalide")
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    
+    plan = code_doc["plan"]
+    ambassador_id = code_doc["ambassadorId"]
+    
+    # Calculate expiry based on plan
+    now = datetime.utcnow()
+    if plan == "monthly":
+        expiry = now + timedelta(days=30)
+    elif plan == "quarterly":
+        expiry = now + timedelta(days=90)
+    else:  # yearly
+        expiry = now + timedelta(days=365)
+    
+    # Get commission
+    commission = await get_ambassador_commission(ambassador_id, plan)
+    tier = await get_current_pricing_tier()
+    price = PRICING_TIERS[tier][plan]["ambassadorPrice"]
+    
+    # Mark code as used
+    await db.activation_codes.update_one(
+        {"_id": code_doc["_id"]},
+        {"$set": {"status": "used", "usedAt": now, "usedByUserId": user_id}}
+    )
+    
+    # Update user subscription
+    await db.users.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {
+            "subscription": {
+                "status": "active",
+                "plan": plan,
+                "startDate": now.isoformat(),
+                "expiryDate": expiry.isoformat(),
+                "activatedBy": ambassador_id,
+                "activationCode": code_str,
+                "method": "activation_code",
+            },
+            "isSubscribed": True,
+            "subscriptionPlan": plan,
+            "subscriptionEndDate": expiry.isoformat(),
+        }}
+    )
+    
+    # Record ambassador sale
+    ambassador = await db.ambassadors.find_one({"_id": ObjectId(ambassador_id)})
+    sale_doc = {
+        "ambassadorId": ambassador_id,
+        "ambassadorName": ambassador["name"] if ambassador else "N/A",
+        "clientUserId": user_id,
+        "clientName": user.get("username", user.get("phoneNumber", "N/A")),
+        "clientPhone": user.get("phoneNumber", "N/A"),
+        "plan": plan,
+        "price": price,
+        "commission": commission,
+        "activationCode": code_str,
+        "pricingTier": tier,
+        "method": "client_self_activation",
+        "createdAt": now,
+    }
+    await db.ambassador_sales.insert_one(sale_doc)
+    
+    plan_labels = {"monthly": "Mensuel", "quarterly": "Trimestriel", "yearly": "Annuel"}
+    
+    return {
+        "success": True,
+        "message": f"Abonnement {plan_labels.get(plan, plan)} activé avec succès !",
+        "subscription": {
+            "plan": plan,
+            "expiryDate": expiry.isoformat(),
+        }
+    }
+
+# ==========================================
 # Admin: Create Ambassador
 # ==========================================
 @router.post("/admin/ambassadors/create")
