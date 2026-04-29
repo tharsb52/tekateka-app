@@ -21,6 +21,7 @@ from data_api import router as data_router
 from admin_api import router as admin_router
 from payment_api import router as payment_router
 from ambassador_api import router as ambassador_router
+from admin_ambassador_panel import router as amb_panel_router
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -187,6 +188,9 @@ app.include_router(reporting_router, prefix="/api/reports", tags=["reports"])
 
 # Include ambassador router
 app.include_router(ambassador_router, prefix="/api", tags=["ambassador"])
+
+# Include ambassador admin panel
+app.include_router(amb_panel_router, prefix="/api", tags=["ambassador-panel"])
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
