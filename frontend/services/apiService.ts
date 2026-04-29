@@ -45,7 +45,19 @@ async function apiFetch(path: string, options: RequestInit = {}): Promise<any> {
   
   try {
     const response = await fetch(url, { ...options, headers });
-    const data = await response.json();
+    
+    // Check if response is HTML instead of JSON (proxy/network issue)
+    const contentType = response.headers.get('content-type') || '';
+    const responseText = await response.text();
+    
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (parseError) {
+      // Response is not JSON (likely HTML from proxy or error page)
+      console.error(`API returned non-JSON response for ${path}:`, responseText.substring(0, 100));
+      throw new Error('Serveur inaccessible. Vérifiez votre connexion internet.');
+    }
     
     if (!response.ok) {
       throw new Error(data.detail || data.message || `Erreur ${response.status}`);
@@ -53,8 +65,8 @@ async function apiFetch(path: string, options: RequestInit = {}): Promise<any> {
     
     return data;
   } catch (error: any) {
-    if (error.message?.includes('fetch') || error.message?.includes('Network')) {
-      throw new Error('Erreur réseau. Vérifiez votre connexion.');
+    if (error.message?.includes('fetch') || error.message?.includes('Network') || error.message?.includes('network')) {
+      throw new Error('Erreur réseau. Vérifiez votre connexion internet.');
     }
     throw error;
   }

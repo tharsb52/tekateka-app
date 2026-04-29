@@ -137,13 +137,19 @@ const sendOTPAfricasTalking = async (phoneNumber: string): Promise<OTPResult> =>
       body: JSON.stringify({ phoneNumber: `+${phoneNumber.replace(/^\++/, '')}` }),
     });
 
-    const data = await response.json();
+    const responseText = await response.text();
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      console.error("OTP send: response is not JSON:", responseText.substring(0, 80));
+      throw new Error('Serveur inaccessible');
+    }
 
     if (response.ok && data.success) {
       return {
         success: true,
         message: data.message || `Code envoyé à +${phoneNumber}`,
-        // In sandbox mode, backend returns debug_code for testing
         otp: data.debug_code || undefined,
       };
     }
@@ -154,7 +160,6 @@ const sendOTPAfricasTalking = async (phoneNumber: string): Promise<OTPResult> =>
     };
   } catch (error) {
     console.error("Africa's Talking OTP error:", error);
-    // Fallback to mock in case of network error
     console.warn('Falling back to mock OTP due to network error');
     return sendOTPMock(phoneNumber);
   }
@@ -170,7 +175,14 @@ const verifyOTPAfricasTalking = async (phoneNumber: string, code: string): Promi
       body: JSON.stringify({ phoneNumber: `+${phoneNumber.replace(/^\++/, '')}`, code }),
     });
 
-    const data = await response.json();
+    const responseText = await response.text();
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      console.error("OTP verify: response is not JSON:", responseText.substring(0, 80));
+      throw new Error('Serveur inaccessible');
+    }
 
     if (response.ok && data.success) {
       return { success: true, message: 'Vérification réussie' };
