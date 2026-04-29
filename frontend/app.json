@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "TekaTeka",
-    "slug": "tekateka",
+    "name": "frontend",
+    "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "tekateka",
+    "scheme": "frontend",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -24,7 +24,11 @@
         "backgroundColor": "#fef3e7"
       },
       "edgeToEdgeEnabled": true,
-      "permissions": ["RECORD_AUDIO", "CAMERA", "READ_EXTERNAL_STORAGE"],
+      "permissions": [
+        "RECORD_AUDIO",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE"
+      ],
       "package": "com.tekateka.app"
     },
     "web": {
@@ -57,15 +61,11 @@
           "photosPermission": "Choisissez une photo de profil",
           "cameraPermission": "Prenez une photo de profil"
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
-    },
-    "extra": {
-      "eas": {
-        "projectId": "your-project-id"
-      }
     }
   }
 }
