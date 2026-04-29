@@ -144,8 +144,10 @@ async def get_ambassador_from_token(authorization: str = None):
 # ==========================================
 @router.post("/ambassador/login")
 async def ambassador_login(req: AmbassadorLogin):
+    logger.info(f"Ambassador login attempt: email='{req.email}'")
     ambassador = await db.ambassadors.find_one({"email": req.email})
     if not ambassador:
+        logger.warning(f"Ambassador not found for email: '{req.email}'")
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
     
     if not pwd_context.verify(req.password, ambassador["passwordHash"]):

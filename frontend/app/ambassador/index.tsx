@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Alert,
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView, Image, ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -17,39 +17,56 @@ export default function AmbassadorLoginScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
 
   const handleLogin = async () => {
+    setErrorMsg('');
+    setSuccessMsg('');
     if (!email || !password) {
-      Alert.alert('Erreur', 'Veuillez remplir tous les champs');
+      setErrorMsg('Veuillez remplir tous les champs');
       return;
     }
     setLoading(true);
     try {
       const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+      console.log('[Ambassador] Login attempt:', email, 'URL:', backendUrl);
+      
       const response = await fetch(`${backendUrl}/api/ambassador/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim(), password }),
       });
+      
       const responseText = await response.text();
+      console.log('[Ambassador] Response status:', response.status);
+      
       let data;
       try {
         data = JSON.parse(responseText);
       } catch {
-        Alert.alert('Erreur', 'Serveur inaccessible');
+        console.error('[Ambassador] Non-JSON response:', responseText.substring(0, 100));
+        setErrorMsg('Serveur inaccessible. Réessayez.');
         setLoading(false);
         return;
       }
+      
       if (!response.ok) {
-        Alert.alert('Erreur', data.detail || 'Connexion échouée');
+        setErrorMsg(data.detail || 'Email ou mot de passe incorrect');
         setLoading(false);
         return;
       }
+      
       await AsyncStorage.setItem('ambassador_token', data.token);
       await AsyncStorage.setItem('ambassador_data', JSON.stringify(data.ambassador));
-      router.replace('/ambassador/dashboard');
+      setSuccessMsg('Connexion réussie !');
+      
+      setTimeout(() => {
+        router.replace('/ambassador/dashboard');
+      }, 500);
     } catch (error: any) {
-      Alert.alert('Erreur', error.message || 'Erreur de connexion');
+      console.error('[Ambassador] Login error:', error);
+      setErrorMsg(error.message || 'Erreur de connexion au serveur');
     } finally {
       setLoading(false);
     }
@@ -64,14 +81,26 @@ export default function AmbassadorLoginScreen() {
             <Ionicons name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
 
-          {/* Header */}
+          {/* Header with Logo */}
           <View style={styles.header}>
-            <View style={styles.badge}>
-              <Ionicons name="shield-checkmark" size={48} color={ACCENT} />
-            </View>
+            <Image source={require('../../assets/images/tk-logo-transparent.png')} style={styles.logo} resizeMode="contain" />
             <Text style={styles.title}>Espace Ambassadeur</Text>
             <Text style={styles.subtitle}>Connectez-vous pour gérer vos ventes et commissions</Text>
           </View>
+
+          {/* Error/Success Messages */}
+          {errorMsg ? (
+            <View style={styles.errorBox}>
+              <Ionicons name="alert-circle" size={18} color="#dc2626" />
+              <Text style={styles.errorText}>{errorMsg}</Text>
+            </View>
+          ) : null}
+          {successMsg ? (
+            <View style={styles.successBox}>
+              <Ionicons name="checkmark-circle" size={18} color="#10b981" />
+              <Text style={styles.successText}>{successMsg}</Text>
+            </View>
+          ) : null}
 
           {/* Form */}
           <View style={styles.form}>
@@ -82,7 +111,7 @@ export default function AmbassadorLoginScreen() {
                 placeholder="Email ambassadeur"
                 placeholderTextColor="#64748b"
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={(t) => { setEmail(t); setErrorMsg(''); }}
                 keyboardType="email-address"
                 autoCapitalize="none"
               />
@@ -95,7 +124,7 @@ export default function AmbassadorLoginScreen() {
                 placeholder="Mot de passe"
                 placeholderTextColor="#64748b"
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={(t) => { setPassword(t); setErrorMsg(''); }}
                 secureTextEntry={!showPassword}
               />
               <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
@@ -124,8 +153,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG },
   scroll: { flexGrow: 1, padding: 24, justifyContent: 'center' },
   backBtn: { position: 'absolute', top: 0, left: 0, width: 44, height: 44, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
-  header: { alignItems: 'center', marginBottom: 40 },
-  badge: { width: 90, height: 90, borderRadius: 45, backgroundColor: 'rgba(245,158,11,0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
+  header: { alignItems: 'center', marginBottom: 30 },
+  logo: { width: 80, height: 80, marginBottom: 16 },
   title: { fontSize: 26, fontWeight: 'bold', color: '#fff', marginBottom: 8 },
   subtitle: { fontSize: 15, color: '#94a3b8', textAlign: 'center', lineHeight: 22 },
   form: { gap: 16 },
@@ -134,4 +163,8 @@ const styles = StyleSheet.create({
   input: { flex: 1, color: '#fff', fontSize: 16 },
   loginBtn: { backgroundColor: ACCENT, borderRadius: 14, height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8 },
   loginBtnText: { fontSize: 17, fontWeight: '700', color: '#0f172a' },
+  errorBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(220,38,38,0.15)', borderRadius: 10, padding: 12, marginBottom: 16 },
+  errorText: { fontSize: 14, color: '#fca5a5', flex: 1 },
+  successBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(16,185,129,0.15)', borderRadius: 10, padding: 12, marginBottom: 16 },
+  successText: { fontSize: 14, color: '#6ee7b7', flex: 1 },
 });
