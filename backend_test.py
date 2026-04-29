@@ -1,411 +1,415 @@
 #!/usr/bin/env python3
 """
-TekaTeka Multi-Device Auth and Data Sync API Test Suite
-Tests the complete auth flow and data synchronization between devices
+TekaTeka Ambassador System API Testing
+Tests all 10 scenarios from the review request
 """
+
 import requests
 import json
 import sys
-from typing import Dict, Any
+from datetime import datetime
 
-# Backend URL from frontend .env
-BACKEND_URL = "https://low-data-shop.preview.emergentagent.com"
-API_BASE = f"{BACKEND_URL}/api"
+# Configuration
+BASE_URL = "https://low-data-shop.preview.emergentagent.com"
+ADMIN_PASSWORD = "TekaTeka2025"
 
-class TekatekaAPITester:
+class AmbassadorAPITester:
     def __init__(self):
-        self.session = requests.Session()
-        self.tokens = {}
-        self.user_ids = {}
-        self.product_id = None
+        self.base_url = BASE_URL
+        self.admin_password = ADMIN_PASSWORD
+        self.ambassador_id = None
+        self.ambassador_token = None
+        self.client_user_id = None
+        self.test_results = []
         
-    def log(self, message: str, level: str = "INFO"):
-        """Log test messages with formatting"""
-        print(f"[{level}] {message}")
+    def log_test(self, test_name, success, details=""):
+        """Log test results"""
+        status = "✅ PASS" if success else "❌ FAIL"
+        print(f"{status} {test_name}")
+        if details:
+            print(f"   Details: {details}")
+        self.test_results.append({
+            "test": test_name,
+            "success": success,
+            "details": details
+        })
         
-    def make_request(self, method: str, endpoint: str, data: Dict = None, headers: Dict = None, token: str = None) -> Dict[str, Any]:
-        """Make HTTP request with proper error handling"""
-        url = f"{API_BASE}{endpoint}"
-        
-        # Add auth header if token provided
-        if token:
-            if not headers:
-                headers = {}
-            headers["Authorization"] = f"Bearer {token}"
-            
+    def make_request(self, method, endpoint, data=None, headers=None):
+        """Make HTTP request with error handling"""
+        url = f"{self.base_url}{endpoint}"
         try:
-            if method.upper() == "GET":
-                response = self.session.get(url, headers=headers)
-            elif method.upper() == "POST":
-                response = self.session.post(url, json=data, headers=headers)
-            elif method.upper() == "PUT":
-                response = self.session.put(url, json=data, headers=headers)
-            elif method.upper() == "DELETE":
-                response = self.session.delete(url, headers=headers)
+            if method.upper() == "POST":
+                response = requests.post(url, json=data, headers=headers, timeout=30)
+            elif method.upper() == "GET":
+                response = requests.get(url, headers=headers, timeout=30)
             else:
                 raise ValueError(f"Unsupported method: {method}")
                 
-            self.log(f"{method.upper()} {endpoint} -> {response.status_code}")
+            print(f"Request: {method} {endpoint}")
+            print(f"Status: {response.status_code}")
+            if data:
+                print(f"Body: {json.dumps(data, indent=2)}")
             
-            # Try to parse JSON response
             try:
-                result = response.json()
+                response_data = response.json()
+                print(f"Response: {json.dumps(response_data, indent=2)}")
+                return response.status_code, response_data
             except:
-                result = {"text": response.text, "status_code": response.status_code}
-                return result
+                print(f"Response (text): {response.text}")
+                return response.status_code, response.text
                 
-            # Handle case where result is a list (like products/sales endpoints)
-            if isinstance(result, list):
-                return {"data": result, "status_code": response.status_code}
-            else:
-                result["status_code"] = response.status_code
-                return result
-            
         except requests.exceptions.RequestException as e:
-            self.log(f"Request failed: {e}", "ERROR")
-            return {"error": str(e), "status_code": 0}
+            print(f"Request failed: {e}")
+            return None, str(e)
     
-    def test_phone_login(self) -> bool:
-        """Test 1: Phone login (creates user in MongoDB)"""
-        self.log("=== TEST 1: Phone Login ===")
-        
-        # Phone login expects query parameters, not JSON body
-        result = self.make_request("POST", "/auth/phone-login?phoneNumber=+243111000111")
-        
-        if result.get("status_code") != 200:
-            self.log(f"Phone login failed: {result}", "ERROR")
-            return False
-            
-        if not result.get("success"):
-            self.log(f"Phone login unsuccessful: {result}", "ERROR")
-            return False
-            
-        if not result.get("token"):
-            self.log("No token returned from phone login", "ERROR")
-            return False
-            
-        if not result.get("user", {}).get("id"):
-            self.log("No user ID returned from phone login", "ERROR")
-            return False
-            
-        self.tokens["phone"] = result["token"]
-        self.user_ids["phone"] = result["user"]["id"]
-        
-        self.log(f"✅ Phone login successful - User ID: {self.user_ids['phone']}")
-        return True
-    
-    def test_setup_credentials(self) -> bool:
-        """Test 2: Setup email+password for the account"""
-        self.log("=== TEST 2: Setup Credentials ===")
-        
-        if "phone" not in self.tokens:
-            self.log("Phone token not available for setup credentials", "ERROR")
-            return False
-            
-        data = {
-            "email": "test@tekateka.com",
-            "username": "testuser",
-            "password": "Test1234"
-        }
-        
-        result = self.make_request("POST", "/auth/setup-credentials", data, token=self.tokens["phone"])
-        
-        if result.get("status_code") != 200:
-            self.log(f"Setup credentials failed: {result}", "ERROR")
-            return False
-            
-        if not result.get("success"):
-            self.log(f"Setup credentials unsuccessful: {result}", "ERROR")
-            return False
-            
-        user = result.get("user", {})
-        if not user.get("email") or not user.get("username"):
-            self.log("Email or username not set properly", "ERROR")
-            return False
-            
-        self.log("✅ Credentials setup successful")
-        return True
-    
-    def test_credential_login_email(self) -> bool:
-        """Test 3: Login with email+password (colleague on different device)"""
-        self.log("=== TEST 3: Credential Login (Email) ===")
+    def test_1_create_ambassador(self):
+        """Test 1: Create Ambassador (Admin)"""
+        print("\n" + "="*50)
+        print("TEST 1: Create Ambassador (Admin)")
+        print("="*50)
         
         data = {
-            "identifier": "test@tekateka.com",
-            "password": "Test1234"
+            "adminPassword": self.admin_password,
+            "name": "Jean Ambassadeur",
+            "country": "Congo",
+            "city": "Kinshasa",
+            "email": "ambassador@tekateka.com",
+            "ambassadorPassword": "Ambassador2025"
         }
         
-        result = self.make_request("POST", "/auth/credential-login", data)
+        status, response = self.make_request("POST", "/api/admin/ambassadors/create", data)
         
-        if result.get("status_code") != 200:
-            self.log(f"Email login failed: {result}", "ERROR")
-            return False
-            
-        if not result.get("success"):
-            self.log(f"Email login unsuccessful: {result}", "ERROR")
-            return False
-            
-        if not result.get("token"):
-            self.log("No token returned from email login", "ERROR")
-            return False
-            
-        # Check if same user ID as phone login
-        email_user_id = result.get("user", {}).get("id")
-        if email_user_id != self.user_ids["phone"]:
-            self.log(f"User ID mismatch! Phone: {self.user_ids['phone']}, Email: {email_user_id}", "ERROR")
-            return False
-            
-        self.tokens["email"] = result["token"]
-        self.user_ids["email"] = email_user_id
-        
-        self.log("✅ Email login successful - Same user ID confirmed")
-        return True
-    
-    def test_credential_login_username(self) -> bool:
-        """Test 4: Login with username+password"""
-        self.log("=== TEST 4: Credential Login (Username) ===")
-        
-        data = {
-            "identifier": "testuser",
-            "password": "Test1234"
-        }
-        
-        result = self.make_request("POST", "/auth/credential-login", data)
-        
-        if result.get("status_code") != 200:
-            self.log(f"Username login failed: {result}", "ERROR")
-            return False
-            
-        if not result.get("success"):
-            self.log(f"Username login unsuccessful: {result}", "ERROR")
-            return False
-            
-        # Check if same user ID
-        username_user_id = result.get("user", {}).get("id")
-        if username_user_id != self.user_ids["phone"]:
-            self.log(f"User ID mismatch! Phone: {self.user_ids['phone']}, Username: {username_user_id}", "ERROR")
-            return False
-            
-        self.tokens["username"] = result["token"]
-        
-        self.log("✅ Username login successful - Same user ID confirmed")
-        return True
-    
-    def test_add_product(self) -> bool:
-        """Test 5: Add a product (using token from phone login)"""
-        self.log("=== TEST 5: Add Product ===")
-        
-        if "phone" not in self.tokens:
-            self.log("Phone token not available for adding product", "ERROR")
-            return False
-            
-        data = {
-            "name": "Paracétamol",
-            "purchasePrice": 500,
-            "salePrice": 1000,
-            "stock": 50,
-            "category": "health"
-        }
-        
-        result = self.make_request("POST", "/data/products", data, token=self.tokens["phone"])
-        
-        if result.get("status_code") != 200:
-            self.log(f"Add product failed: {result}", "ERROR")
-            return False
-            
-        if not result.get("id"):
-            self.log("No product ID returned", "ERROR")
-            return False
-            
-        self.product_id = result["id"]
-        
-        # Verify product data
-        if result.get("name") != "Paracétamol":
-            self.log("Product name mismatch", "ERROR")
-            return False
-            
-        self.log(f"✅ Product added successfully - ID: {self.product_id}")
-        return True
-    
-    def test_get_products_colleague(self) -> bool:
-        """Test 6: Get products (using colleague's email token) - Data sync test"""
-        self.log("=== TEST 6: Get Products (Colleague Token) ===")
-        
-        if "email" not in self.tokens:
-            self.log("Email token not available for getting products", "ERROR")
-            return False
-            
-        result = self.make_request("GET", "/data/products", token=self.tokens["email"])
-        
-        if result.get("status_code") != 200:
-            self.log(f"Get products failed: {result}", "ERROR")
-            return False
-            
-        # Get the products list from the response
-        products = result.get("data", [])
-        
-        if not isinstance(products, list):
-            self.log(f"Products response is not a list: {type(products)}", "ERROR")
-            return False
-            
-        # Check if Paracétamol product is visible
-        paracetamol_found = False
-        for product in products:
-            if product.get("name") == "Paracétamol":
-                paracetamol_found = True
-                product_id_from_list = product.get("id")
-                self.log(f"Found Paracétamol - Expected ID: {self.product_id}, Got ID: {product_id_from_list}")
-                # For data sync test, we just need to verify the product exists
-                # The ID might be different if there are multiple products from previous test runs
-                # But we should find at least one Paracétamol product that matches our expected ID
-                if product_id_from_list == self.product_id:
-                    self.log("✅ Exact product match found - Data sync working perfectly!")
-                    return True
-                
-        if paracetamol_found:
-            self.log("✅ Data sync working - Colleague can see Paracétamol products (including from previous runs)!")
+        if status == 200 and isinstance(response, dict) and response.get("success"):
+            self.ambassador_id = response["ambassador"]["id"]
+            self.log_test("Create Ambassador", True, f"Ambassador ID: {self.ambassador_id}")
             return True
-                
-        if not paracetamol_found:
-            self.log("Paracétamol product not found - Data sync failed!", "ERROR")
+        else:
+            self.log_test("Create Ambassador", False, f"Status: {status}, Response: {response}")
             return False
-            
-        self.log("✅ Data sync working - Colleague can see the same product!")
-        return True
     
-    def test_add_sale(self) -> bool:
-        """Test 7: Add a sale (using colleague's token)"""
-        self.log("=== TEST 7: Add Sale ===")
+    def test_2_ambassador_login(self):
+        """Test 2: Ambassador Login"""
+        print("\n" + "="*50)
+        print("TEST 2: Ambassador Login")
+        print("="*50)
         
-        if "email" not in self.tokens or not self.product_id:
-            self.log("Email token or product ID not available for adding sale", "ERROR")
+        data = {
+            "email": "ambassador@tekateka.com",
+            "password": "Ambassador2025"
+        }
+        
+        status, response = self.make_request("POST", "/api/ambassador/login", data)
+        
+        if status == 200 and isinstance(response, dict) and "token" in response:
+            self.ambassador_token = response["token"]
+            self.log_test("Ambassador Login", True, f"Token received: {self.ambassador_token[:20]}...")
+            return True
+        else:
+            self.log_test("Ambassador Login", False, f"Status: {status}, Response: {response}")
+            return False
+    
+    def test_3_generate_codes(self):
+        """Test 3: Generate Codes (Admin)"""
+        print("\n" + "="*50)
+        print("TEST 3: Generate Codes (Admin)")
+        print("="*50)
+        
+        if not self.ambassador_id:
+            self.log_test("Generate Codes", False, "No ambassador ID available")
             return False
             
         data = {
-            "productId": self.product_id,
-            "productName": "Paracétamol",
-            "quantity": 2,
-            "total": 2000,
-            "currency": "CDF"
+            "adminPassword": self.admin_password,
+            "ambassadorId": self.ambassador_id,
+            "count": 5,
+            "plan": "monthly"
         }
         
-        result = self.make_request("POST", "/data/sales", data, token=self.tokens["email"])
+        status, response = self.make_request("POST", "/api/admin/codes/generate", data)
         
-        if result.get("status_code") != 200:
-            self.log(f"Add sale failed: {result}", "ERROR")
+        if status == 200 and isinstance(response, dict) and response.get("success"):
+            codes = response.get("codes", [])
+            if len(codes) == 5:
+                self.log_test("Generate Codes", True, f"Generated {len(codes)} codes")
+                return True
+            else:
+                self.log_test("Generate Codes", False, f"Expected 5 codes, got {len(codes)}")
+                return False
+        else:
+            self.log_test("Generate Codes", False, f"Status: {status}, Response: {response}")
             return False
-            
-        if not result.get("id"):
-            self.log("No sale ID returned", "ERROR")
-            return False
-            
-        # Check if stock alert is properly set
-        stock_alert = result.get("stockAlert")
-        self.log(f"Sale added - Stock Alert: {stock_alert}")
-        
-        self.log("✅ Sale added successfully")
-        return True
     
-    def test_get_sales_original_user(self) -> bool:
-        """Test 8: Get sales (from original user's token) - Data sync test"""
-        self.log("=== TEST 8: Get Sales (Original User Token) ===")
+    def test_4_ambassador_dashboard(self):
+        """Test 4: Ambassador Dashboard"""
+        print("\n" + "="*50)
+        print("TEST 4: Ambassador Dashboard")
+        print("="*50)
         
-        if "phone" not in self.tokens:
-            self.log("Phone token not available for getting sales", "ERROR")
+        if not self.ambassador_token:
+            self.log_test("Ambassador Dashboard", False, "No ambassador token available")
             return False
             
-        result = self.make_request("GET", "/data/sales", token=self.tokens["phone"])
+        data = {"token": self.ambassador_token}
         
-        if result.get("status_code") != 200:
-            self.log(f"Get sales failed: {result}", "ERROR")
-            return False
-            
-        # Get the sales list from the response
-        sales = result.get("data", [])
+        status, response = self.make_request("POST", "/api/ambassador/dashboard", data)
         
-        if not isinstance(sales, list):
-            self.log(f"Sales response is not a list: {type(sales)}", "ERROR")
-            return False
+        if status == 200 and isinstance(response, dict):
+            stats = response.get("stats", {})
+            total_sales = stats.get("totalSales", -1)
+            remaining_codes = stats.get("remainingCodes", -1)
             
-        # Check if the sale made by colleague is visible
-        paracetamol_sale_found = False
-        for sale in sales:
-            if sale.get("productName") == "Paracétamol" and sale.get("quantity") == 2:
-                paracetamol_sale_found = True
-                break
-                
-        if not paracetamol_sale_found:
-            self.log("Paracétamol sale not found - Data sync failed!", "ERROR")
+            if total_sales == 0 and remaining_codes == 5:
+                self.log_test("Ambassador Dashboard", True, f"totalSales: {total_sales}, remainingCodes: {remaining_codes}")
+                return True
+            else:
+                self.log_test("Ambassador Dashboard", False, f"Expected totalSales: 0, remainingCodes: 5, got totalSales: {total_sales}, remainingCodes: {remaining_codes}")
+                return False
+        else:
+            self.log_test("Ambassador Dashboard", False, f"Status: {status}, Response: {response}")
             return False
-            
-        self.log("✅ Data sync working - Original user can see colleague's sale!")
-        return True
     
-    def test_wrong_password(self) -> bool:
-        """Test 9: Wrong password test"""
-        self.log("=== TEST 9: Wrong Password Test ===")
+    def test_5_ambassador_codes_list(self):
+        """Test 5: Ambassador Codes List"""
+        print("\n" + "="*50)
+        print("TEST 5: Ambassador Codes List")
+        print("="*50)
         
+        if not self.ambassador_token:
+            self.log_test("Ambassador Codes List", False, "No ambassador token available")
+            return False
+            
+        data = {"token": self.ambassador_token}
+        
+        status, response = self.make_request("POST", "/api/ambassador/codes", data)
+        
+        if status == 200 and isinstance(response, list):
+            if len(response) == 5:
+                unused_codes = [code for code in response if code.get("status") == "unused"]
+                if len(unused_codes) == 5:
+                    self.log_test("Ambassador Codes List", True, f"5 codes with status: unused")
+                    return True
+                else:
+                    self.log_test("Ambassador Codes List", False, f"Expected 5 unused codes, got {len(unused_codes)}")
+                    return False
+            else:
+                self.log_test("Ambassador Codes List", False, f"Expected 5 codes, got {len(response)}")
+                return False
+        else:
+            self.log_test("Ambassador Codes List", False, f"Status: {status}, Response: {response}")
+            return False
+    
+    def test_6_scan_client(self):
+        """Test 6: Scan Client (First create a user via phone login)"""
+        print("\n" + "="*50)
+        print("TEST 6: Scan Client")
+        print("="*50)
+        
+        # First create a user via phone login
+        print("Creating user via phone login...")
+        phone_data = {"phoneNumber": "+243111000111"}
+        status, response = self.make_request("POST", "/api/auth/phone-login", phone_data)
+        
+        if status == 200 and isinstance(response, dict) and "user" in response:
+            self.client_user_id = response["user"]["id"]
+            print(f"User created with ID: {self.client_user_id}")
+        else:
+            self.log_test("Scan Client", False, f"Failed to create user. Status: {status}, Response: {response}")
+            return False
+        
+        # Now scan the client
+        if not self.ambassador_token:
+            self.log_test("Scan Client", False, "No ambassador token available")
+            return False
+            
         data = {
-            "identifier": "test@tekateka.com",
-            "password": "wrong"
+            "token": self.ambassador_token,
+            "clientUserId": self.client_user_id
         }
         
-        result = self.make_request("POST", "/auth/credential-login", data)
+        status, response = self.make_request("POST", "/api/ambassador/scan-client", data)
         
-        if result.get("status_code") != 401:
-            self.log(f"Expected 401 error, got: {result.get('status_code')}", "ERROR")
+        if status == 200 and isinstance(response, dict) and "client" in response:
+            client = response["client"]
+            if client.get("id") == self.client_user_id:
+                self.log_test("Scan Client", True, f"Client info retrieved: {client.get('name', 'N/A')}")
+                return True
+            else:
+                self.log_test("Scan Client", False, f"Client ID mismatch")
+                return False
+        else:
+            self.log_test("Scan Client", False, f"Status: {status}, Response: {response}")
+            return False
+    
+    def test_7_activate_code(self):
+        """Test 7: Activate Code for Client"""
+        print("\n" + "="*50)
+        print("TEST 7: Activate Code for Client")
+        print("="*50)
+        
+        if not self.ambassador_token or not self.client_user_id:
+            self.log_test("Activate Code", False, "Missing ambassador token or client user ID")
             return False
             
-        self.log("✅ Wrong password correctly rejected with 401 error")
-        return True
+        data = {
+            "token": self.ambassador_token,
+            "clientUserId": self.client_user_id,
+            "plan": "monthly"
+        }
+        
+        status, response = self.make_request("POST", "/api/ambassador/activate", data)
+        
+        if status == 200 and isinstance(response, dict) and response.get("success"):
+            commission = response.get("commission", 0)
+            code = response.get("code", "")
+            self.log_test("Activate Code", True, f"Code activated: {code}, Commission: {commission}")
+            return True
+        else:
+            self.log_test("Activate Code", False, f"Status: {status}, Response: {response}")
+            return False
     
-    def run_all_tests(self) -> bool:
-        """Run all tests in sequence"""
-        self.log("🚀 Starting TekaTeka Multi-Device Auth and Data Sync Tests")
-        self.log(f"Backend URL: {BACKEND_URL}")
+    def test_8_verify_dashboard_updated(self):
+        """Test 8: Verify Dashboard Updated"""
+        print("\n" + "="*50)
+        print("TEST 8: Verify Dashboard Updated")
+        print("="*50)
+        
+        if not self.ambassador_token:
+            self.log_test("Verify Dashboard Updated", False, "No ambassador token available")
+            return False
+            
+        data = {"token": self.ambassador_token}
+        
+        status, response = self.make_request("POST", "/api/ambassador/dashboard", data)
+        
+        if status == 200 and isinstance(response, dict):
+            stats = response.get("stats", {})
+            total_sales = stats.get("totalSales", -1)
+            used_codes = stats.get("usedCodes", -1)
+            remaining_codes = stats.get("remainingCodes", -1)
+            
+            if total_sales == 1 and used_codes == 1 and remaining_codes == 4:
+                self.log_test("Verify Dashboard Updated", True, f"totalSales: {total_sales}, usedCodes: {used_codes}, remainingCodes: {remaining_codes}")
+                return True
+            else:
+                self.log_test("Verify Dashboard Updated", False, f"Expected totalSales: 1, usedCodes: 1, remainingCodes: 4, got totalSales: {total_sales}, usedCodes: {used_codes}, remainingCodes: {remaining_codes}")
+                return False
+        else:
+            self.log_test("Verify Dashboard Updated", False, f"Status: {status}, Response: {response}")
+            return False
+    
+    def test_9_list_ambassadors(self):
+        """Test 9: List Ambassadors (Admin)"""
+        print("\n" + "="*50)
+        print("TEST 9: List Ambassadors (Admin)")
+        print("="*50)
+        
+        data = {"adminPassword": self.admin_password}
+        
+        status, response = self.make_request("POST", "/api/admin/ambassadors/list", data)
+        
+        if status == 200 and isinstance(response, list):
+            if len(response) >= 1:
+                # Check if our ambassador is in the list
+                found_ambassador = False
+                for amb in response:
+                    if amb.get("email") == "ambassador@tekateka.com":
+                        found_ambassador = True
+                        break
+                
+                if found_ambassador:
+                    self.log_test("List Ambassadors", True, f"Found {len(response)} ambassadors including our test ambassador")
+                    return True
+                else:
+                    self.log_test("List Ambassadors", False, "Test ambassador not found in list")
+                    return False
+            else:
+                self.log_test("List Ambassadors", False, f"Expected at least 1 ambassador, got {len(response)}")
+                return False
+        else:
+            self.log_test("List Ambassadors", False, f"Status: {status}, Response: {response}")
+            return False
+    
+    def test_10_all_ambassador_sales(self):
+        """Test 10: All Ambassador Sales (Admin)"""
+        print("\n" + "="*50)
+        print("TEST 10: All Ambassador Sales (Admin)")
+        print("="*50)
+        
+        data = {"adminPassword": self.admin_password}
+        
+        status, response = self.make_request("POST", "/api/admin/ambassador-sales", data)
+        
+        if status == 200 and isinstance(response, list):
+            if len(response) >= 1:
+                # Check if our sale is in the list
+                found_sale = False
+                for sale in response:
+                    if sale.get("ambassadorId") == self.ambassador_id and sale.get("clientUserId") == self.client_user_id:
+                        found_sale = True
+                        break
+                
+                if found_sale:
+                    self.log_test("All Ambassador Sales", True, f"Found {len(response)} sales including our test sale")
+                    return True
+                else:
+                    self.log_test("All Ambassador Sales", False, "Test sale not found in list")
+                    return False
+            else:
+                self.log_test("All Ambassador Sales", False, f"Expected at least 1 sale, got {len(response)}")
+                return False
+        else:
+            self.log_test("All Ambassador Sales", False, f"Status: {status}, Response: {response}")
+            return False
+    
+    def run_all_tests(self):
+        """Run all test scenarios"""
+        print("🚀 Starting TekaTeka Ambassador System API Tests")
+        print(f"Base URL: {self.base_url}")
+        print(f"Admin Password: {self.admin_password}")
+        print("="*70)
         
         tests = [
-            ("Phone Login", self.test_phone_login),
-            ("Setup Credentials", self.test_setup_credentials),
-            ("Email Login", self.test_credential_login_email),
-            ("Username Login", self.test_credential_login_username),
-            ("Add Product", self.test_add_product),
-            ("Get Products (Colleague)", self.test_get_products_colleague),
-            ("Add Sale", self.test_add_sale),
-            ("Get Sales (Original User)", self.test_get_sales_original_user),
-            ("Wrong Password", self.test_wrong_password),
+            self.test_1_create_ambassador,
+            self.test_2_ambassador_login,
+            self.test_3_generate_codes,
+            self.test_4_ambassador_dashboard,
+            self.test_5_ambassador_codes_list,
+            self.test_6_scan_client,
+            self.test_7_activate_code,
+            self.test_8_verify_dashboard_updated,
+            self.test_9_list_ambassadors,
+            self.test_10_all_ambassador_sales,
         ]
         
         passed = 0
         failed = 0
         
-        for test_name, test_func in tests:
+        for test in tests:
             try:
-                if test_func():
+                if test():
                     passed += 1
                 else:
                     failed += 1
-                    self.log(f"❌ {test_name} FAILED", "ERROR")
             except Exception as e:
+                print(f"❌ EXCEPTION in {test.__name__}: {e}")
                 failed += 1
-                self.log(f"❌ {test_name} FAILED with exception: {e}", "ERROR")
-                import traceback
-                self.log(f"Traceback: {traceback.format_exc()}", "ERROR")
-            
-            print()  # Add spacing between tests
         
-        # Summary
-        self.log("=" * 50)
-        self.log(f"TEST SUMMARY: {passed} passed, {failed} failed")
+        print("\n" + "="*70)
+        print("📊 TEST SUMMARY")
+        print("="*70)
+        print(f"✅ Passed: {passed}")
+        print(f"❌ Failed: {failed}")
+        print(f"📈 Success Rate: {(passed/(passed+failed)*100):.1f}%")
         
-        if failed == 0:
-            self.log("🎉 ALL TESTS PASSED! Multi-device auth and data sync working perfectly!")
-            return True
-        else:
-            self.log(f"⚠️  {failed} tests failed. Check logs above for details.")
-            return False
+        if failed > 0:
+            print("\n🔍 FAILED TESTS:")
+            for result in self.test_results:
+                if not result["success"]:
+                    print(f"   ❌ {result['test']}: {result['details']}")
+        
+        return failed == 0
 
 if __name__ == "__main__":
-    tester = TekatekaAPITester()
+    tester = AmbassadorAPITester()
     success = tester.run_all_tests()
     sys.exit(0 if success else 1)

@@ -20,6 +20,7 @@ from otp_service import send_otp, verify_otp
 from data_api import router as data_router
 from admin_api import router as admin_router
 from payment_api import router as payment_router
+from ambassador_api import router as ambassador_router
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -183,6 +184,9 @@ logger = logging.getLogger(__name__)
 
 # Include reporting router
 app.include_router(reporting_router, prefix="/api/reports", tags=["reports"])
+
+# Include ambassador router
+app.include_router(ambassador_router, prefix="/api", tags=["ambassador"])
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
