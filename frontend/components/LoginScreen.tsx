@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+
   View,
   Text,
   TextInput,
@@ -16,6 +17,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
+import { useRouter } from 'expo-router';
 import i18n from '../utils/i18n';
 import { Ionicons } from '@expo/vector-icons';
 import { sendOTP, verifyOTP, getOTPProviderInfo } from '../services/otpService';
@@ -27,6 +29,7 @@ type LoginTab = 'phone' | 'credentials';
 
 export default function LoginScreen() {
   const { login, loginWithCredentials } = useAuth();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<LoginTab>('phone');
 
   // Phone login state
@@ -316,6 +319,13 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
           )}
+          
+          {/* Ambassador Link */}
+          <TouchableOpacity style={{ marginTop: 20, paddingVertical: 14, alignItems: 'center' }} onPress={() => router.push('/ambassador')}>
+            <Text style={{ fontSize: 14, color: '#94a3b8' }}>Vous êtes ambassadeur ?{' '}
+              <Text style={{ color: '#2563eb', fontWeight: '600' }}>Se connecter ici</Text>
+            </Text>
+          </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
 

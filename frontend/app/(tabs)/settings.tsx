@@ -42,6 +42,7 @@ export default function SettingsScreen() {
   const [pinMode, setPinMode] = useState<'setup' | 'change'>('setup');
   const [removePinConfirm, setRemovePinConfirm] = useState(false);
   const [photoLoading, setPhotoLoading] = useState(false);
+  const [qrModalVisible, setQrModalVisible] = useState(false);
 
   // Credential setup state
   const [credModalVisible, setCredModalVisible] = useState(false);
@@ -283,6 +284,25 @@ export default function SettingsScreen() {
         {/* Security / PIN Section */}
         <Text style={styles.sectionLabel}>SECURITE</Text>
         <View style={styles.card}>
+          {/* QR Code - Mon identifiant */}
+          <TouchableOpacity
+            style={styles.settingRow}
+            onPress={() => setQrModalVisible(true)}
+          >
+            <View style={styles.settingLeft}>
+              <View style={[styles.iconCircle, { backgroundColor: '#ede9fe' }]}>
+                <Ionicons name="qr-code" size={22} color="#7c3aed" />
+              </View>
+              <View>
+                <Text style={styles.settingTitle}>Mon QR Code</Text>
+                <Text style={styles.settingSubtitle}>Pour activation par ambassadeur</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={22} color="#94a3b8" />
+          </TouchableOpacity>
+
+          <View style={styles.divider} />
+
           <TouchableOpacity
             style={styles.settingRow}
             onPress={() => {
@@ -441,6 +461,32 @@ export default function SettingsScreen() {
 
         <View style={{ height: 80 }} />
       </ScrollView>
+
+      {/* QR Code Modal */}
+      <Modal visible={qrModalVisible} animationType="fade" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { alignItems: 'center', paddingVertical: 30 }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Mon QR Code</Text>
+              <TouchableOpacity onPress={() => setQrModalVisible(false)}>
+                <Ionicons name="close" size={28} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+            <Text style={{ fontSize: 14, color: '#64748b', textAlign: 'center', marginBottom: 20 }}>
+              Montrez ce code à un ambassadeur pour activer votre abonnement
+            </Text>
+            <View style={{ backgroundColor: '#fff', padding: 20, borderRadius: 16 }}>
+              <View style={{ width: 200, height: 200, backgroundColor: '#f1f5f9', borderRadius: 8, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 11, color: '#64748b', textAlign: 'center', marginBottom: 8 }}>ID Client</Text>
+                <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#1e293b', textAlign: 'center' }} selectable>{user?.id || 'N/A'}</Text>
+              </View>
+            </View>
+            <Text style={{ fontSize: 12, color: '#94a3b8', marginTop: 16, textAlign: 'center' }}>
+              ID: {user?.id || 'N/A'}
+            </Text>
+          </View>
+        </View>
+      </Modal>
 
       {/* Language Modal */}
       <Modal visible={langModalVisible} animationType="slide" transparent>
