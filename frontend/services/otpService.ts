@@ -194,30 +194,39 @@ export const sendOTP = async (phoneNumber: string): Promise<OTPResult> => {
 };
 
 export const verifyOTP = async (phoneNumber: string, code: string): Promise<VerifyResult> => {
-  // On web, verify via Firebase
+  // On web, verify via Firebase if we have a confirmation result
   if (Platform.OS === 'web' && currentConfirmationResult) {
     return verifyOTPFirebase(phoneNumber, code);
   }
   
-  // On native, try backend first
+  // Check local mock store FIRST (fastest, no network needed)
+  const normalizedPhone = phoneNumber.replace(/^\++/, '');
+  const possibleKeys = [normalizedPhone, phoneNumber, `+${normalizedPhone}`];
+  for (const key of possibleKeys) {
+    if (otpStore.has(key)) {
+      const result = verifyOTPMock(key, code);
+      return result;
+    }
+  }
+  
+  // If not in local store, try backend verification
   try {
     const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || '';
     const response = await fetch(`${backendUrl}/api/otp/verify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phoneNumber: `+${phoneNumber.replace(/^\++/, '')}`, code }),
+      body: JSON.stringify({ phoneNumber: `+${normalizedPhone}`, code }),
     });
     const responseText = await response.text();
     let data;
     try { data = JSON.parse(responseText); } catch {
-      throw new Error('Server unavailable');
+      return { success: false, message: 'Serveur inaccessible' };
     }
     if (response.ok && data.success) {
       return { success: true, message: 'Vérification réussie' };
     }
     return { success: false, message: data.message || 'Code incorrect' };
   } catch (error) {
-    // Fallback to mock verification
-    return verifyOTPMock(phoneNumber, code);
+    return { success: false, message: 'Erreur de connexion' };
   }
 };

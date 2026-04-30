@@ -47,6 +47,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [credError, setCredError] = useState('');
+  const [loginError, setLoginError] = useState('');
 
   const fullPhoneNumber = selectedCountry.code + localNumber.replace(/^0+/, '');
 
@@ -73,19 +74,21 @@ export default function LoginScreen() {
 
   const handleVerifyOTP = async () => {
     if (otp.length !== 4) {
-      Alert.alert(i18n.t('error'), 'Entrez le code à 4 chiffres');
+      setLoginError('Entrez le code à 4 chiffres');
       return;
     }
     setLoading(true);
+    setLoginError('');
     try {
       const result = await verifyOTP(fullPhoneNumber, otp);
       if (result.success) {
         await login(fullPhoneNumber, otp);
       } else {
-        Alert.alert(i18n.t('error'), result.message);
+        setLoginError(result.message || 'Code incorrect');
       }
     } catch (error: any) {
-      Alert.alert(i18n.t('error'), error.message || 'Vérification échouée');
+      console.error('Verify/Login error:', error);
+      setLoginError(error.message || 'Erreur de connexion au serveur');
     } finally {
       setLoading(false);
     }
@@ -242,6 +245,11 @@ export default function LoginScreen() {
                     <View style={styles.mockOtpBox}>
                       <Text style={styles.mockOtpLabel}>Code de vérification :</Text>
                       <Text style={styles.mockOtpText}>{mockOtp}</Text>
+                    </View>
+                  ) : null}
+                  {loginError ? (
+                    <View style={{ backgroundColor: '#fee2e2', borderRadius: 10, padding: 12, marginBottom: 8 }}>
+                      <Text style={{ color: '#dc2626', fontSize: 14, textAlign: 'center' }}>{loginError}</Text>
                     </View>
                   ) : null}
                   <TouchableOpacity
