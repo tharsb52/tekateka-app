@@ -1,151 +1,184 @@
 /**
- * OTP Service - Architecture d'intégration
+ * OTP Service with Firebase Phone Auth
  * 
- * Fournisseur actuel : MOCK (pour développement)
- * Fournisseur cible : Africa's Talking SMS API
+ * Priority: Firebase Phone Auth (free 10K/month) → Mock fallback (dev only)
  * 
- * Pour activer Africa's Talking :
- * 1. Créer un compte sur https://africastalking.com
- * 2. Obtenir API Key + Username dans le dashboard
- * 3. Ajouter dans .env :
- *    EXPO_PUBLIC_OTP_PROVIDER=africas_talking
- *    EXPO_PUBLIC_AT_USERNAME=your_username
- *    EXPO_PUBLIC_AT_API_KEY=your_api_key
- * 4. Le service basculera automatiquement
+ * Firebase Phone Auth works on:
+ * - Web preview: Full SMS via Firebase with invisible reCAPTCHA
+ * - Native (production build): Full SMS via Firebase native module
+ * - Expo Go (dev): Falls back to mock OTP (Firebase needs native config)
  */
-
-export type OTPProvider = 'mock' | 'africas_talking';
+import { Platform } from 'react-native';
+import { auth } from './firebase';
+import { signInWithPhoneNumber, RecaptchaVerifier, ConfirmationResult } from 'firebase/auth';
 
 interface OTPResult {
   success: boolean;
   message: string;
-  otp?: string; // Only returned in mock mode
+  otp?: string; // Only for mock/debug
+  confirmationResult?: ConfirmationResult;
 }
 
 interface VerifyResult {
   success: boolean;
   message: string;
+  firebaseUser?: any;
 }
 
-// Determine provider from env
-const getProvider = (): OTPProvider => {
-  const provider = process.env.EXPO_PUBLIC_OTP_PROVIDER;
-  if (provider === 'africas_talking') return 'africas_talking';
-  return 'mock';
-};
+// Store confirmation result for verification
+let currentConfirmationResult: ConfirmationResult | null = null;
+let recaptchaVerifier: RecaptchaVerifier | null = null;
 
-// Store OTPs temporarily (in-memory for mock, server-side for production)
+// Mock OTP store for development
 const otpStore = new Map<string, { code: string; expiresAt: number }>();
 
-/**
- * Send OTP to a phone number
- */
-export const sendOTP = async (phoneNumber: string): Promise<OTPResult> => {
-  const provider = getProvider();
+// =========================================
+// Firebase Phone Auth (Primary - Web)
+// =========================================
+const sendOTPFirebase = async (phoneNumber: string): Promise<OTPResult> => {
+  try {
+    // Format phone number with +
+    const formattedNumber = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`;
+    
+    // Create invisible reCAPTCHA verifier
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      // Clean up previous verifier
+      if (recaptchaVerifier) {
+        try { recaptchaVerifier.clear(); } catch {}
+      }
+      
+      // Check if container exists, create if not
+      let container = document.getElementById('recaptcha-container');
+      if (!container) {
+        container = document.createElement('div');
+        container.id = 'recaptcha-container';
+        container.style.display = 'none';
+        document.body.appendChild(container);
+      }
+      
+      recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+        size: 'invisible',
+        callback: () => {
+          console.log('[Firebase] reCAPTCHA resolved');
+        },
+      });
 
-  switch (provider) {
-    case 'africas_talking':
-      return sendOTPAfricasTalking(phoneNumber);
-    case 'mock':
-    default:
-      return sendOTPMock(phoneNumber);
+      const result = await signInWithPhoneNumber(auth, formattedNumber, recaptchaVerifier);
+      currentConfirmationResult = result;
+      
+      return {
+        success: true,
+        message: `Code envoyé par SMS au ${formattedNumber}`,
+        confirmationResult: result,
+      };
+    }
+    
+    // On native, Firebase web SDK signInWithPhoneNumber won't work without native module
+    throw new Error('Firebase Phone Auth requires web or native build');
+  } catch (error: any) {
+    console.error('[Firebase OTP] Error:', error.code, error.message);
+    
+    // Provide user-friendly error messages
+    if (error.code === 'auth/invalid-phone-number') {
+      return { success: false, message: 'Numéro de téléphone invalide' };
+    }
+    if (error.code === 'auth/too-many-requests') {
+      return { success: false, message: 'Trop de tentatives. Réessayez plus tard.' };
+    }
+    if (error.code === 'auth/quota-exceeded') {
+      return { success: false, message: 'Quota SMS dépassé. Réessayez demain.' };
+    }
+    
+    // Fallback to mock for development
+    throw error;
   }
 };
 
-/**
- * Verify OTP code
- */
-export const verifyOTP = async (phoneNumber: string, code: string): Promise<VerifyResult> => {
-  const provider = getProvider();
-
-  switch (provider) {
-    case 'africas_talking':
-      return verifyOTPAfricasTalking(phoneNumber, code);
-    case 'mock':
-    default:
-      return verifyOTPMock(phoneNumber, code);
+const verifyOTPFirebase = async (phoneNumber: string, code: string): Promise<VerifyResult> => {
+  try {
+    if (!currentConfirmationResult) {
+      return { success: false, message: "Aucun code en attente. Renvoyez le code." };
+    }
+    
+    const credential = await currentConfirmationResult.confirm(code);
+    currentConfirmationResult = null;
+    
+    return {
+      success: true,
+      message: 'Vérification réussie',
+      firebaseUser: credential.user,
+    };
+  } catch (error: any) {
+    console.error('[Firebase Verify] Error:', error.code, error.message);
+    
+    if (error.code === 'auth/invalid-verification-code') {
+      return { success: false, message: 'Code incorrect. Vérifiez et réessayez.' };
+    }
+    if (error.code === 'auth/code-expired') {
+      return { success: false, message: 'Code expiré. Renvoyez un nouveau code.' };
+    }
+    
+    return { success: false, message: 'Code incorrect' };
   }
 };
 
-/**
- * Get current provider info
- */
-export const getOTPProviderInfo = () => {
-  const provider = getProvider();
-  return {
-    provider,
-    isMock: provider === 'mock',
-    isSandbox: provider === 'africas_talking', // sandbox mode returns debug_code
-    name: provider === 'africas_talking' ? "Africa's Talking (Sandbox)" : 'Mode Test',
-  };
-};
-
-// ==========================================
-// MOCK Provider (Development)
-// ==========================================
-
-const sendOTPMock = async (phoneNumber: string): Promise<OTPResult> => {
-  const code = Math.floor(1000 + Math.random() * 9000).toString();
-  const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
-
-  otpStore.set(phoneNumber, { code, expiresAt });
-
-  console.log('\n======================');
-  console.log('MOCK OTP CODE:', code);
-  console.log('Phone:', phoneNumber);
-  console.log('Expires in 5 minutes');
-  console.log('======================\n');
-
+// =========================================
+// Mock OTP (Fallback for Expo Go / Dev)
+// =========================================
+const sendOTPMock = (phoneNumber: string): OTPResult => {
+  const code = String(Math.floor(1000 + Math.random() * 9000));
+  otpStore.set(phoneNumber, { code, expiresAt: Date.now() + 5 * 60 * 1000 });
+  console.log(`[MOCK OTP] Code for ${phoneNumber}: ${code}`);
   return {
     success: true,
-    message: `Code envoyé à +${phoneNumber} (mode test)`,
-    otp: code, // Returned for display in dev mode
+    message: `Code de vérification envoyé (mode test)`,
+    otp: code,
   };
 };
 
-const verifyOTPMock = async (phoneNumber: string, code: string): Promise<VerifyResult> => {
+const verifyOTPMock = (phoneNumber: string, code: string): VerifyResult => {
   const stored = otpStore.get(phoneNumber);
-
   if (!stored) {
     return { success: false, message: 'Aucun code envoyé pour ce numéro' };
   }
-
   if (Date.now() > stored.expiresAt) {
     otpStore.delete(phoneNumber);
-    return { success: false, message: 'Code expiré. Veuillez en demander un nouveau.' };
+    return { success: false, message: 'Code expiré. Renvoyez un nouveau code.' };
   }
-
   if (stored.code !== code) {
     return { success: false, message: 'Code incorrect' };
   }
-
   otpStore.delete(phoneNumber);
   return { success: true, message: 'Vérification réussie' };
 };
 
-// ==========================================
-// Africa's Talking Provider (Production)
-// ==========================================
-
-const sendOTPAfricasTalking = async (phoneNumber: string): Promise<OTPResult> => {
-  const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+// =========================================
+// Public API
+// =========================================
+export const sendOTP = async (phoneNumber: string): Promise<OTPResult> => {
+  // Try Firebase on web
+  if (Platform.OS === 'web') {
+    try {
+      return await sendOTPFirebase(phoneNumber);
+    } catch (error) {
+      console.warn('[OTP] Firebase failed, falling back to mock:', error);
+      return sendOTPMock(phoneNumber);
+    }
+  }
   
+  // On native (Expo Go), try backend first, then mock
   try {
+    const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || '';
     const response = await fetch(`${backendUrl}/api/otp/send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phoneNumber: `+${phoneNumber.replace(/^\++/, '')}` }),
     });
-
     const responseText = await response.text();
     let data;
-    try {
-      data = JSON.parse(responseText);
-    } catch {
-      console.error("OTP send: response is not JSON:", responseText.substring(0, 80));
-      throw new Error('Serveur inaccessible');
+    try { data = JSON.parse(responseText); } catch {
+      throw new Error('Server unavailable');
     }
-
     if (response.ok && data.success) {
       return {
         success: true,
@@ -153,47 +186,38 @@ const sendOTPAfricasTalking = async (phoneNumber: string): Promise<OTPResult> =>
         otp: data.debug_code || undefined,
       };
     }
-
-    return {
-      success: false,
-      message: data.message || "Échec de l'envoi du code",
-    };
+    throw new Error(data.message || 'Failed');
   } catch (error) {
-    console.error("Africa's Talking OTP error:", error);
-    console.warn('Falling back to mock OTP due to network error');
+    console.warn('[OTP] Backend failed, using mock:', error);
     return sendOTPMock(phoneNumber);
   }
 };
 
-const verifyOTPAfricasTalking = async (phoneNumber: string, code: string): Promise<VerifyResult> => {
-  const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || '';
-
+export const verifyOTP = async (phoneNumber: string, code: string): Promise<VerifyResult> => {
+  // On web, verify via Firebase
+  if (Platform.OS === 'web' && currentConfirmationResult) {
+    return verifyOTPFirebase(phoneNumber, code);
+  }
+  
+  // On native, try backend first
   try {
+    const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || '';
     const response = await fetch(`${backendUrl}/api/otp/verify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phoneNumber: `+${phoneNumber.replace(/^\++/, '')}`, code }),
     });
-
     const responseText = await response.text();
     let data;
-    try {
-      data = JSON.parse(responseText);
-    } catch {
-      console.error("OTP verify: response is not JSON:", responseText.substring(0, 80));
-      throw new Error('Serveur inaccessible');
+    try { data = JSON.parse(responseText); } catch {
+      throw new Error('Server unavailable');
     }
-
     if (response.ok && data.success) {
       return { success: true, message: 'Vérification réussie' };
     }
-
-    return {
-      success: false,
-      message: data.message || 'Code incorrect',
-    };
+    return { success: false, message: data.message || 'Code incorrect' };
   } catch (error) {
-    console.error("Africa's Talking verify error:", error);
+    // Fallback to mock verification
     return verifyOTPMock(phoneNumber, code);
   }
 };

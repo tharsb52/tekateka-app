@@ -20,7 +20,7 @@ import { useAuth } from '../context/AuthContext';
 import { useRouter } from 'expo-router';
 import i18n from '../utils/i18n';
 import { Ionicons } from '@expo/vector-icons';
-import { sendOTP, verifyOTP, getOTPProviderInfo } from '../services/otpService';
+import { sendOTP, verifyOTP } from '../services/otpService';
 import { ALL_COUNTRIES, searchCountries, getFlagUrl, Country } from '../utils/countries';
 
 const BG = '#fef3e7';
@@ -48,7 +48,6 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [credError, setCredError] = useState('');
 
-  const otpInfo = getOTPProviderInfo();
   const fullPhoneNumber = selectedCountry.code + localNumber.replace(/^0+/, '');
 
   const handleSendOTP = async () => {
