@@ -154,6 +154,7 @@ export default function AmbassadorDashboard() {
 
         {activeTab === 'stats' ? (
           <View style={styles.codesSection}>
+            {/* Summary */}
             <View style={styles.codesSummary}>
               <View style={styles.codeStat}>
                 <Text style={styles.codeStatValue}>{stats.totalCodes || 0}</Text>
@@ -166,6 +167,75 @@ export default function AmbassadorDashboard() {
               <View style={styles.codeStat}>
                 <Text style={[styles.codeStatValue, { color: '#94a3b8' }]}>{stats.usedCodes || 0}</Text>
                 <Text style={styles.codeStatLabel}>Utilisés</Text>
+              </View>
+            </View>
+
+            {/* Codes by Plan */}
+            <Text style={styles.planSectionTitle}>Détail par catégorie</Text>
+
+            {/* Monthly */}
+            <View style={[styles.planCard, { borderLeftColor: '#60a5fa' }]}>  
+              <View style={styles.planCardHeader}>
+                <Ionicons name="calendar-outline" size={20} color="#60a5fa" />
+                <Text style={[styles.planCardTitle, { color: '#60a5fa' }]}>Mensuel</Text>
+              </View>
+              <View style={styles.planCardStats}>
+                <View style={styles.planStatItem}>
+                  <Text style={styles.planStatValue}>{stats.codesByPlan?.monthly?.remaining || 0}</Text>
+                  <Text style={styles.planStatLabel}>Dispo</Text>
+                </View>
+                <View style={styles.planStatItem}>
+                  <Text style={[styles.planStatValue, { color: '#94a3b8' }]}>{stats.codesByPlan?.monthly?.used || 0}</Text>
+                  <Text style={styles.planStatLabel}>Utilisés</Text>
+                </View>
+                <View style={styles.planStatItem}>
+                  <Text style={[styles.planStatValue, { color: '#64748b' }]}>{stats.codesByPlan?.monthly?.total || 0}</Text>
+                  <Text style={styles.planStatLabel}>Total</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Quarterly */}
+            <View style={[styles.planCard, { borderLeftColor: '#f59e0b' }]}>  
+              <View style={styles.planCardHeader}>
+                <Ionicons name="calendar" size={20} color="#f59e0b" />
+                <Text style={[styles.planCardTitle, { color: '#f59e0b' }]}>Trimestriel</Text>
+              </View>
+              <View style={styles.planCardStats}>
+                <View style={styles.planStatItem}>
+                  <Text style={styles.planStatValue}>{stats.codesByPlan?.quarterly?.remaining || 0}</Text>
+                  <Text style={styles.planStatLabel}>Dispo</Text>
+                </View>
+                <View style={styles.planStatItem}>
+                  <Text style={[styles.planStatValue, { color: '#94a3b8' }]}>{stats.codesByPlan?.quarterly?.used || 0}</Text>
+                  <Text style={styles.planStatLabel}>Utilisés</Text>
+                </View>
+                <View style={styles.planStatItem}>
+                  <Text style={[styles.planStatValue, { color: '#64748b' }]}>{stats.codesByPlan?.quarterly?.total || 0}</Text>
+                  <Text style={styles.planStatLabel}>Total</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Yearly */}
+            <View style={[styles.planCard, { borderLeftColor: '#34d399' }]}>  
+              <View style={styles.planCardHeader}>
+                <Ionicons name="calendar-sharp" size={20} color="#34d399" />
+                <Text style={[styles.planCardTitle, { color: '#34d399' }]}>Annuel</Text>
+              </View>
+              <View style={styles.planCardStats}>
+                <View style={styles.planStatItem}>
+                  <Text style={styles.planStatValue}>{stats.codesByPlan?.yearly?.remaining || 0}</Text>
+                  <Text style={styles.planStatLabel}>Dispo</Text>
+                </View>
+                <View style={styles.planStatItem}>
+                  <Text style={[styles.planStatValue, { color: '#94a3b8' }]}>{stats.codesByPlan?.yearly?.used || 0}</Text>
+                  <Text style={styles.planStatLabel}>Utilisés</Text>
+                </View>
+                <View style={styles.planStatItem}>
+                  <Text style={[styles.planStatValue, { color: '#64748b' }]}>{stats.codesByPlan?.yearly?.total || 0}</Text>
+                  <Text style={styles.planStatLabel}>Total</Text>
+                </View>
               </View>
             </View>
           </View>
@@ -219,10 +289,18 @@ const styles = StyleSheet.create({
   tabText: { fontSize: 14, fontWeight: '600', color: '#94a3b8' },
   tabTextActive: { color: '#0f172a' },
   codesSection: { margin: 16 },
-  codesSummary: { flexDirection: 'row', backgroundColor: CARD, borderRadius: 16, padding: 20, justifyContent: 'space-around' },
+  codesSummary: { flexDirection: 'row', backgroundColor: CARD, borderRadius: 16, padding: 20, justifyContent: 'space-around', marginBottom: 16 },
   codeStat: { alignItems: 'center', gap: 4 },
   codeStatValue: { fontSize: 28, fontWeight: 'bold', color: '#fff' },
   codeStatLabel: { fontSize: 12, color: '#94a3b8' },
+  planSectionTitle: { fontSize: 14, fontWeight: '700', color: '#94a3b8', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
+  planCard: { backgroundColor: CARD, borderRadius: 14, padding: 16, marginBottom: 10, borderLeftWidth: 4 },
+  planCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  planCardTitle: { fontSize: 16, fontWeight: '700' },
+  planCardStats: { flexDirection: 'row', justifyContent: 'space-around' },
+  planStatItem: { alignItems: 'center' },
+  planStatValue: { fontSize: 22, fontWeight: 'bold', color: '#34d399' },
+  planStatLabel: { fontSize: 11, color: '#64748b', marginTop: 2 },
   salesSection: { margin: 16, gap: 10 },
   emptyText: { color: '#64748b', textAlign: 'center', padding: 20 },
   saleCard: { backgroundColor: CARD, borderRadius: 12, padding: 16 },

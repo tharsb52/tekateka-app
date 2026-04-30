@@ -205,6 +205,14 @@ async def ambassador_dashboard(body: dict):
     used_codes = await db.activation_codes.count_documents({"ambassadorId": amb_id, "status": "used"})
     remaining_codes = await db.activation_codes.count_documents({"ambassadorId": amb_id, "status": "unused"})
     
+    # Codes by plan
+    codes_by_plan = {}
+    for plan in ["monthly", "quarterly", "yearly"]:
+        plan_total = await db.activation_codes.count_documents({"ambassadorId": amb_id, "plan": plan})
+        plan_used = await db.activation_codes.count_documents({"ambassadorId": amb_id, "plan": plan, "status": "used"})
+        plan_remaining = await db.activation_codes.count_documents({"ambassadorId": amb_id, "plan": plan, "status": "unused"})
+        codes_by_plan[plan] = {"total": plan_total, "used": plan_used, "remaining": plan_remaining}
+    
     # Has multiplier?
     has_multiplier = total_sales >= COMMISSION_MULTIPLIER_THRESHOLD
     
@@ -227,6 +235,7 @@ async def ambassador_dashboard(body: dict):
             "remainingCodes": remaining_codes,
             "hasMultiplier": has_multiplier,
             "multiplier": COMMISSION_MULTIPLIER if has_multiplier else 1,
+            "codesByPlan": codes_by_plan,
         },
         "pricingTier": tier,
         "pricing": PRICING_TIERS[tier],
