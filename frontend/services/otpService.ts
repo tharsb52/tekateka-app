@@ -168,7 +168,7 @@ export const sendOTP = async (phoneNumber: string): Promise<OTPResult> => {
   
   // On native (Expo Go), try backend first, then mock
   try {
-    const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+    const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://low-data-shop.preview.emergentagent.com';
     const response = await fetch(`${backendUrl}/api/otp/send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -211,7 +211,7 @@ export const verifyOTP = async (phoneNumber: string, code: string): Promise<Veri
   
   // If not in local store, try backend verification
   try {
-    const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+    const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://low-data-shop.preview.emergentagent.com';
     const response = await fetch(`${backendUrl}/api/otp/verify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
