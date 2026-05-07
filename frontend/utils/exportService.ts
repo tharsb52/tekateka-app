@@ -84,54 +84,5 @@ export async function exportSalesToPDF(sales: Sale[], currency: string, userName
 }
 
 export async function exportSalesToExcel(sales: Sale[], currency: string, userName: string): Promise<void> {
-  try {
-    const XLSX = await import('xlsx');
-    
-    const sortedSales = [...sales].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    
-    const data = sortedSales.map(sale => ({
-      'Date': format(new Date(sale.createdAt), 'dd/MM/yyyy'),
-      'Heure': format(new Date(sale.createdAt), 'HH:mm'),
-      'Produit': sale.productName,
-      'Quantite': sale.quantity,
-      'Prix Unitaire': sale.price,
-      'Total': sale.totalAmount,
-      'Paiement': sale.paymentMethod,
-      'Devise': sale.currency,
-    }));
-
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(data);
-    
-    // Set column widths
-    ws['!cols'] = [
-      { wch: 12 }, { wch: 8 }, { wch: 25 },
-      { wch: 10 }, { wch: 14 }, { wch: 12 },
-      { wch: 12 }, { wch: 8 },
-    ];
-    
-    XLSX.utils.book_append_sheet(wb, ws, 'Ventes');
-    
-    if (Platform.OS === 'web') {
-      XLSX.writeFile(wb, `TekaTeka_Ventes_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
-      Alert.alert('Succes', 'Fichier Excel telecharge !');
-    } else {
-      // On mobile, write to file and share
-      const FileSystem = await import('expo-file-system');
-      const wbout = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
-      const uri = FileSystem.documentDirectory + `TekaTeka_Ventes_${format(new Date(), 'yyyy-MM-dd')}.xlsx`;
-      await FileSystem.writeAsStringAsync(uri, wbout, { encoding: FileSystem.EncodingType.Base64 });
-      
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, {
-          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          dialogTitle: 'Exporter les ventes',
-        });
-      }
-      Alert.alert('Succes', 'Fichier Excel genere !');
-    }
-  } catch (error) {
-    console.error('Excel export error:', error);
-    Alert.alert('Erreur', 'Echec de la generation Excel');
-  }
+  Alert.alert('Info', 'Export Excel temporairement indisponible. Utilisez l\'export PDF.');
 }
