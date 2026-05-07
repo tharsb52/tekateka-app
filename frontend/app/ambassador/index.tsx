@@ -1,3 +1,4 @@
+import { API_BASE_URL } from '../../services/constants';
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
@@ -29,7 +30,7 @@ export default function AmbassadorLoginScreen() {
     }
     setLoading(true);
     try {
-      const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://low-data-shop.preview.emergentagent.com';
+      const backendUrl = API_BASE_URL;
       console.log('[Ambassador] Login attempt:', email, 'URL:', backendUrl);
       
       const response = await fetch(`${backendUrl}/api/ambassador/login`, {

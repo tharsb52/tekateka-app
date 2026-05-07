@@ -1,3 +1,4 @@
+import { API_BASE_URL } from '../../services/constants';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
@@ -24,7 +25,7 @@ export default function AmbassadorDashboard() {
     try {
       const token = await AsyncStorage.getItem('ambassador_token');
       if (!token) { router.replace('/ambassador'); return; }
-      const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://low-data-shop.preview.emergentagent.com';
+      const backendUrl = API_BASE_URL;
 
       const [dashRes, salesRes] = await Promise.all([
         fetch(`${backendUrl}/api/ambassador/dashboard`, {

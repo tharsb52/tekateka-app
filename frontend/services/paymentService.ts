@@ -1,3 +1,4 @@
+import { API_BASE_URL } from './constants';
 /**
  * Payment Service - Architecture d'intégration Mobile Money
  * 
@@ -77,7 +78,7 @@ export const processPayment = async (request: PaymentRequest): Promise<PaymentRe
  */
 export const checkPaymentStatus = async (transactionId: string): Promise<PaymentResult> => {
   const provider = getProvider();
-  const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://low-data-shop.preview.emergentagent.com';
+  const backendUrl = API_BASE_URL;
 
   if (provider === 'mock') {
     return {
@@ -218,7 +219,7 @@ const processPaymentMTN = async (request: PaymentRequest): Promise<PaymentResult
    *   MTN_MOMO_CALLBACK_URL=https://your-domain/api/payments/mtn/callback
    */
 
-  const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://low-data-shop.preview.emergentagent.com';
+  const backendUrl = API_BASE_URL;
 
   try {
     const response = await fetch(`${backendUrl}/api/payments/mtn/initiate`, {
@@ -272,7 +273,7 @@ const processPaymentOrange = async (request: PaymentRequest): Promise<PaymentRes
    *   ORANGE_MONEY_ENVIRONMENT=sandbox|production
    */
 
-  const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://low-data-shop.preview.emergentagent.com';
+  const backendUrl = API_BASE_URL;
 
   try {
     const response = await fetch(`${backendUrl}/api/payments/orange/initiate`, {
@@ -322,7 +323,7 @@ const processPaymentMPesa = async (request: PaymentRequest): Promise<PaymentResu
    *   MPESA_CALLBACK_URL=https://your-domain/api/payments/mpesa/callback
    */
 
-  const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://low-data-shop.preview.emergentagent.com';
+  const backendUrl = API_BASE_URL;
 
   try {
     const response = await fetch(`${backendUrl}/api/payments/mpesa/initiate`, {

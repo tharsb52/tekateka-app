@@ -1,3 +1,4 @@
+import { API_BASE_URL } from '../../services/constants';
 import React, { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
@@ -44,7 +45,7 @@ export default function AmbassadorActivateScreen() {
     setErrorMsg('');
     try {
       const token = await AsyncStorage.getItem('ambassador_token');
-      const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://low-data-shop.preview.emergentagent.com';
+      const backendUrl = API_BASE_URL;
       const res = await fetch(`${backendUrl}/api/ambassador/scan-client`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -82,7 +83,7 @@ export default function AmbassadorActivateScreen() {
     setLoading(true);
     try {
       const token = await AsyncStorage.getItem('ambassador_token');
-      const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://low-data-shop.preview.emergentagent.com';
+      const backendUrl = API_BASE_URL;
       const res = await fetch(`${backendUrl}/api/ambassador/activate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

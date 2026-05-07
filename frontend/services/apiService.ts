@@ -4,7 +4,9 @@
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://low-data-shop.preview.emergentagent.com';
+import { API_BASE_URL } from './constants';
+
+const BACKEND_URL = API_BASE_URL;
 const TOKEN_KEY = '@tekateka:auth_token';
 
 // ==========================================
