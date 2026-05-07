@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import {
-
   View,
   Text,
   TextInput,
@@ -20,8 +19,9 @@ import { useAuth } from '../context/AuthContext';
 import { useRouter } from 'expo-router';
 import i18n from '../utils/i18n';
 import { Ionicons } from '@expo/vector-icons';
-import { sendOTP, verifyOTP } from '../services/otpService';
+import { getFirebaseVerifyUrl } from '../services/otpService';
 import { ALL_COUNTRIES, searchCountries, getFlagUrl, Country } from '../utils/countries';
+import WebView from 'react-native-webview';
 
 const BG = '#fef3e7';
 
@@ -41,6 +41,7 @@ export default function LoginScreen() {
   const [mockOtp, setMockOtp] = useState('');
   const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showFirebaseWebView, setShowFirebaseWebView] = useState(false);
 
   // Credential login state
   const [identifier, setIdentifier] = useState('');
@@ -53,45 +54,41 @@ export default function LoginScreen() {
 
   const handleSendOTP = async () => {
     if (localNumber.length < 6) {
-      Alert.alert(i18n.t('error'), 'Veuillez entrer un numéro valide');
+      setLoginError('Veuillez entrer un numéro valide');
       return;
     }
-    setLoading(true);
+    setLoginError('');
+    setShowFirebaseWebView(true);
+  };
+
+  const handleWebViewMessage = async (event: any) => {
     try {
-      const result = await sendOTP(fullPhoneNumber);
-      if (result.success) {
-        setOtpSent(true);
-        if (result.otp) setMockOtp(result.otp);
-      } else {
-        Alert.alert(i18n.t('error'), result.message);
+      const data = JSON.parse(event.nativeEvent.data);
+      console.log('[WebView] Message:', data.type);
+      
+      if (data.type === 'verified' && data.success) {
+        setShowFirebaseWebView(false);
+        setLoading(true);
+        setLoginError('');
+        try {
+          await login(fullPhoneNumber, 'firebase-verified');
+        } catch (error: any) {
+          console.error('Login error:', error);
+          setLoginError(error.message || 'Erreur de connexion');
+        } finally {
+          setLoading(false);
+        }
+      } else if (data.type === 'error' || data.type === 'verifyError') {
+        setLoginError(data.message || 'Erreur de vérification');
       }
-    } catch (error) {
-      Alert.alert(i18n.t('error'), "Échec de l'envoi du code");
-    } finally {
-      setLoading(false);
+    } catch (e) {
+      console.log('[WebView] Parse error:', e);
     }
   };
 
   const handleVerifyOTP = async () => {
-    if (otp.length !== 4) {
-      setLoginError('Entrez le code à 4 chiffres');
-      return;
-    }
-    setLoading(true);
-    setLoginError('');
-    try {
-      const result = await verifyOTP(fullPhoneNumber, otp);
-      if (result.success) {
-        await login(fullPhoneNumber, otp);
-      } else {
-        setLoginError(result.message || 'Code incorrect');
-      }
-    } catch (error: any) {
-      console.error('Verify/Login error:', error);
-      setLoginError(error.message || 'Erreur de connexion au serveur');
-    } finally {
-      setLoading(false);
-    }
+    // This is now handled by the WebView
+    setShowFirebaseWebView(true);
   };
 
   const handleCredentialLogin = async () => {
@@ -190,8 +187,6 @@ export default function LoginScreen() {
           {/* ========== PHONE TAB ========== */}
           {activeTab === 'phone' && (
             <View style={styles.form}>
-              {!otpSent ? (
-                <>
                   <Text style={styles.label}>{i18n.t('phoneNumber')}</Text>
                   <View style={styles.phoneRow}>
                     <TouchableOpacity
@@ -216,37 +211,6 @@ export default function LoginScreen() {
                   {localNumber.length > 3 && (
                     <Text style={styles.previewNumber}>+{fullPhoneNumber}</Text>
                   )}
-                  <TouchableOpacity
-                    style={[styles.button, loading && styles.buttonDisabled]}
-                    onPress={handleSendOTP}
-                    disabled={loading}
-                  >
-                    {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{i18n.t('sendOTP')}</Text>}
-                  </TouchableOpacity>
-                </>
-              ) : (
-                <>
-                  <Text style={styles.label}>{i18n.t('enterOTP')}</Text>
-                  <View style={styles.phoneDisplayRow}>
-                    <Image source={{ uri: getFlagUrl(selectedCountry.iso) }} style={styles.countryFlagImg} />
-                    <Text style={styles.phoneDisplay}>+{fullPhoneNumber}</Text>
-                  </View>
-                  <TextInput
-                    style={styles.otpInput}
-                    placeholder="0000"
-                    placeholderTextColor="#94a3b8"
-                    value={otp}
-                    onChangeText={setOtp}
-                    keyboardType="number-pad"
-                    maxLength={4}
-                    autoFocus
-                  />
-                  {mockOtp ? (
-                    <View style={styles.mockOtpBox}>
-                      <Text style={styles.mockOtpLabel}>Code de vérification :</Text>
-                      <Text style={styles.mockOtpText}>{mockOtp}</Text>
-                    </View>
-                  ) : null}
                   {loginError ? (
                     <View style={{ backgroundColor: '#fee2e2', borderRadius: 10, padding: 12, marginBottom: 8 }}>
                       <Text style={{ color: '#dc2626', fontSize: 14, textAlign: 'center' }}>{loginError}</Text>
@@ -254,20 +218,11 @@ export default function LoginScreen() {
                   ) : null}
                   <TouchableOpacity
                     style={[styles.button, loading && styles.buttonDisabled]}
-                    onPress={handleVerifyOTP}
+                    onPress={handleSendOTP}
                     disabled={loading}
                   >
-                    {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{i18n.t('verifyOTP')}</Text>}
+                    {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{i18n.t('sendOTP')}</Text>}
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.backButton}
-                    onPress={() => { setOtpSent(false); setOtp(''); setMockOtp(''); }}
-                  >
-                    <Ionicons name="arrow-back" size={16} color="#64748b" />
-                    <Text style={styles.backButtonText}>Changer de numéro</Text>
-                  </TouchableOpacity>
-                </>
-              )}
             </View>
           )}
 
@@ -334,6 +289,34 @@ export default function LoginScreen() {
             </Text>
           </TouchableOpacity>
         </ScrollView>
+
+        {/* Firebase Phone Auth WebView */}
+        <Modal visible={showFirebaseWebView} animationType="slide">
+          <SafeAreaView style={{ flex: 1, backgroundColor: '#0f172a' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: '#334155' }}>
+              <TouchableOpacity onPress={() => setShowFirebaseWebView(false)} style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+              <Text style={{ flex: 1, textAlign: 'center', color: '#fff', fontSize: 16, fontWeight: '600' }}>Vérification SMS</Text>
+              <View style={{ width: 44 }} />
+            </View>
+            {Platform.OS === 'web' ? (
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+                <Text style={{ color: '#94a3b8', textAlign: 'center' }}>
+                  La vérification SMS s'ouvre dans une nouvelle fenêtre...
+                </Text>
+              </View>
+            ) : (
+              <WebView
+                source={{ uri: getFirebaseVerifyUrl(fullPhoneNumber) }}
+                onMessage={handleWebViewMessage}
+                style={{ flex: 1 }}
+                javaScriptEnabled={true}
+                domStorageEnabled={true}
+              />
+            )}
+          </SafeAreaView>
+        </Modal>
       </KeyboardAvoidingView>
 
       {/* Country Picker Modal */}
