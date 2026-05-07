@@ -29,7 +29,7 @@ export default function AmbassadorLoginScreen() {
     }
     setLoading(true);
     try {
-      const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+      const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://low-data-shop.preview.emergentagent.com';
       console.log('[Ambassador] Login attempt:', email, 'URL:', backendUrl);
       
       const response = await fetch(`${backendUrl}/api/ambassador/login`, {

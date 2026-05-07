@@ -85,7 +85,7 @@ export default function SubscriptionScreen() {
     }
     setCodeLoading(true);
     try {
-      const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+      const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://low-data-shop.preview.emergentagent.com';
       const res = await fetch(`${backendUrl}/api/subscription/activate-code`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

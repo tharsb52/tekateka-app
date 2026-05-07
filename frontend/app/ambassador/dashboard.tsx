@@ -24,7 +24,7 @@ export default function AmbassadorDashboard() {
     try {
       const token = await AsyncStorage.getItem('ambassador_token');
       if (!token) { router.replace('/ambassador'); return; }
-      const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+      const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://low-data-shop.preview.emergentagent.com';
 
       const [dashRes, salesRes] = await Promise.all([
         fetch(`${backendUrl}/api/ambassador/dashboard`, {

@@ -88,7 +88,7 @@ export default function AmbassadorScanScreen() {
     setClientInfo(null);
     try {
       const token = await AsyncStorage.getItem('ambassador_token');
-      const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+      const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://low-data-shop.preview.emergentagent.com';
       const res = await fetch(`${backendUrl}/api/ambassador/scan-client`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
