@@ -452,6 +452,8 @@ export default function LoginScreen() {
               javaScriptEnabled
               domStorageEnabled
               originWhitelist={['*']}
+              mixedContentMode="always"
+              thirdPartyCookiesEnabled
               startInLoadingState
               renderLoading={() => (
                 <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f172a' }}>
@@ -459,6 +461,22 @@ export default function LoginScreen() {
                   <Text style={{ color: '#94a3b8', marginTop: 16 }}>Connexion à Firebase...</Text>
                 </View>
               )}
+              onError={(e) => {
+                console.log('WebView error', e.nativeEvent);
+                if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
+                setLoading(false);
+                setShowFirebaseWebView(false);
+                setWebViewModalVisible(false);
+                setLoginError('Impossible de charger la page de vérification. Vérifiez votre connexion.');
+              }}
+              onHttpError={(e) => {
+                console.log('WebView HTTP error', e.nativeEvent.statusCode);
+                if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
+                setLoading(false);
+                setShowFirebaseWebView(false);
+                setWebViewModalVisible(false);
+                setLoginError(`Erreur serveur (${e.nativeEvent.statusCode}). Réessayez dans 1 minute.`);
+              }}
             />
           )}
         </SafeAreaView>
