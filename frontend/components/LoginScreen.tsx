@@ -415,72 +415,68 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </ScrollView>
 
-        {/* Firebase Phone Auth WebView - hidden but mounted (for verification step) */}
-        {showFirebaseWebView && !webViewModalVisible && Platform.OS !== 'web' && (
-          <View style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} pointerEvents="none">
-            <WebView
-              ref={webViewRef}
-              source={{ uri: getFirebaseVerifyUrl(fullPhoneNumber) }}
-              onMessage={handleWebViewMessage}
-              style={{ width: 1, height: 1 }}
-              javaScriptEnabled
-              domStorageEnabled
-              originWhitelist={['*']}
-            />
-          </View>
-        )}
       </KeyboardAvoidingView>
 
-      {/* Visible WebView Modal - shown briefly while SMS is being sent (so reCAPTCHA can resolve) */}
-      <Modal visible={webViewModalVisible} animationType="fade" transparent={false} onRequestClose={handleCancelOtp}>
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#0f172a' }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: '#1e293b' }}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700' }}>Envoi du SMS...</Text>
-              <Text style={{ color: '#94a3b8', fontSize: 12, marginTop: 2 }}>+{fullPhoneNumber}</Text>
-            </View>
-            <TouchableOpacity onPress={handleCancelOtp} style={{ padding: 8 }}>
-              <Ionicons name="close" size={28} color="#fff" />
-            </TouchableOpacity>
-          </View>
-          {showFirebaseWebView && Platform.OS !== 'web' && (
-            <WebView
-              ref={webViewRef}
-              source={{ uri: getFirebaseVerifyUrl(fullPhoneNumber) }}
-              onMessage={handleWebViewMessage}
-              style={{ flex: 1, backgroundColor: '#0f172a' }}
-              javaScriptEnabled
-              domStorageEnabled
-              originWhitelist={['*']}
-              mixedContentMode="always"
-              thirdPartyCookiesEnabled
-              startInLoadingState
-              renderLoading={() => (
-                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f172a' }}>
-                  <ActivityIndicator size="large" color="#f59e0b" />
-                  <Text style={{ color: '#94a3b8', marginTop: 16 }}>Connexion à Firebase...</Text>
+      {/* PERSISTENT Firebase WebView — single instance, never unmounted while showFirebaseWebView=true.
+          Visibility is toggled via absolute positioning so the Firebase session (confirmationResult) survives. */}
+      {showFirebaseWebView && Platform.OS !== 'web' && (
+        <View
+          style={
+            webViewModalVisible
+              ? { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#0f172a', zIndex: 1000 }
+              : { position: 'absolute', width: 1, height: 1, top: -10, left: -10, opacity: 0, overflow: 'hidden' }
+          }
+          pointerEvents={webViewModalVisible ? 'auto' : 'none'}
+        >
+          {webViewModalVisible && (
+            <SafeAreaView edges={['top']} style={{ backgroundColor: '#0f172a' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: '#1e293b' }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700' }}>Envoi du SMS...</Text>
+                  <Text style={{ color: '#94a3b8', fontSize: 12, marginTop: 2 }}>+{fullPhoneNumber}</Text>
                 </View>
-              )}
-              onError={(e) => {
-                console.log('WebView error', e.nativeEvent);
-                if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
-                setLoading(false);
-                setShowFirebaseWebView(false);
-                setWebViewModalVisible(false);
-                setLoginError('Impossible de charger la page de vérification. Vérifiez votre connexion.');
-              }}
-              onHttpError={(e) => {
-                console.log('WebView HTTP error', e.nativeEvent.statusCode);
-                if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
-                setLoading(false);
-                setShowFirebaseWebView(false);
-                setWebViewModalVisible(false);
-                setLoginError(`Erreur serveur (${e.nativeEvent.statusCode}). Réessayez dans 1 minute.`);
-              }}
-            />
+                <TouchableOpacity onPress={handleCancelOtp} style={{ padding: 8 }}>
+                  <Ionicons name="close" size={28} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            </SafeAreaView>
           )}
-        </SafeAreaView>
-      </Modal>
+          <WebView
+            ref={webViewRef}
+            source={{ uri: getFirebaseVerifyUrl(fullPhoneNumber) }}
+            onMessage={handleWebViewMessage}
+            style={{ flex: 1, backgroundColor: '#0f172a' }}
+            javaScriptEnabled
+            domStorageEnabled
+            originWhitelist={['*']}
+            mixedContentMode="always"
+            thirdPartyCookiesEnabled
+            startInLoadingState
+            renderLoading={() => (
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f172a' }}>
+                <ActivityIndicator size="large" color="#f59e0b" />
+                <Text style={{ color: '#94a3b8', marginTop: 16 }}>Connexion à Firebase...</Text>
+              </View>
+            )}
+            onError={(e) => {
+              console.log('WebView error', e.nativeEvent);
+              if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
+              setLoading(false);
+              setShowFirebaseWebView(false);
+              setWebViewModalVisible(false);
+              setLoginError('Impossible de charger la page de vérification. Vérifiez votre connexion.');
+            }}
+            onHttpError={(e) => {
+              console.log('WebView HTTP error', e.nativeEvent.statusCode);
+              if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
+              setLoading(false);
+              setShowFirebaseWebView(false);
+              setWebViewModalVisible(false);
+              setLoginError(`Erreur serveur (${e.nativeEvent.statusCode}). Réessayez dans 1 minute.`);
+            }}
+          />
+        </View>
+      )}
 
       {/* Country Picker Modal - keyboard fix via dynamic paddingBottom */}
       <Modal visible={showCountryPicker} animationType="slide" transparent onRequestClose={() => { setShowCountryPicker(false); setSearchQuery(''); }}>
