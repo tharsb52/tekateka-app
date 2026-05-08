@@ -52,12 +52,15 @@ export default function LoginScreen() {
 
   const fullPhoneNumber = selectedCountry.code + localNumber.replace(/^0+/, '');
 
+  const webViewRef = React.useRef<any>(null);
+
   const handleSendOTP = async () => {
     if (localNumber.length < 6) {
       setLoginError('Veuillez entrer un numéro valide');
       return;
     }
     setLoginError('');
+    setLoading(true);
     setShowFirebaseWebView(true);
   };
 
@@ -66,7 +69,12 @@ export default function LoginScreen() {
       const data = JSON.parse(event.nativeEvent.data);
       console.log('[WebView] Message:', data.type);
       
-      if (data.type === 'verified' && data.success) {
+      if (data.type === 'codeSent' && data.success) {
+        // SMS envoyé ! Montrer le champ OTP
+        setLoading(false);
+        setOtpSent(true);
+      } else if (data.type === 'verified' && data.success) {
+        // Code vérifié ! Procéder au login
         setShowFirebaseWebView(false);
         setLoading(true);
         setLoginError('');
@@ -75,11 +83,15 @@ export default function LoginScreen() {
         } catch (error: any) {
           console.error('Login error:', error);
           setLoginError(error.message || 'Erreur de connexion');
-        } finally {
           setLoading(false);
         }
-      } else if (data.type === 'error' || data.type === 'verifyError') {
-        setLoginError(data.message || 'Erreur de vérification');
+      } else if (data.type === 'error') {
+        setLoading(false);
+        setLoginError(data.message || 'Erreur lors de l\'envoi du SMS');
+        setShowFirebaseWebView(false);
+      } else if (data.type === 'verifyError') {
+        setLoading(false);
+        setLoginError(data.message || 'Code incorrect');
       }
     } catch (e) {
       console.log('[WebView] Parse error:', e);
@@ -87,8 +99,22 @@ export default function LoginScreen() {
   };
 
   const handleVerifyOTP = async () => {
-    // This is now handled by the WebView
-    setShowFirebaseWebView(true);
+    if (otp.length < 4) {
+      setLoginError('Entrez le code reçu par SMS');
+      return;
+    }
+    setLoading(true);
+    setLoginError('');
+    // Envoyer le code à la WebView pour vérification
+    if (webViewRef.current) {
+      webViewRef.current.injectJavaScript(`
+        (function() {
+          document.getElementById('otpInput').value = '${otp}';
+          verifyCode();
+        })();
+        true;
+      `);
+    }
   };
 
   const handleCredentialLogin = async () => {
@@ -223,6 +249,44 @@ export default function LoginScreen() {
                   >
                     {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{i18n.t('sendOTP')}</Text>}
                   </TouchableOpacity>
+
+                  {/* OTP Input - visible après envoi du SMS */}
+                  {otpSent && (
+                    <View style={{ marginTop: 20 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12, backgroundColor: '#eff6ff', padding: 10, borderRadius: 10 }}>
+                        <Ionicons name="checkmark-circle" size={20} color="#2563eb" />
+                        <Text style={{ color: '#2563eb', fontSize: 13, flex: 1 }}>SMS envoyé au +{fullPhoneNumber}</Text>
+                      </View>
+                      <TextInput
+                        style={{ backgroundColor: '#fff', borderWidth: 1, borderColor: '#d1d5db', borderRadius: 12, padding: 16, fontSize: 24, textAlign: 'center', letterSpacing: 8, fontWeight: 'bold', color: '#1e293b' }}
+                        placeholder="------"
+                        placeholderTextColor="#d1d5db"
+                        value={otp}
+                        onChangeText={(t) => { setOtp(t); setLoginError(''); }}
+                        keyboardType="number-pad"
+                        maxLength={6}
+                        autoFocus
+                      />
+                      {loginError ? (
+                        <View style={{ backgroundColor: '#fee2e2', borderRadius: 10, padding: 10, marginTop: 8 }}>
+                          <Text style={{ color: '#dc2626', fontSize: 13, textAlign: 'center' }}>{loginError}</Text>
+                        </View>
+                      ) : null}
+                      <TouchableOpacity
+                        style={[styles.button, { marginTop: 12 }, loading && styles.buttonDisabled]}
+                        onPress={handleVerifyOTP}
+                        disabled={loading}
+                      >
+                        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Vérifier le code</Text>}
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={{ marginTop: 10, alignItems: 'center', padding: 8 }}
+                        onPress={() => { setOtpSent(false); setOtp(''); setShowFirebaseWebView(false); setLoginError(''); }}
+                      >
+                        <Text style={{ color: '#64748b', fontSize: 13 }}>Changer de numéro</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
             </View>
           )}
 
@@ -290,39 +354,26 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </ScrollView>
 
-        {/* Firebase Phone Auth WebView */}
-        <Modal visible={showFirebaseWebView} animationType="slide">
-          <SafeAreaView style={{ flex: 1, backgroundColor: '#0f172a' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: '#334155' }}>
-              <TouchableOpacity onPress={() => setShowFirebaseWebView(false)} style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name="close" size={24} color="#fff" />
-              </TouchableOpacity>
-              <Text style={{ flex: 1, textAlign: 'center', color: '#fff', fontSize: 16, fontWeight: '600' }}>Vérification SMS</Text>
-              <View style={{ width: 44 }} />
-            </View>
-            {Platform.OS === 'web' ? (
-              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-                <Text style={{ color: '#94a3b8', textAlign: 'center' }}>
-                  La vérification SMS s'ouvre dans une nouvelle fenêtre...
-                </Text>
-              </View>
-            ) : (
-              <WebView
-                source={{ uri: getFirebaseVerifyUrl(fullPhoneNumber) }}
-                onMessage={handleWebViewMessage}
-                style={{ flex: 1 }}
-                javaScriptEnabled={true}
-                domStorageEnabled={true}
-              />
-            )}
-          </SafeAreaView>
-        </Modal>
+        {/* Firebase Phone Auth WebView - CACHÉ (en arrière-plan) */}
+        {showFirebaseWebView && Platform.OS !== 'web' && (
+          <View style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }}>
+            <WebView
+              ref={webViewRef}
+              source={{ uri: getFirebaseVerifyUrl(fullPhoneNumber) }}
+              onMessage={handleWebViewMessage}
+              style={{ width: 1, height: 1 }}
+              javaScriptEnabled={true}
+              domStorageEnabled={true}
+            />
+          </View>
+        )}
       </KeyboardAvoidingView>
 
       {/* Country Picker Modal */}
       <Modal visible={showCountryPicker} animationType="slide" transparent>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { maxHeight: '80%' }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Choisir le pays</Text>
               <TouchableOpacity onPress={() => { setShowCountryPicker(false); setSearchQuery(''); }}>
@@ -383,6 +434,7 @@ export default function LoginScreen() {
             </ScrollView>
           </View>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
