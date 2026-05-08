@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,12 +7,13 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  Alert,
   ActivityIndicator,
   Image,
   Modal,
   ScrollView,
   StatusBar,
+  Keyboard,
+  EmitterSubscription,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
@@ -38,10 +39,33 @@ export default function LoginScreen() {
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [mockOtp, setMockOtp] = useState('');
   const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showFirebaseWebView, setShowFirebaseWebView] = useState(false);
+  const [webViewModalVisible, setWebViewModalVisible] = useState(false);
+
+  const webViewRef = useRef<any>(null);
+  const sendTimeoutRef = useRef<any>(null);
+
+  // Track keyboard height (used for the country picker modal on Android)
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub: EmitterSubscription = Keyboard.addListener(showEvent, (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSub: EmitterSubscription = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+      if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
+    };
+  }, []);
 
   // Credential login state
   const [identifier, setIdentifier] = useState('');
@@ -52,8 +76,6 @@ export default function LoginScreen() {
 
   const fullPhoneNumber = selectedCountry.code + localNumber.replace(/^0+/, '');
 
-  const webViewRef = React.useRef<any>(null);
-
   const handleSendOTP = async () => {
     if (localNumber.length < 6) {
       setLoginError('Veuillez entrer un numéro valide');
@@ -61,21 +83,38 @@ export default function LoginScreen() {
     }
     setLoginError('');
     setLoading(true);
+    setOtp('');
+    setOtpSent(false);
+
+    // Open WebView visibly in Modal so reCAPTCHA can resolve
     setShowFirebaseWebView(true);
+    setWebViewModalVisible(true);
+
+    // Safety timeout: if no response after 45s, abort
+    if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
+    sendTimeoutRef.current = setTimeout(() => {
+      setLoading(false);
+      setShowFirebaseWebView(false);
+      setWebViewModalVisible(false);
+      setLoginError('Délai dépassé. Vérifiez votre connexion et réessayez.');
+    }, 45000);
   };
 
   const handleWebViewMessage = async (event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
       console.log('[WebView] Message:', data.type);
-      
+
       if (data.type === 'codeSent' && data.success) {
-        // SMS envoyé ! Montrer le champ OTP
+        // SMS sent: hide modal but keep WebView mounted for verification step
+        if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
         setLoading(false);
         setOtpSent(true);
+        setWebViewModalVisible(false);
       } else if (data.type === 'verified' && data.success) {
-        // Code vérifié ! Procéder au login
+        if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
         setShowFirebaseWebView(false);
+        setWebViewModalVisible(false);
         setLoading(true);
         setLoginError('');
         try {
@@ -86,9 +125,11 @@ export default function LoginScreen() {
           setLoading(false);
         }
       } else if (data.type === 'error') {
+        if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
         setLoading(false);
-        setLoginError(data.message || 'Erreur lors de l\'envoi du SMS');
+        setLoginError(data.message || "Erreur lors de l'envoi du SMS");
         setShowFirebaseWebView(false);
+        setWebViewModalVisible(false);
       } else if (data.type === 'verifyError') {
         setLoading(false);
         setLoginError(data.message || 'Code incorrect');
@@ -105,22 +146,40 @@ export default function LoginScreen() {
     }
     setLoading(true);
     setLoginError('');
-    // Envoyer le code à la WebView pour vérification
     if (webViewRef.current) {
       webViewRef.current.injectJavaScript(`
         (function() {
-          document.getElementById('otpInput').value = '${otp}';
-          verifyCode();
+          try {
+            document.getElementById('otpInput').value = ${JSON.stringify(otp)};
+            verifyCode();
+          } catch (e) {
+            if (window.ReactNativeWebView) {
+              window.ReactNativeWebView.postMessage(JSON.stringify({type:'verifyError',message:'Erreur interne'}));
+            }
+          }
         })();
         true;
       `);
+    } else {
+      setLoading(false);
+      setLoginError('Erreur : session expirée. Renvoyez le code.');
     }
+  };
+
+  const handleCancelOtp = () => {
+    if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
+    setLoading(false);
+    setShowFirebaseWebView(false);
+    setWebViewModalVisible(false);
+    setOtpSent(false);
+    setOtp('');
+    setLoginError('');
   };
 
   const handleCredentialLogin = async () => {
     setCredError('');
     if (!identifier.trim()) {
-      setCredError('Entrez votre email ou nom d\'utilisateur');
+      setCredError("Entrez votre email ou nom d'utilisateur");
       return;
     }
     if (!password) {
@@ -213,80 +272,82 @@ export default function LoginScreen() {
           {/* ========== PHONE TAB ========== */}
           {activeTab === 'phone' && (
             <View style={styles.form}>
-                  <Text style={styles.label}>{i18n.t('phoneNumber')}</Text>
-                  <View style={styles.phoneRow}>
-                    <TouchableOpacity
-                      style={styles.countryButton}
-                      onPress={() => setShowCountryPicker(true)}
-                    >
-                      <Image source={{ uri: getFlagUrl(selectedCountry.iso) }} style={styles.countryFlagImg} />
-                      <Text style={styles.countryCode}>+{selectedCountry.code}</Text>
-                      <Ionicons name="chevron-down" size={14} color="#64748b" />
-                    </TouchableOpacity>
-                    <TextInput
-                      style={styles.phoneInput}
-                      placeholder="Numéro local"
-                      placeholderTextColor="#94a3b8"
-                      value={localNumber}
-                      onChangeText={setLocalNumber}
-                      keyboardType="phone-pad"
-                      maxLength={12}
-                      autoFocus
-                    />
+              <Text style={styles.label}>{i18n.t('phoneNumber')}</Text>
+              <View style={styles.phoneRow}>
+                <TouchableOpacity
+                  style={styles.countryButton}
+                  onPress={() => setShowCountryPicker(true)}
+                >
+                  <Image source={{ uri: getFlagUrl(selectedCountry.iso) }} style={styles.countryFlagImg} />
+                  <Text style={styles.countryCode}>+{selectedCountry.code}</Text>
+                  <Ionicons name="chevron-down" size={14} color="#64748b" />
+                </TouchableOpacity>
+                <TextInput
+                  style={styles.phoneInput}
+                  placeholder="Numéro local"
+                  placeholderTextColor="#94a3b8"
+                  value={localNumber}
+                  onChangeText={setLocalNumber}
+                  keyboardType="phone-pad"
+                  maxLength={12}
+                  autoFocus
+                />
+              </View>
+              {localNumber.length > 3 && (
+                <Text style={styles.previewNumber}>+{fullPhoneNumber}</Text>
+              )}
+              {loginError ? (
+                <View style={{ backgroundColor: '#fee2e2', borderRadius: 10, padding: 12, marginBottom: 8 }}>
+                  <Text style={{ color: '#dc2626', fontSize: 14, textAlign: 'center' }}>{loginError}</Text>
+                </View>
+              ) : null}
+              {!otpSent && (
+                <TouchableOpacity
+                  style={[styles.button, loading && styles.buttonDisabled]}
+                  onPress={handleSendOTP}
+                  disabled={loading}
+                >
+                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{i18n.t('sendOTP')}</Text>}
+                </TouchableOpacity>
+              )}
+
+              {/* OTP Input - visible après envoi du SMS */}
+              {otpSent && (
+                <View style={{ marginTop: 20 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12, backgroundColor: '#eff6ff', padding: 10, borderRadius: 10 }}>
+                    <Ionicons name="checkmark-circle" size={20} color="#2563eb" />
+                    <Text style={{ color: '#2563eb', fontSize: 13, flex: 1 }}>SMS envoyé au +{fullPhoneNumber}</Text>
                   </View>
-                  {localNumber.length > 3 && (
-                    <Text style={styles.previewNumber}>+{fullPhoneNumber}</Text>
-                  )}
+                  <TextInput
+                    style={{ backgroundColor: '#fff', borderWidth: 1, borderColor: '#d1d5db', borderRadius: 12, padding: 16, fontSize: 24, textAlign: 'center', letterSpacing: 8, fontWeight: 'bold', color: '#1e293b' }}
+                    placeholder="------"
+                    placeholderTextColor="#d1d5db"
+                    value={otp}
+                    onChangeText={(t) => { setOtp(t); setLoginError(''); }}
+                    keyboardType="number-pad"
+                    maxLength={6}
+                    autoFocus
+                  />
                   {loginError ? (
-                    <View style={{ backgroundColor: '#fee2e2', borderRadius: 10, padding: 12, marginBottom: 8 }}>
-                      <Text style={{ color: '#dc2626', fontSize: 14, textAlign: 'center' }}>{loginError}</Text>
+                    <View style={{ backgroundColor: '#fee2e2', borderRadius: 10, padding: 10, marginTop: 8 }}>
+                      <Text style={{ color: '#dc2626', fontSize: 13, textAlign: 'center' }}>{loginError}</Text>
                     </View>
                   ) : null}
                   <TouchableOpacity
-                    style={[styles.button, loading && styles.buttonDisabled]}
-                    onPress={handleSendOTP}
+                    style={[styles.button, { marginTop: 12 }, loading && styles.buttonDisabled]}
+                    onPress={handleVerifyOTP}
                     disabled={loading}
                   >
-                    {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{i18n.t('sendOTP')}</Text>}
+                    {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Vérifier le code</Text>}
                   </TouchableOpacity>
-
-                  {/* OTP Input - visible après envoi du SMS */}
-                  {otpSent && (
-                    <View style={{ marginTop: 20 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12, backgroundColor: '#eff6ff', padding: 10, borderRadius: 10 }}>
-                        <Ionicons name="checkmark-circle" size={20} color="#2563eb" />
-                        <Text style={{ color: '#2563eb', fontSize: 13, flex: 1 }}>SMS envoyé au +{fullPhoneNumber}</Text>
-                      </View>
-                      <TextInput
-                        style={{ backgroundColor: '#fff', borderWidth: 1, borderColor: '#d1d5db', borderRadius: 12, padding: 16, fontSize: 24, textAlign: 'center', letterSpacing: 8, fontWeight: 'bold', color: '#1e293b' }}
-                        placeholder="------"
-                        placeholderTextColor="#d1d5db"
-                        value={otp}
-                        onChangeText={(t) => { setOtp(t); setLoginError(''); }}
-                        keyboardType="number-pad"
-                        maxLength={6}
-                        autoFocus
-                      />
-                      {loginError ? (
-                        <View style={{ backgroundColor: '#fee2e2', borderRadius: 10, padding: 10, marginTop: 8 }}>
-                          <Text style={{ color: '#dc2626', fontSize: 13, textAlign: 'center' }}>{loginError}</Text>
-                        </View>
-                      ) : null}
-                      <TouchableOpacity
-                        style={[styles.button, { marginTop: 12 }, loading && styles.buttonDisabled]}
-                        onPress={handleVerifyOTP}
-                        disabled={loading}
-                      >
-                        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Vérifier le code</Text>}
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={{ marginTop: 10, alignItems: 'center', padding: 8 }}
-                        onPress={() => { setOtpSent(false); setOtp(''); setShowFirebaseWebView(false); setLoginError(''); }}
-                      >
-                        <Text style={{ color: '#64748b', fontSize: 13 }}>Changer de numéro</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
+                  <TouchableOpacity
+                    style={{ marginTop: 10, alignItems: 'center', padding: 8 }}
+                    onPress={handleCancelOtp}
+                  >
+                    <Text style={{ color: '#64748b', fontSize: 13 }}>Changer de numéro</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           )}
 
@@ -345,7 +406,7 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
           )}
-          
+
           {/* Ambassador Link */}
           <TouchableOpacity style={{ marginTop: 20, paddingVertical: 14, alignItems: 'center' }} onPress={() => router.push('/ambassador')}>
             <Text style={{ fontSize: 14, color: '#94a3b8' }}>Vous êtes ambassadeur ?{' '}
@@ -354,29 +415,70 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </ScrollView>
 
-        {/* Firebase Phone Auth WebView - CACHÉ (en arrière-plan) */}
-        {showFirebaseWebView && Platform.OS !== 'web' && (
-          <View style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }}>
+        {/* Firebase Phone Auth WebView - hidden but mounted (for verification step) */}
+        {showFirebaseWebView && !webViewModalVisible && Platform.OS !== 'web' && (
+          <View style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} pointerEvents="none">
             <WebView
               ref={webViewRef}
               source={{ uri: getFirebaseVerifyUrl(fullPhoneNumber) }}
               onMessage={handleWebViewMessage}
               style={{ width: 1, height: 1 }}
-              javaScriptEnabled={true}
-              domStorageEnabled={true}
+              javaScriptEnabled
+              domStorageEnabled
+              originWhitelist={['*']}
             />
           </View>
         )}
       </KeyboardAvoidingView>
 
-      {/* Country Picker Modal */}
-      <Modal visible={showCountryPicker} animationType="slide" transparent>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      {/* Visible WebView Modal - shown briefly while SMS is being sent (so reCAPTCHA can resolve) */}
+      <Modal visible={webViewModalVisible} animationType="fade" transparent={false} onRequestClose={handleCancelOtp}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#0f172a' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: '#1e293b' }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700' }}>Envoi du SMS...</Text>
+              <Text style={{ color: '#94a3b8', fontSize: 12, marginTop: 2 }}>+{fullPhoneNumber}</Text>
+            </View>
+            <TouchableOpacity onPress={handleCancelOtp} style={{ padding: 8 }}>
+              <Ionicons name="close" size={28} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          {showFirebaseWebView && Platform.OS !== 'web' && (
+            <WebView
+              ref={webViewRef}
+              source={{ uri: getFirebaseVerifyUrl(fullPhoneNumber) }}
+              onMessage={handleWebViewMessage}
+              style={{ flex: 1, backgroundColor: '#0f172a' }}
+              javaScriptEnabled
+              domStorageEnabled
+              originWhitelist={['*']}
+              startInLoadingState
+              renderLoading={() => (
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f172a' }}>
+                  <ActivityIndicator size="large" color="#f59e0b" />
+                  <Text style={{ color: '#94a3b8', marginTop: 16 }}>Connexion à Firebase...</Text>
+                </View>
+              )}
+            />
+          )}
+        </SafeAreaView>
+      </Modal>
+
+      {/* Country Picker Modal - keyboard fix via dynamic paddingBottom */}
+      <Modal visible={showCountryPicker} animationType="slide" transparent onRequestClose={() => { setShowCountryPicker(false); setSearchQuery(''); }}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { maxHeight: '80%' }]}>
+          <View
+            style={[
+              styles.modalContent,
+              {
+                maxHeight: '85%',
+                paddingBottom: keyboardHeight > 0 ? keyboardHeight : 0,
+              },
+            ]}
+          >
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Choisir le pays</Text>
-              <TouchableOpacity onPress={() => { setShowCountryPicker(false); setSearchQuery(''); }}>
+              <TouchableOpacity onPress={() => { setShowCountryPicker(false); setSearchQuery(''); Keyboard.dismiss(); }}>
                 <Ionicons name="close" size={28} color="#64748b" />
               </TouchableOpacity>
             </View>
@@ -389,6 +491,7 @@ export default function LoginScreen() {
                 value={searchQuery}
                 onChangeText={setSearchQuery}
                 autoCorrect={false}
+                returnKeyType="search"
               />
               {searchQuery.length > 0 && (
                 <TouchableOpacity onPress={() => setSearchQuery('')}>
@@ -396,7 +499,12 @@ export default function LoginScreen() {
                 </TouchableOpacity>
               )}
             </View>
-            <ScrollView style={styles.countryList} keyboardShouldPersistTaps="handled">
+            <ScrollView
+              style={styles.countryList}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              contentContainerStyle={{ paddingBottom: 12 }}
+            >
               {searchCountries(searchQuery).map((country, index) => (
                 <TouchableOpacity
                   key={`${country.iso}-${index}`}
@@ -408,14 +516,17 @@ export default function LoginScreen() {
                     setSelectedCountry(country);
                     setShowCountryPicker(false);
                     setSearchQuery('');
+                    Keyboard.dismiss();
                   }}
                 >
                   <Image source={{ uri: getFlagUrl(country.iso) }} style={styles.countryItemFlagImg} />
                   <View style={{ flex: 1 }}>
-                    <Text style={[
-                      styles.countryItemName,
-                      selectedCountry.iso === country.iso && selectedCountry.code === country.code && styles.countryItemNameSelected,
-                    ]}>
+                    <Text
+                      style={[
+                        styles.countryItemName,
+                        selectedCountry.iso === country.iso && selectedCountry.code === country.code && styles.countryItemNameSelected,
+                      ]}
+                    >
                       {country.name}
                     </Text>
                     <Text style={styles.countryItemCode}>+{country.code}</Text>
@@ -434,7 +545,6 @@ export default function LoginScreen() {
             </ScrollView>
           </View>
         </View>
-        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -607,7 +717,7 @@ const styles = StyleSheet.create({
 
   // Country picker modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '70%' },
+  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24 },
   modalHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     padding: 20, borderBottomWidth: 1, borderBottomColor: '#e2e8f0',
