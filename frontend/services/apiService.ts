@@ -57,8 +57,9 @@ async function apiFetch(path: string, options: RequestInit = {}): Promise<any> {
       data = JSON.parse(responseText);
     } catch (parseError) {
       // Response is not JSON (likely HTML from proxy or error page)
-      console.error(`API returned non-JSON response for ${path}:`, responseText.substring(0, 100));
-      throw new Error('Serveur inaccessible. Vérifiez votre connexion internet.');
+      console.error(`API non-JSON response for ${path}:`, responseText.substring(0, 200));
+      const preview = (responseText || '').substring(0, 80).replace(/<[^>]+>/g, '').trim();
+      throw new Error(`Serveur inaccessible (${response.status}). ${preview ? 'Réponse: ' + preview : 'Vérifiez votre connexion.'}`);
     }
     
     if (!response.ok) {
@@ -68,7 +69,7 @@ async function apiFetch(path: string, options: RequestInit = {}): Promise<any> {
     return data;
   } catch (error: any) {
     if (error.message?.includes('fetch') || error.message?.includes('Network') || error.message?.includes('network')) {
-      throw new Error('Erreur réseau. Vérifiez votre connexion internet.');
+      throw new Error(`Erreur réseau (${url.replace('https://', '').split('/')[0]}). Vérifiez votre connexion.`);
     }
     throw error;
   }
