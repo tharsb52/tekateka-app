@@ -29,8 +29,7 @@
         "CAMERA",
         "READ_EXTERNAL_STORAGE"
       ],
-      "package": "com.tekateka.app",
-      "googleServicesFile": "./google-services.json"
+      "package": "com.tekateka.app"
     },
     "web": {
       "bundler": "metro",
