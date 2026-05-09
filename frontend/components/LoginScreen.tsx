@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -20,9 +20,8 @@ import { useAuth } from '../context/AuthContext';
 import { useRouter } from 'expo-router';
 import i18n from '../utils/i18n';
 import { Ionicons } from '@expo/vector-icons';
-import { getFirebaseVerifyUrl } from '../services/otpService';
 import { ALL_COUNTRIES, searchCountries, getFlagUrl, Country } from '../utils/countries';
-import WebView from 'react-native-webview';
+import { API_BASE_URL } from '../services/constants';
 
 const BG = '#fef3e7';
 
@@ -39,13 +38,9 @@ export default function LoginScreen() {
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [debugCode, setDebugCode] = useState<string | null>(null);
   const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [showFirebaseWebView, setShowFirebaseWebView] = useState(false);
-  const [webViewModalVisible, setWebViewModalVisible] = useState(false);
-
-  const webViewRef = useRef<any>(null);
-  const sendTimeoutRef = useRef<any>(null);
 
   // Track keyboard height (used for the country picker modal on Android)
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -63,7 +58,6 @@ export default function LoginScreen() {
     return () => {
       showSub.remove();
       hideSub.remove();
-      if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
     };
   }, []);
 
@@ -84,95 +78,74 @@ export default function LoginScreen() {
     setLoginError('');
     setLoading(true);
     setOtp('');
-    setOtpSent(false);
+    setDebugCode(null);
 
-    // Open WebView visibly in Modal so reCAPTCHA can resolve
-    setShowFirebaseWebView(true);
-    setWebViewModalVisible(true);
-
-    // Safety timeout: if no response after 45s, abort
-    if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
-    sendTimeoutRef.current = setTimeout(() => {
-      setLoading(false);
-      setShowFirebaseWebView(false);
-      setWebViewModalVisible(false);
-      setLoginError('Délai dépassé. Vérifiez votre connexion et réessayez.');
-    }, 45000);
-  };
-
-  const handleWebViewMessage = async (event: any) => {
     try {
-      const data = JSON.parse(event.nativeEvent.data);
-      console.log('[WebView] Message:', data.type);
+      const response = await fetch(`${API_BASE_URL}/api/otp/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phoneNumber: `+${fullPhoneNumber}` }),
+      });
+      const data = await response.json();
 
-      if (data.type === 'codeSent' && data.success) {
-        // SMS sent: hide modal but keep WebView mounted for verification step
-        if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
+      if (!response.ok || !data.success) {
+        setLoginError(data.message || 'Erreur lors de l\'envoi du code');
         setLoading(false);
-        setOtpSent(true);
-        setWebViewModalVisible(false);
-      } else if (data.type === 'verified' && data.success) {
-        if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
-        setShowFirebaseWebView(false);
-        setWebViewModalVisible(false);
-        setLoading(true);
-        setLoginError('');
-        try {
-          await login(fullPhoneNumber, 'firebase-verified');
-        } catch (error: any) {
-          console.error('Login error:', error);
-          setLoginError(error.message || 'Erreur de connexion');
-          setLoading(false);
-        }
-      } else if (data.type === 'error') {
-        if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
-        setLoading(false);
-        setLoginError(data.message || "Erreur lors de l'envoi du SMS");
-        setShowFirebaseWebView(false);
-        setWebViewModalVisible(false);
-      } else if (data.type === 'verifyError') {
-        setLoading(false);
-        setLoginError(data.message || 'Code incorrect');
+        return;
       }
-    } catch (e) {
-      console.log('[WebView] Parse error:', e);
+
+      setOtpSent(true);
+      setLoading(false);
+
+      // In test/sandbox mode, the backend returns the code so users can test
+      if (data.debug_code) {
+        setDebugCode(String(data.debug_code));
+      }
+    } catch (e: any) {
+      console.error('Send OTP error:', e);
+      setLoginError('Erreur réseau. Vérifiez votre connexion et réessayez.');
+      setLoading(false);
     }
   };
 
   const handleVerifyOTP = async () => {
     if (otp.length < 4) {
-      setLoginError('Entrez le code reçu par SMS');
+      setLoginError('Entrez le code reçu');
       return;
     }
     setLoading(true);
     setLoginError('');
-    if (webViewRef.current) {
-      webViewRef.current.injectJavaScript(`
-        (function() {
-          try {
-            document.getElementById('otpInput').value = ${JSON.stringify(otp)};
-            verifyCode();
-          } catch (e) {
-            if (window.ReactNativeWebView) {
-              window.ReactNativeWebView.postMessage(JSON.stringify({type:'verifyError',message:'Erreur interne'}));
-            }
-          }
-        })();
-        true;
-      `);
-    } else {
+
+    try {
+      // 1) Verify OTP server-side
+      const verifyRes = await fetch(`${API_BASE_URL}/api/otp/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phoneNumber: `+${fullPhoneNumber}`, code: otp }),
+      });
+      const verifyData = await verifyRes.json();
+
+      if (!verifyRes.ok || !verifyData.success) {
+        setLoginError(verifyData.message || 'Code incorrect');
+        setLoading(false);
+        return;
+      }
+
+      // 2) Verified — log into the app (creates user if needed)
+      await login(`+${fullPhoneNumber}`, otp);
+      // AuthContext will trigger navigation; reset local UI state in case
       setLoading(false);
-      setLoginError('Erreur : session expirée. Renvoyez le code.');
+    } catch (e: any) {
+      console.error('Verify OTP error:', e);
+      setLoginError(e.message || 'Erreur de vérification');
+      setLoading(false);
     }
   };
 
-  const handleCancelOtp = () => {
-    if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
-    setLoading(false);
-    setShowFirebaseWebView(false);
-    setWebViewModalVisible(false);
+  const handleResetPhone = () => {
     setOtpSent(false);
     setOtp('');
+    setDebugCode(null);
     setLoginError('');
   };
 
@@ -277,6 +250,7 @@ export default function LoginScreen() {
                 <TouchableOpacity
                   style={styles.countryButton}
                   onPress={() => setShowCountryPicker(true)}
+                  disabled={otpSent}
                 >
                   <Image source={{ uri: getFlagUrl(selectedCountry.iso) }} style={styles.countryFlagImg} />
                   <Text style={styles.countryCode}>+{selectedCountry.code}</Text>
@@ -290,6 +264,7 @@ export default function LoginScreen() {
                   onChangeText={setLocalNumber}
                   keyboardType="phone-pad"
                   maxLength={12}
+                  editable={!otpSent}
                   autoFocus
                 />
               </View>
@@ -311,15 +286,25 @@ export default function LoginScreen() {
                 </TouchableOpacity>
               )}
 
-              {/* OTP Input - visible après envoi du SMS */}
+              {/* OTP Input - visible after SMS sent */}
               {otpSent && (
-                <View style={{ marginTop: 20 }}>
+                <View style={{ marginTop: 16 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12, backgroundColor: '#eff6ff', padding: 10, borderRadius: 10 }}>
                     <Ionicons name="checkmark-circle" size={20} color="#2563eb" />
-                    <Text style={{ color: '#2563eb', fontSize: 13, flex: 1 }}>SMS envoyé au +{fullPhoneNumber}</Text>
+                    <Text style={{ color: '#2563eb', fontSize: 13, flex: 1 }}>Code envoyé au +{fullPhoneNumber}</Text>
                   </View>
+
+                  {/* TEST MODE: show the code prominently so any user can test */}
+                  {debugCode && (
+                    <View style={styles.devBox}>
+                      <Text style={styles.devLabel}>MODE TEST · Votre code :</Text>
+                      <Text style={styles.devCode}>{debugCode}</Text>
+                      <Text style={styles.devHint}>Copiez ce code dans le champ ci-dessous</Text>
+                    </View>
+                  )}
+
                   <TextInput
-                    style={{ backgroundColor: '#fff', borderWidth: 1, borderColor: '#d1d5db', borderRadius: 12, padding: 16, fontSize: 24, textAlign: 'center', letterSpacing: 8, fontWeight: 'bold', color: '#1e293b' }}
+                    style={styles.otpInput}
                     placeholder="------"
                     placeholderTextColor="#d1d5db"
                     value={otp}
@@ -328,11 +313,7 @@ export default function LoginScreen() {
                     maxLength={6}
                     autoFocus
                   />
-                  {loginError ? (
-                    <View style={{ backgroundColor: '#fee2e2', borderRadius: 10, padding: 10, marginTop: 8 }}>
-                      <Text style={{ color: '#dc2626', fontSize: 13, textAlign: 'center' }}>{loginError}</Text>
-                    </View>
-                  ) : null}
+
                   <TouchableOpacity
                     style={[styles.button, { marginTop: 12 }, loading && styles.buttonDisabled]}
                     onPress={handleVerifyOTP}
@@ -340,12 +321,15 @@ export default function LoginScreen() {
                   >
                     {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Vérifier le code</Text>}
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={{ marginTop: 10, alignItems: 'center', padding: 8 }}
-                    onPress={handleCancelOtp}
-                  >
-                    <Text style={{ color: '#64748b', fontSize: 13 }}>Changer de numéro</Text>
-                  </TouchableOpacity>
+
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
+                    <TouchableOpacity onPress={handleSendOTP} style={{ padding: 8 }}>
+                      <Text style={{ color: '#2563eb', fontSize: 13, fontWeight: '600' }}>Renvoyer le code</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={handleResetPhone} style={{ padding: 8 }}>
+                      <Text style={{ color: '#64748b', fontSize: 13 }}>Changer de numéro</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               )}
             </View>
@@ -414,69 +398,7 @@ export default function LoginScreen() {
             </Text>
           </TouchableOpacity>
         </ScrollView>
-
       </KeyboardAvoidingView>
-
-      {/* PERSISTENT Firebase WebView — single instance, never unmounted while showFirebaseWebView=true.
-          Visibility is toggled via absolute positioning so the Firebase session (confirmationResult) survives. */}
-      {showFirebaseWebView && Platform.OS !== 'web' && (
-        <View
-          style={
-            webViewModalVisible
-              ? { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#0f172a', zIndex: 1000 }
-              : { position: 'absolute', width: 1, height: 1, top: -10, left: -10, opacity: 0, overflow: 'hidden' }
-          }
-          pointerEvents={webViewModalVisible ? 'auto' : 'none'}
-        >
-          {webViewModalVisible && (
-            <SafeAreaView edges={['top']} style={{ backgroundColor: '#0f172a' }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: '#1e293b' }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700' }}>Envoi du SMS...</Text>
-                  <Text style={{ color: '#94a3b8', fontSize: 12, marginTop: 2 }}>+{fullPhoneNumber}</Text>
-                </View>
-                <TouchableOpacity onPress={handleCancelOtp} style={{ padding: 8 }}>
-                  <Ionicons name="close" size={28} color="#fff" />
-                </TouchableOpacity>
-              </View>
-            </SafeAreaView>
-          )}
-          <WebView
-            ref={webViewRef}
-            source={{ uri: getFirebaseVerifyUrl(fullPhoneNumber) }}
-            onMessage={handleWebViewMessage}
-            style={{ flex: 1, backgroundColor: '#0f172a' }}
-            javaScriptEnabled
-            domStorageEnabled
-            originWhitelist={['*']}
-            mixedContentMode="always"
-            thirdPartyCookiesEnabled
-            startInLoadingState
-            renderLoading={() => (
-              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f172a' }}>
-                <ActivityIndicator size="large" color="#f59e0b" />
-                <Text style={{ color: '#94a3b8', marginTop: 16 }}>Connexion à Firebase...</Text>
-              </View>
-            )}
-            onError={(e) => {
-              console.log('WebView error', e.nativeEvent);
-              if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
-              setLoading(false);
-              setShowFirebaseWebView(false);
-              setWebViewModalVisible(false);
-              setLoginError('Impossible de charger la page de vérification. Vérifiez votre connexion.');
-            }}
-            onHttpError={(e) => {
-              console.log('WebView HTTP error', e.nativeEvent.statusCode);
-              if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
-              setLoading(false);
-              setShowFirebaseWebView(false);
-              setWebViewModalVisible(false);
-              setLoginError(`Erreur serveur (${e.nativeEvent.statusCode}). Réessayez dans 1 minute.`);
-            }}
-          />
-        </View>
-      )}
 
       {/* Country Picker Modal - keyboard fix via dynamic paddingBottom */}
       <Modal visible={showCountryPicker} animationType="slide" transparent onRequestClose={() => { setShowCountryPicker(false); setSearchQuery(''); }}>
@@ -575,85 +497,24 @@ const styles = StyleSheet.create({
   headerFlagImg: { width: 28, height: 20, borderRadius: 3, resizeMode: 'cover' },
   subtitle: { fontSize: 16, color: '#64748b', marginTop: 4 },
 
-  // Stories section
-  storiesSection: {
-    marginBottom: 16,
-  },
-  storiesTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#334155',
-    marginBottom: 10,
-    textAlign: 'center',
-  },
+  storiesSection: { marginBottom: 16 },
+  storiesTitle: { fontSize: 15, fontWeight: '700', color: '#334155', marginBottom: 10, textAlign: 'center' },
   storiesScroll: {},
-  storyCard: {
-    width: 160,
-    height: 100,
-    borderRadius: 14,
-    marginRight: 10,
-    overflow: 'hidden',
-  },
-  storyImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
-  },
-  storyOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
-  storyName: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  storyQuote: {
-    fontSize: 10,
-    color: '#e2e8f0',
-    fontStyle: 'italic',
-  },
+  storyCard: { width: 160, height: 100, borderRadius: 14, marginRight: 10, overflow: 'hidden' },
+  storyImage: { width: '100%', height: '100%', resizeMode: 'cover' },
+  storyOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 8, paddingVertical: 6 },
+  storyName: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  storyQuote: { fontSize: 10, color: '#e2e8f0', fontStyle: 'italic' },
 
-  // Tab switcher
-  tabContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    padding: 4,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  tab: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: 10,
-  },
-  tabActive: {
-    backgroundColor: '#eff6ff',
-  },
-  tabText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#94a3b8',
-  },
-  tabTextActive: {
-    color: '#2563eb',
-  },
+  tabContainer: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 14, padding: 4, marginBottom: 20, borderWidth: 1, borderColor: '#e2e8f0' },
+  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: 10 },
+  tabActive: { backgroundColor: '#eff6ff' },
+  tabText: { fontSize: 15, fontWeight: '600', color: '#94a3b8' },
+  tabTextActive: { color: '#2563eb' },
 
   form: { gap: 14 },
   label: { fontSize: 16, fontWeight: '600', color: '#334155', marginBottom: 4 },
 
-  // Phone input
   phoneRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   countryButton: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -668,29 +529,26 @@ const styles = StyleSheet.create({
   },
   previewNumber: { fontSize: 14, color: '#2563eb', fontWeight: '600', textAlign: 'center', marginTop: -4 },
 
-  input: {
-    backgroundColor: '#fff', borderWidth: 2, borderColor: '#e2e8f0',
-    borderRadius: 12, padding: 16, fontSize: 16, color: '#1e293b',
-  },
+  input: { backgroundColor: '#fff', borderWidth: 2, borderColor: '#e2e8f0', borderRadius: 12, padding: 16, fontSize: 16, color: '#1e293b' },
   otpInput: {
     backgroundColor: '#fff', borderWidth: 2, borderColor: '#e2e8f0',
-    borderRadius: 12, padding: 16, fontSize: 24, fontWeight: '700',
-    color: '#1e293b', textAlign: 'center', letterSpacing: 8,
+    borderRadius: 12, padding: 16, fontSize: 28, fontWeight: '700',
+    color: '#1e293b', textAlign: 'center', letterSpacing: 10,
   },
 
-  // Password
-  passwordRow: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#fff', borderWidth: 2, borderColor: '#e2e8f0', borderRadius: 12,
+  // DEV / TEST mode box (shows OTP code so any user can test from anywhere)
+  devBox: {
+    backgroundColor: '#fef3c7', borderWidth: 2, borderColor: '#fbbf24',
+    borderRadius: 12, padding: 14, marginBottom: 12, alignItems: 'center',
   },
-  passwordInput: {
-    flex: 1, padding: 16, fontSize: 16, color: '#1e293b',
-  },
-  eyeButton: {
-    padding: 14,
-  },
+  devLabel: { fontSize: 12, color: '#92400e', fontWeight: '700', letterSpacing: 1, marginBottom: 4 },
+  devCode: { fontSize: 32, fontWeight: '900', color: '#78350f', letterSpacing: 8, marginVertical: 4 },
+  devHint: { fontSize: 11, color: '#92400e', marginTop: 4 },
 
-  // Credential info
+  passwordRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderWidth: 2, borderColor: '#e2e8f0', borderRadius: 12 },
+  passwordInput: { flex: 1, padding: 16, fontSize: 16, color: '#1e293b' },
+  eyeButton: { padding: 14 },
+
   credInfoBox: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: '#eff6ff', borderRadius: 12, padding: 14,
@@ -698,7 +556,6 @@ const styles = StyleSheet.create({
   },
   credInfoText: { flex: 1, fontSize: 13, color: '#1e40af', lineHeight: 18 },
 
-  // Error
   errorBox: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: '#fef2f2', padding: 12, borderRadius: 10,
@@ -706,7 +563,6 @@ const styles = StyleSheet.create({
   },
   errorText: { flex: 1, fontSize: 14, color: '#dc2626' },
 
-  // Buttons
   button: {
     backgroundColor: '#2563eb', padding: 18, borderRadius: 12,
     alignItems: 'center', marginTop: 4, minHeight: 56, justifyContent: 'center',
@@ -714,22 +570,6 @@ const styles = StyleSheet.create({
   buttonDisabled: { backgroundColor: '#94a3b8' },
   buttonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
 
-  phoneDisplay: { fontSize: 20, fontWeight: '600', color: '#2563eb', textAlign: 'center' },
-  phoneDisplayRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 8 },
-
-  mockOtpBox: {
-    backgroundColor: '#fef3c7', padding: 16, borderRadius: 8,
-    borderWidth: 1, borderColor: '#fbbf24', alignItems: 'center',
-  },
-  mockOtpLabel: { fontSize: 12, color: '#92400e', marginBottom: 4 },
-  mockOtpText: { fontSize: 24, fontWeight: 'bold', color: '#92400e', letterSpacing: 4 },
-
-  backButton: {
-    padding: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6,
-  },
-  backButtonText: { color: '#64748b', fontSize: 16 },
-
-  // Country picker modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24 },
   modalHeader: {
@@ -745,10 +585,7 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 16, color: '#1e293b', padding: 0 },
   countryList: { padding: 12 },
-  countryItem: {
-    flexDirection: 'row', alignItems: 'center', gap: 14,
-    padding: 14, borderRadius: 12, marginBottom: 4,
-  },
+  countryItem: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderRadius: 12, marginBottom: 4 },
   countryItemSelected: { backgroundColor: '#eff6ff' },
   countryItemFlagImg: { width: 36, height: 24, borderRadius: 3, resizeMode: 'cover' },
   countryItemName: { fontSize: 16, color: '#1e293b', fontWeight: '500' },
