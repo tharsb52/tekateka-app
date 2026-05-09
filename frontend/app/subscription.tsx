@@ -10,6 +10,8 @@ import {
   ActivityIndicator,
   Modal,
   TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
@@ -153,7 +155,12 @@ export default function SubscriptionScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <AppHeader />
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+      >
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         {/* Navigation Header */}
         {trialExpired ? (
           <TouchableOpacity
@@ -374,6 +381,7 @@ export default function SubscriptionScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Payment Method Modal */}
       <Modal visible={paymentMethodModal} animationType="slide" transparent>

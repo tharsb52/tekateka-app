@@ -82,6 +82,7 @@ td{padding:10px 12px;border-bottom:1px solid #1e293b}
     <button class="tab active" onclick="showTab('dashboard')">Dashboard</button>
     <button class="tab" onclick="showTab('ambassadors')">Ambassadeurs</button>
     <button class="tab" onclick="showTab('codes')">Générer Codes</button>
+    <button class="tab" onclick="showTab('allcodes')">Tous les Codes</button>
     <button class="tab" onclick="showTab('sales')">Ventes</button>
   </div>
 
@@ -126,10 +127,11 @@ function doLogout(){
 
 async function showTab(tab){
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',
-    ['dashboard','ambassadors','codes','sales'][i]===tab));
+    ['dashboard','ambassadors','codes','allcodes','sales'][i]===tab));
   if(tab==='dashboard') await loadDashboard();
   else if(tab==='ambassadors') await loadAmbassadors();
   else if(tab==='codes') loadCodesForm();
+  else if(tab==='allcodes') await loadAllCodes();
   else if(tab==='sales') await loadSales();
 }
 
@@ -274,6 +276,59 @@ async function generateCodes(){
     document.getElementById('genMsg').innerHTML=`<div class="msg error">${data.detail||'Erreur'}</div>`;
   }
 }
+
+async function loadAllCodes(){
+  document.getElementById('content').innerHTML='<div class="card"><h2>Tous les codes d\\'activation</h2><p style="color:#94a3b8">Chargement...</p></div>';
+  const res=await fetch('/api/admin/codes/list',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({adminPassword})});
+  const codes=await res.json();
+  const totalCount=codes.length;
+  const usedCount=codes.filter(c=>c.status==='used').length;
+  const unusedCount=codes.filter(c=>c.status==='unused').length;
+
+  const byAmb={};
+  codes.forEach(c=>{
+    const key=c.ambassadorName||'?';
+    if(!byAmb[key])byAmb[key]={total:0,used:0,unused:0,codes:[]};
+    byAmb[key].total++;
+    if(c.status==='used')byAmb[key].used++;else byAmb[key].unused++;
+    byAmb[key].codes.push(c);
+  });
+
+  let groupHtml='';
+  Object.entries(byAmb).forEach(([name,data])=>{
+    groupHtml+=`<div style="margin-top:16px"><h3 style="color:#f59e0b;margin-bottom:8px;font-size:15px">${name} <span style="color:#94a3b8;font-weight:400;font-size:13px">(${data.total} codes • ${data.unused} libres • ${data.used} utilisés)</span></h3>
+      <div class="code-list">${data.codes.map(c=>`<span class="code-chip" style="background:${c.status==='used'?'#374151':'#0f172a'};color:${c.status==='used'?'#9ca3af':'#60a5fa'}" title="${c.plan} | ${c.status} | exp: ${c.expiresAt?new Date(c.expiresAt).toLocaleDateString('fr-FR'):'?'}">${c.code}${c.status==='used'?' ✓':''}</span>`).join('')}</div></div>`;
+  });
+
+  document.getElementById('content').innerHTML=`
+    <div class="stats-grid">
+      <div class="stat-card"><div class="value">${totalCount}</div><div class="label">Total codes</div></div>
+      <div class="stat-card"><div class="value" style="color:#60a5fa">${unusedCount}</div><div class="label">Disponibles</div></div>
+      <div class="stat-card"><div class="value" style="color:#94a3b8">${usedCount}</div><div class="label">Utilisés</div></div>
+    </div>
+    <div class="card">
+      <h2>Tous les codes d'activation (${totalCount})</h2>
+      <p style="color:#94a3b8;font-size:13px;margin-bottom:12px">Cliquez sur un code pour le copier.</p>
+      ${totalCount===0?'<p style="color:#64748b">Aucun code généré pour le moment</p>':`
+      <table style="margin-bottom:24px">
+        <thead><tr><th>Code</th><th>Ambassadeur</th><th>Plan</th><th>Statut</th><th>Généré</th><th>Expire</th></tr></thead>
+        <tbody>${codes.map(c=>`
+          <tr>
+            <td style="font-family:monospace;font-weight:700;color:${c.status==='used'?'#94a3b8':'#60a5fa'};cursor:pointer" onclick="navigator.clipboard.writeText('${c.code}');this.style.color='#34d399';setTimeout(()=>this.style.color='${c.status==='used'?'#94a3b8':'#60a5fa'}',1500)" title="Cliquer pour copier">${c.code}</td>
+            <td>${c.ambassadorName||'?'}</td>
+            <td><span class="badge active" style="text-transform:capitalize">${c.plan}</span></td>
+            <td><span class="badge ${c.status==='used'?'used':'unused'}">${c.status==='used'?'Utilisé':'Disponible'}</span></td>
+            <td style="color:#94a3b8;font-size:12px">${c.assignedAt?new Date(c.assignedAt).toLocaleDateString('fr-FR'):'-'}</td>
+            <td style="color:#94a3b8;font-size:12px">${c.expiresAt?new Date(c.expiresAt).toLocaleDateString('fr-FR'):'-'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+      <h3 style="color:#fff;margin-bottom:8px;font-size:16px">Vue par ambassadeur</h3>
+      ${groupHtml}
+      `}
+    </div>`;
+}
+
 
 async function loadSales(){
   const res=await fetch('/api/admin/ambassador-sales',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({adminPassword})});

@@ -44,3 +44,11 @@ export const verifyOTP = async (phoneNumber: string, code: string): Promise<Veri
   // The WebView already verified with Firebase, we just need to login to our backend
   return { success: true, message: 'Vérification réussie' };
 };
+
+// Used by Settings screen to display the OTP provider info
+export const getOTPProviderInfo = () => {
+  return {
+    name: 'Firebase Phone Auth',
+    isMock: false,
+  };
+};

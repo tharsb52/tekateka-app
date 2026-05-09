@@ -679,6 +679,58 @@ async def admin_generate_codes(body: dict):
     }
 
 # ==========================================
+# Admin: List All Activation Codes
+# ==========================================
+@router.post("/admin/codes/list")
+async def admin_list_all_codes(body: dict):
+    password = body.get("adminPassword", "")
+    admin_pass = os.getenv("ADMIN_PASSWORD", "TekaTeka2025")
+    if password != admin_pass:
+        raise HTTPException(status_code=401, detail="Mot de passe admin incorrect")
+    
+    # Optional filters
+    ambassador_id = body.get("ambassadorId")
+    status_filter = body.get("status")  # 'unused' | 'used' | None
+    plan_filter = body.get("plan")
+    
+    query: dict = {}
+    if ambassador_id:
+        query["ambassadorId"] = ambassador_id
+    if status_filter:
+        query["status"] = status_filter
+    if plan_filter:
+        query["plan"] = plan_filter
+    
+    codes = await db.activation_codes.find(query).sort("assignedAt", -1).to_list(2000)
+    
+    # Build a map of ambassadorId -> name
+    amb_ids = list({c.get("ambassadorId") for c in codes if c.get("ambassadorId")})
+    amb_map: dict = {}
+    for aid in amb_ids:
+        try:
+            a = await db.ambassadors.find_one({"_id": ObjectId(aid)})
+            if a:
+                amb_map[aid] = a.get("name", "?")
+        except Exception:
+            pass
+    
+    result = []
+    for c in codes:
+        result.append({
+            "code": c.get("code"),
+            "plan": c.get("plan"),
+            "status": c.get("status"),
+            "ambassadorId": c.get("ambassadorId"),
+            "ambassadorName": amb_map.get(c.get("ambassadorId"), "?"),
+            "assignedAt": c.get("assignedAt").isoformat() if c.get("assignedAt") else None,
+            "expiresAt": c.get("expiresAt").isoformat() if c.get("expiresAt") else None,
+            "usedAt": c.get("usedAt").isoformat() if c.get("usedAt") else None,
+            "usedByUserId": c.get("usedByUserId"),
+        })
+    
+    return result
+
+# ==========================================
 # Admin: All Sales
 # ==========================================
 @router.post("/admin/ambassador-sales")
