@@ -48,13 +48,6 @@
         }
       ],
       [
-        "expo-notifications",
-        {
-          "icon": "./assets/images/icon.png",
-          "color": "#2563eb"
-        }
-      ],
-      [
         "expo-image-picker",
         {
           "photosPermission": "Choisissez une photo de profil",
