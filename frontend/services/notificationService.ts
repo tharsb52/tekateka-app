@@ -1,90 +1,110 @@
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Lazy-load expo-notifications and gracefully handle missing native module
+let Notifications: any = null;
+try {
+  Notifications = require('expo-notifications');
+} catch (e) {
+  console.warn('[notificationService] expo-notifications not available', e);
+}
 
 const NOTIFICATION_KEY = '@tekateka:notifications_scheduled';
 const LAST_ALERT_KEY = '@tekateka:last_expiry_alert';
 
-// Configure notification behavior
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
+// Configure notification behavior (safely)
+try {
+  if (Notifications?.setNotificationHandler) {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: true,
+      }),
+    });
+  }
+} catch (e) {
+  console.warn('[notificationService] setNotificationHandler failed', e);
+}
 
 export async function requestNotificationPermissions(): Promise<boolean> {
   if (Platform.OS === 'web') return false;
+  if (!Notifications) return false;
 
-  const { status: existingStatus } = await Notifications.getPermissionsAsync();
-  let finalStatus = existingStatus;
+  try {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
 
-  if (existingStatus !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+
+    return finalStatus === 'granted';
+  } catch (e) {
+    console.warn('[notificationService] permissions failed', e);
+    return false;
   }
-
-  return finalStatus === 'granted';
 }
 
 export async function scheduleExpiryReminders(expiryDate: string, isTrialMode: boolean): Promise<void> {
-  if (Platform.OS === 'web') return;
+  if (Platform.OS === 'web' || !Notifications) return;
 
-  const hasPermission = await requestNotificationPermissions();
-  if (!hasPermission) return;
+  try {
+    const hasPermission = await requestNotificationPermissions();
+    if (!hasPermission) return;
 
-  // Cancel all previous scheduled notifications
-  await Notifications.cancelAllScheduledNotificationsAsync();
+    // Cancel all previous scheduled notifications
+    await Notifications.cancelAllScheduledNotificationsAsync();
 
-  const expiry = new Date(expiryDate);
-  const now = new Date();
+    const expiry = new Date(expiryDate);
+    const now = new Date();
 
-  const typeLabel = isTrialMode ? "Essai gratuit" : "Abonnement";
+    const typeLabel = isTrialMode ? "Essai gratuit" : "Abonnement";
 
-  // Reminder intervals: 7 days, 3 days, 1 day, 12 hours before
-  const reminders = [
-    { daysBefore: 7, title: `${typeLabel} - 7 jours restants`, body: `Votre ${typeLabel.toLowerCase()} TekaTeka expire dans 7 jours. Pensez a renouveler !` },
-    { daysBefore: 3, title: `${typeLabel} - 3 jours restants`, body: `Plus que 3 jours ! Renouvelez votre ${typeLabel.toLowerCase()} pour continuer a gerer votre business.` },
-    { daysBefore: 1, title: `${typeLabel} expire demain !`, body: `Attention ! Votre ${typeLabel.toLowerCase()} TekaTeka expire demain. Renouvelez maintenant.` },
-    { daysBefore: 0, title: `${typeLabel} expire aujourd'hui !`, body: `Votre ${typeLabel.toLowerCase()} TekaTeka expire aujourd'hui. Renouvelez pour ne pas perdre l'acces.` },
-  ];
+    const reminders = [
+      { daysBefore: 7, title: `${typeLabel} - 7 jours restants`, body: `Votre ${typeLabel.toLowerCase()} TekaTeka expire dans 7 jours. Pensez a renouveler !` },
+      { daysBefore: 3, title: `${typeLabel} - 3 jours restants`, body: `Plus que 3 jours ! Renouvelez votre ${typeLabel.toLowerCase()} pour continuer a gerer votre business.` },
+      { daysBefore: 1, title: `${typeLabel} expire demain !`, body: `Attention ! Votre ${typeLabel.toLowerCase()} TekaTeka expire demain. Renouvelez maintenant.` },
+      { daysBefore: 0, title: `${typeLabel} expire aujourd'hui !`, body: `Votre ${typeLabel.toLowerCase()} TekaTeka expire aujourd'hui. Renouvelez pour ne pas perdre l'acces.` },
+    ];
 
-  const scheduledIds: string[] = [];
+    const scheduledIds: string[] = [];
 
-  for (const reminder of reminders) {
-    const triggerDate = new Date(expiry);
-    triggerDate.setDate(triggerDate.getDate() - reminder.daysBefore);
-    triggerDate.setHours(9, 0, 0, 0); // 9h du matin
+    for (const reminder of reminders) {
+      const triggerDate = new Date(expiry);
+      triggerDate.setDate(triggerDate.getDate() - reminder.daysBefore);
+      triggerDate.setHours(9, 0, 0, 0);
 
-    // Only schedule future notifications
-    if (triggerDate.getTime() > now.getTime()) {
-      try {
-        const id = await Notifications.scheduleNotificationAsync({
-          content: {
-            title: reminder.title,
-            body: reminder.body,
-            sound: true,
-            data: { type: 'expiry_reminder', daysBefore: reminder.daysBefore },
-          },
-          trigger: {
-            type: Notifications.SchedulableTriggerInputTypes.DATE,
-            date: triggerDate,
-          },
-        });
-        scheduledIds.push(id);
-      } catch (e) {
-        console.log('Failed to schedule notification:', e);
+      if (triggerDate.getTime() > now.getTime()) {
+        try {
+          const id = await Notifications.scheduleNotificationAsync({
+            content: {
+              title: reminder.title,
+              body: reminder.body,
+              sound: true,
+              data: { type: 'expiry_reminder', daysBefore: reminder.daysBefore },
+            },
+            trigger: {
+              type: Notifications.SchedulableTriggerInputTypes?.DATE || 'date',
+              date: triggerDate,
+            },
+          });
+          scheduledIds.push(id);
+        } catch (e) {
+          console.log('Failed to schedule notification:', e);
+        }
       }
     }
-  }
 
-  // Save scheduled notification IDs
-  await AsyncStorage.setItem(NOTIFICATION_KEY, JSON.stringify(scheduledIds));
+    await AsyncStorage.setItem(NOTIFICATION_KEY, JSON.stringify(scheduledIds));
+  } catch (e) {
+    console.warn('[notificationService] scheduleExpiryReminders failed', e);
+  }
 }
 
 export async function cancelAllReminders(): Promise<void> {
-  if (Platform.OS === 'web') return;
+  if (Platform.OS === 'web' || !Notifications) return;
 
   try {
     await Notifications.cancelAllScheduledNotificationsAsync();
@@ -116,8 +136,7 @@ export async function markAlertShown(): Promise<void> {
 
 // Send an immediate local notification (for stock alerts, etc.)
 export async function sendInstantNotification(title: string, body: string, data?: Record<string, any>): Promise<void> {
-  if (Platform.OS === 'web') {
-    // On web, use a simple console log (no native notifications)
+  if (Platform.OS === 'web' || !Notifications) {
     console.log(`[NOTIFICATION] ${title}: ${body}`);
     return;
   }

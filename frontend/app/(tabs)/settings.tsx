@@ -22,7 +22,14 @@ import { getOTPProviderInfo } from '../../services/otpService';
 import { getPaymentProviderInfo } from '../../services/paymentService';
 import AppHeader from '../../components/AppHeader';
 import PinScreen from '../../components/PinScreen';
-import * as ImagePicker from 'expo-image-picker';
+
+// Lazy-load expo-image-picker to avoid crash if native module fails
+let ImagePicker: any = null;
+try {
+  ImagePicker = require('expo-image-picker');
+} catch (e) {
+  console.warn('[settings] expo-image-picker not available', e);
+}
 
 const BG = '#fef3e7';
 
@@ -91,6 +98,10 @@ export default function SettingsScreen() {
   };
 
   const handlePickPhoto = async () => {
+    if (!ImagePicker) {
+      Alert.alert('Indisponible', 'Sélecteur d\'image non disponible sur cet appareil');
+      return;
+    }
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
