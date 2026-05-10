@@ -134,7 +134,18 @@ export default function LoginScreen() {
         setWebViewVisible(false);
       } else if (data.type === 'verifyError') {
         setLoading(false);
-        setLoginError(data.message || 'Code incorrect');
+        const errMsg = data.message || 'Code incorrect';
+        // If session expired → auto-resend SMS so the user can try again seamlessly
+        if (errMsg.toLowerCase().includes('session expir') || errMsg.toLowerCase().includes('expired')) {
+          setLoginError('Session expirée. Renvoi automatique du SMS...');
+          setOtp('');
+          setOtpSent(false);
+          setTimeout(() => {
+            handleSendOTP();
+          }, 600);
+        } else {
+          setLoginError(errMsg);
+        }
       }
     } catch (e) {
       console.log('[WebView] parse error', e);

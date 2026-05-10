@@ -31,9 +31,11 @@ export const clearToken = async () => {
 };
 
 // ==========================================
-// API Fetch Helper
+// API Fetch Helper with automatic retry
 // ==========================================
-async function apiFetch(path: string, options: RequestInit = {}): Promise<any> {
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function apiFetch(path: string, options: RequestInit = {}, retries = 3): Promise<any> {
   const token = await getToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -44,35 +46,69 @@ async function apiFetch(path: string, options: RequestInit = {}): Promise<any> {
   }
 
   const url = `${BACKEND_URL}/api${path}`;
-  
-  try {
-    const response = await fetch(url, { ...options, headers });
-    
-    // Check if response is HTML instead of JSON (proxy/network issue)
-    const contentType = response.headers.get('content-type') || '';
-    const responseText = await response.text();
-    
-    let data;
+  let lastError: any = null;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      data = JSON.parse(responseText);
-    } catch (parseError) {
-      // Response is not JSON (likely HTML from proxy or error page)
-      console.error(`API non-JSON response for ${path}:`, responseText.substring(0, 200));
-      const preview = (responseText || '').substring(0, 80).replace(/<[^>]+>/g, '').trim();
-      throw new Error(`Serveur inaccessible (${response.status}). ${preview ? 'Réponse: ' + preview : 'Vérifiez votre connexion.'}`);
+      // Use AbortController for timeout (15s)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+      const response = await fetch(url, { ...options, headers, signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      const responseText = await response.text();
+
+      let data: any;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        // Non-JSON response (likely HTML proxy/error page) — retry on transient
+        const preview = (responseText || '').substring(0, 80).replace(/<[^>]+>/g, '').trim();
+        if (attempt < retries) {
+          console.warn(`[API] Non-JSON response for ${path}, retrying (${attempt + 1}/${retries})... preview: ${preview}`);
+          await sleep(500 * Math.pow(2, attempt));
+          continue;
+        }
+        throw new Error(`Serveur temporairement indisponible. ${preview ? 'Réponse: ' + preview : ''}`);
+      }
+
+      if (!response.ok) {
+        // 5xx → retry; 4xx → throw immediately (client error)
+        if (response.status >= 500 && attempt < retries) {
+          console.warn(`[API] ${response.status} for ${path}, retrying (${attempt + 1}/${retries})...`);
+          await sleep(500 * Math.pow(2, attempt));
+          continue;
+        }
+        throw new Error(data.detail || data.message || `Erreur ${response.status}`);
+      }
+
+      return data;
+    } catch (error: any) {
+      lastError = error;
+
+      // Network errors / timeout → retry
+      const isNetworkError =
+        error?.name === 'AbortError' ||
+        error?.message?.includes('fetch') ||
+        error?.message?.includes('Network') ||
+        error?.message?.includes('network') ||
+        error?.message?.includes('Failed to fetch');
+
+      if (isNetworkError && attempt < retries) {
+        console.warn(`[API] Network error for ${path}, retrying (${attempt + 1}/${retries})...`, error.message);
+        await sleep(500 * Math.pow(2, attempt));
+        continue;
+      }
+
+      if (isNetworkError) {
+        throw new Error('Connexion internet instable. Vérifiez votre réseau et réessayez.');
+      }
+      throw error;
     }
-    
-    if (!response.ok) {
-      throw new Error(data.detail || data.message || `Erreur ${response.status}`);
-    }
-    
-    return data;
-  } catch (error: any) {
-    if (error.message?.includes('fetch') || error.message?.includes('Network') || error.message?.includes('network')) {
-      throw new Error(`Erreur réseau (${url.replace('https://', '').split('/')[0]}). Vérifiez votre connexion.`);
-    }
-    throw error;
   }
+
+  throw lastError || new Error('Erreur inconnue');
 }
 
 // ==========================================

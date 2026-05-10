@@ -55,8 +55,21 @@ export default function SettingsScreen() {
   const [credSuccess, setCredSuccess] = useState(false);
   const [showCredPassword, setShowCredPassword] = useState(false);
 
-  const otpInfo = getOTPProviderInfo();
-  const paymentInfo = getPaymentProviderInfo();
+  // Safe defaults in case provider services fail to load (prevents crash)
+  let otpInfo: any = { name: 'Firebase Phone Auth', isMock: false };
+  let paymentInfo: any = { name: 'Mode Test', isMock: true, provider: 'mock' };
+  try {
+    const o = getOTPProviderInfo();
+    if (o) otpInfo = o;
+  } catch (e) {
+    console.warn('getOTPProviderInfo failed', e);
+  }
+  try {
+    const p = getPaymentProviderInfo();
+    if (p) paymentInfo = p;
+  } catch (e) {
+    console.warn('getPaymentProviderInfo failed', e);
+  }
   const isSubActive = isSubscriptionActive();
   const subDaysLeft = getSubscriptionDaysRemaining();
 
