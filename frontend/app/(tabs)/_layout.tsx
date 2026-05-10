@@ -62,7 +62,6 @@ export default function TabLayout() {
           fontSize: 10,
           fontWeight: '700',
           marginTop: 2,
-          numberOfLines: 1,
         },
         tabBarIconStyle: {
           marginBottom: -2,
