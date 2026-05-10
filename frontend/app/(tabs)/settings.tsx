@@ -22,6 +22,7 @@ import { getOTPProviderInfo } from '../../services/otpService';
 import { getPaymentProviderInfo } from '../../services/paymentService';
 import AppHeader from '../../components/AppHeader';
 import PinScreen from '../../components/PinScreen';
+import ErrorBoundary from '../../components/ErrorBoundary';
 
 // Lazy-load expo-image-picker to avoid crash if native module fails
 let ImagePicker: any = null;
@@ -41,6 +42,14 @@ const LANGUAGES = [
 ];
 
 export default function SettingsScreen() {
+  return (
+    <ErrorBoundary fallbackLabel="L'écran des paramètres a rencontré une erreur.">
+      <SettingsScreenInner />
+    </ErrorBoundary>
+  );
+}
+
+function SettingsScreenInner() {
   const { user, updateUser, logout, isSubscriptionActive, getSubscriptionDaysRemaining, hasPin, checkHasPin, removePin, setupCredentials, updateProfilePhoto } = useAuth();
   const router = useRouter();
   const [langModalVisible, setLangModalVisible] = useState(false);
