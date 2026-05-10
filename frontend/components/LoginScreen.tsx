@@ -45,8 +45,28 @@ export default function LoginScreen() {
   // Firebase WebView state
   const [showFirebaseWebView, setShowFirebaseWebView] = useState(false);
   const [webViewVisible, setWebViewVisible] = useState(false);
+  const [verifiedNeedsRetry, setVerifiedNeedsRetry] = useState(false);
   const webViewRef = useRef<any>(null);
   const sendTimeoutRef = useRef<any>(null);
+
+  // Attempt backend login with retry — keeps Firebase verification intact on failure
+  const attemptBackendLogin = async () => {
+    setLoading(true);
+    setLoginError('');
+    setVerifiedNeedsRetry(false);
+    try {
+      await login(fullPhoneNumber, 'firebase-verified');
+      // Auth context will navigate to dashboard
+    } catch (error: any) {
+      console.error('Backend login error:', error);
+      setLoginError(
+        (error.message || 'Connexion serveur instable.') +
+        ' Cliquez sur "Réessayer" — votre code SMS reste valide.'
+      );
+      setVerifiedNeedsRetry(true);
+      setLoading(false);
+    }
+  };
 
   // Track keyboard height (used for the country picker modal)
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -120,12 +140,7 @@ export default function LoginScreen() {
         setWebViewVisible(false);
         setLoading(true);
         setLoginError('');
-        try {
-          await login(fullPhoneNumber, data.token || 'firebase-verified');
-        } catch (error: any) {
-          setLoginError(error.message || 'Erreur de connexion');
-          setLoading(false);
-        }
+        await attemptBackendLogin();
       } else if (data.type === 'error') {
         if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
         setLoading(false);
@@ -319,8 +334,8 @@ export default function LoginScreen() {
                     maxLength={6}
                     autoFocus
                   />
-                  <TouchableOpacity style={[styles.button, { marginTop: 12 }, loading && styles.buttonDisabled]} onPress={handleVerifyOTP} disabled={loading}>
-                    {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Vérifier le code</Text>}
+                  <TouchableOpacity style={[styles.button, { marginTop: 12 }, loading && styles.buttonDisabled]} onPress={verifiedNeedsRetry ? attemptBackendLogin : handleVerifyOTP} disabled={loading}>
+                    {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{verifiedNeedsRetry ? 'Réessayer la connexion' : 'Vérifier le code'}</Text>}
                   </TouchableOpacity>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
                     <TouchableOpacity onPress={() => { setOtpSent(false); setOtp(''); handleSendOTP(); }} style={{ padding: 8 }}>
