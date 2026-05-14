@@ -137,11 +137,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUser(mappedUser);
         await changeLocale(mappedUser.language);
         
-        // Schedule trial expiry reminders for new users
+        // Schedule trial expiry reminders - DEFERRED & ISOLATED so any native crash
+        // here cannot break the login flow
         if (!mappedUser.isSubscribed) {
-          const trialEnd = new Date(mappedUser.createdAt);
-          trialEnd.setDate(trialEnd.getDate() + 7);
-          scheduleExpiryReminders(trialEnd.toISOString(), true).catch(() => {});
+          setTimeout(() => {
+            try {
+              const trialEnd = new Date(mappedUser.createdAt);
+              trialEnd.setDate(trialEnd.getDate() + 7);
+              scheduleExpiryReminders(trialEnd.toISOString(), true).catch((e) => {
+                console.warn('scheduleExpiryReminders failed (non-blocking):', e);
+              });
+            } catch (e) {
+              console.warn('scheduleExpiryReminders sync error (non-blocking):', e);
+            }
+          }, 2000);
         }
       }
     } catch (error: any) {

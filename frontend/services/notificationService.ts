@@ -3,8 +3,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Lazy-load expo-notifications and gracefully handle missing native module
 let Notifications: any = null;
+let nativeModuleAvailable = false;
 try {
   Notifications = require('expo-notifications');
+  // Verify native methods actually exist (not just JS shim)
+  if (Notifications && typeof Notifications.getPermissionsAsync === 'function') {
+    nativeModuleAvailable = true;
+  }
 } catch (e) {
   console.warn('[notificationService] expo-notifications not available', e);
 }

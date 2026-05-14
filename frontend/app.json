@@ -54,7 +54,16 @@
           "cameraPermission": "Prenez une photo de profil"
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#fef3e7"
+        }
+      ],
+      "expo-print",
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true
