@@ -94,23 +94,62 @@ export default function DashboardScreen() {
   };
   const country = getCountryFromPhone(user?.phoneNumber || '');
 
-  // Revenue chart data (last 7 days) - converted to user currency
-  const chartData = useMemo(() => {
+  // State for chart period filter
+  type Period = '1d' | '7d' | '30d' | 'custom';
+  const [period, setPeriod] = useState<Period>('7d');
+  const [customStartDate, setCustomStartDate] = useState<Date>(subDays(new Date(), 6));
+  const [customEndDate, setCustomEndDate] = useState<Date>(new Date());
+  const [showPeriodPicker, setShowPeriodPicker] = useState(false);
+  const [showCustomDateModal, setShowCustomDateModal] = useState(false);
+
+  // Revenue chart data based on selected period - converted to user currency
+  const { chartData, periodLabel, filteredSales } = useMemo(() => {
     const userCurrency = user?.currency || 'USD';
+    let startDate: Date;
+    let endDate: Date = new Date();
+    let label = '';
+
+    if (period === '1d') {
+      startDate = new Date(); startDate.setHours(0, 0, 0, 0);
+      label = "Aujourd'hui";
+    } else if (period === '7d') {
+      startDate = subDays(new Date(), 6); startDate.setHours(0, 0, 0, 0);
+      label = '7 jours';
+    } else if (period === '30d') {
+      startDate = subDays(new Date(), 29); startDate.setHours(0, 0, 0, 0);
+      label = '30 jours';
+    } else {
+      startDate = new Date(customStartDate); startDate.setHours(0, 0, 0, 0);
+      endDate = new Date(customEndDate); endDate.setHours(23, 59, 59, 999);
+      label = `${format(startDate, 'dd/MM')} - ${format(endDate, 'dd/MM')}`;
+    }
+
+    const filtered = sales.filter(s => {
+      try {
+        const d = new Date(s.createdAt);
+        return d >= startDate && d <= endDate;
+      } catch { return false; }
+    });
+
+    // Compute daily buckets
+    const dayCount = Math.min(30, Math.ceil((endDate.getTime() - startDate.getTime()) / (24 * 3600 * 1000)) + 1);
     const days: { label: string; value: number }[] = [];
-    for (let i = 6; i >= 0; i--) {
-      const date = subDays(new Date(), i);
+    for (let i = 0; i < dayCount; i++) {
+      const date = new Date(startDate);
+      date.setDate(date.getDate() + i);
       const dateKey = format(date, 'yyyy-MM-dd');
-      const dayLabel = i === 0 ? "Auj" : i === 1 ? "Hier" : format(date, 'EEE', { locale: fr });
-      const dayRevenue = sales
+      const dayLabel = dayCount <= 7
+        ? (i === dayCount - 1 ? 'Auj' : format(date, 'EEE', { locale: fr }))
+        : format(date, 'd MMM', { locale: fr });
+      const dayRevenue = filtered
         .filter(s => {
           try { return format(new Date(s.createdAt), 'yyyy-MM-dd') === dateKey; } catch { return false; }
         })
         .reduce((sum, s) => sum + convertCurrency(s.totalAmount, s.currency || userCurrency, userCurrency), 0);
       days.push({ label: dayLabel.charAt(0).toUpperCase() + dayLabel.slice(1), value: dayRevenue });
     }
-    return days;
-  }, [sales, user?.currency]);
+    return { chartData: days, periodLabel: label, filteredSales: filtered };
+  }, [sales, user?.currency, period, customStartDate, customEndDate]);
 
   const maxChartValue = Math.max(...chartData.map(d => d.value), 1);
   const screenWidth = Dimensions.get('window').width - 48;
@@ -298,50 +337,62 @@ export default function DashboardScreen() {
         </View>
       </View>
 
-      {/* Revenue Chart - Last 7 days */}
+      {/* Revenue Chart with period filter */}
       <View style={styles.section}>
         <View style={styles.chartHeader}>
-          <Text style={styles.sectionTitle}>Chiffre d'affaires (7 jours)</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.sectionTitle}>Chiffre d'affaires</Text>
+            <Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{periodLabel} · {filteredSales.length} vente(s)</Text>
+          </View>
           <View style={styles.exportButtons}>
             <TouchableOpacity
+              style={[styles.exportBtn, { backgroundColor: '#eff6ff' }]}
+              onPress={() => setShowPeriodPicker(true)}
+            >
+              <Ionicons name="calendar" size={16} color="#2563eb" />
+              <Text style={[styles.exportBtnText, { color: '#2563eb' }]}>Période</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
               style={styles.exportBtn}
-              onPress={() => exportSalesToPDF(sales, currency, user?.phoneNumber || '')}
+              onPress={() => exportSalesToPDF(filteredSales, currency, user?.phoneNumber || '')}
             >
               <Ionicons name="document-text" size={16} color="#dc2626" />
               <Text style={styles.exportBtnText}>PDF</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.exportBtn}
-              onPress={() => exportSalesToExcel(sales, currency, user?.phoneNumber || '')}
+              onPress={() => exportSalesToExcel(filteredSales, currency, user?.phoneNumber || '')}
             >
               <Ionicons name="grid" size={16} color="#10b981" />
               <Text style={[styles.exportBtnText, { color: '#10b981' }]}>Excel</Text>
             </TouchableOpacity>
           </View>
         </View>
-        <View style={styles.chartContainer}>
-          {chartData.map((day, index) => (
-            <TouchableOpacity key={index} style={styles.chartColumn} onPress={() => openDaySales(index)} activeOpacity={0.7}>
-              <Text style={styles.chartValue}>
-                {day.value > 0 ? (day.value >= 1000 ? `${(day.value / 1000).toFixed(1)}k` : Math.round(day.value).toString()) : ''}
-              </Text>
-              <View style={styles.chartBarBg}>
-                <View
-                  style={[
-                    styles.chartBar,
-                    {
-                      height: `${Math.max((day.value / maxChartValue) * 100, 2)}%`,
-                      backgroundColor: index === chartData.length - 1 ? '#2563eb' : '#93c5fd',
-                    },
-                  ]}
-                />
-              </View>
-              <Text style={[styles.chartLabel, index === chartData.length - 1 && { fontWeight: '700', color: '#2563eb' }]}>
-                {day.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 0 }}>
+          <View style={[styles.chartContainer, { minWidth: chartData.length > 7 ? chartData.length * 38 : screenWidth - 32 }]}>
+            {chartData.map((day, index) => (
+              <TouchableOpacity key={index} style={[styles.chartColumn, chartData.length > 7 && { minWidth: 38 }]} onPress={() => openDaySales(index)} activeOpacity={0.7}>
+                <Text style={[styles.chartValue, chartData.length > 7 && { fontSize: 9 }]}>
+                  {day.value > 0 ? (day.value >= 1000 ? `${(day.value / 1000).toFixed(1)}k` : Math.round(day.value).toString()) : ''}
+                </Text>
+                <View style={styles.chartBarBg}>
+                  <View
+                    style={[
+                      styles.chartBar,
+                      {
+                        height: `${Math.max((day.value / maxChartValue) * 100, 2)}%`,
+                        backgroundColor: index === chartData.length - 1 ? '#2563eb' : '#93c5fd',
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={[styles.chartLabel, chartData.length > 7 && { fontSize: 9 }, index === chartData.length - 1 && { fontWeight: '700', color: '#2563eb' }]}>
+                  {day.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </ScrollView>
       </View>
 
       {/* Top Products */}
@@ -388,6 +439,59 @@ export default function DashboardScreen() {
       )}
 
       <View style={{ height: 80 }} />
+
+    {/* Period Picker Modal */}
+    <Modal visible={showPeriodPicker} animationType="fade" transparent>
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+        <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: 20, width: '100%', maxWidth: 360 }}>
+          <Text style={{ fontSize: 18, fontWeight: '700', color: '#1e293b', marginBottom: 16 }}>Choisir la période</Text>
+          {([
+            { key: '1d', label: "Aujourd'hui", icon: 'today' },
+            { key: '7d', label: '7 derniers jours', icon: 'calendar' },
+            { key: '30d', label: '30 derniers jours', icon: 'calendar-outline' },
+            { key: 'custom', label: 'Période personnalisée', icon: 'calendar-clear' },
+          ] as const).map((opt) => (
+            <TouchableOpacity
+              key={opt.key}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 12, marginBottom: 8, backgroundColor: period === opt.key ? '#eff6ff' : '#f8fafc' }}
+              onPress={() => {
+                setPeriod(opt.key);
+                setShowPeriodPicker(false);
+                if (opt.key === 'custom') setShowCustomDateModal(true);
+              }}
+            >
+              <Ionicons name={opt.icon as any} size={22} color={period === opt.key ? '#2563eb' : '#64748b'} />
+              <Text style={{ flex: 1, fontSize: 15, fontWeight: '600', color: period === opt.key ? '#2563eb' : '#1e293b' }}>{opt.label}</Text>
+              {period === opt.key && <Ionicons name="checkmark-circle" size={20} color="#2563eb" />}
+            </TouchableOpacity>
+          ))}
+          <TouchableOpacity onPress={() => setShowPeriodPicker(false)} style={{ marginTop: 8, alignItems: 'center', padding: 12 }}>
+            <Text style={{ color: '#64748b', fontSize: 14 }}>Annuler</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+
+    {/* Custom Date Range Modal */}
+    <Modal visible={showCustomDateModal} animationType="slide" transparent>
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+        <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: 20, width: '100%', maxWidth: 380 }}>
+          <Text style={{ fontSize: 18, fontWeight: '700', color: '#1e293b', marginBottom: 16 }}>Période personnalisée</Text>
+          <Text style={{ fontSize: 13, color: '#64748b', marginBottom: 8 }}>Date de début</Text>
+          <CalendarPicker date={customStartDate} onDateChange={setCustomStartDate} />
+          <Text style={{ fontSize: 13, color: '#64748b', marginTop: 16, marginBottom: 8 }}>Date de fin</Text>
+          <CalendarPicker date={customEndDate} onDateChange={setCustomEndDate} />
+          <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
+            <TouchableOpacity style={{ flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#f1f5f9', alignItems: 'center' }} onPress={() => setShowCustomDateModal(false)}>
+              <Text style={{ color: '#64748b', fontWeight: '600' }}>Annuler</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={{ flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#2563eb', alignItems: 'center' }} onPress={() => { setPeriod('custom'); setShowCustomDateModal(false); }}>
+              <Text style={{ color: '#fff', fontWeight: '700' }}>Appliquer</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
 
     {/* Day Sales Modal */}
     <Modal visible={selectedDay !== null} animationType="slide" transparent>

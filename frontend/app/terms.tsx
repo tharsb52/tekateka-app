@@ -86,7 +86,7 @@ export default function TermsScreen() {
 
         <Text style={styles.sectionTitle}>12. Contact</Text>
         <Text style={styles.paragraph}>
-          Pour toute question concernant ces conditions, contactez-nous à : mtharcisse@thenoly.com
+          Pour toute question concernant ces conditions, contactez-nous à : tekatekaquality@gmail.com
         </Text>
 
         <View style={{ height: 60 }} />

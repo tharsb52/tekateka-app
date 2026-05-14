@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,8 @@ import {
   Image,
   Platform,
   Linking,
+  Keyboard,
+  EmitterSubscription,
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'expo-router';
@@ -51,6 +53,16 @@ export default function SettingsScreen() {
 
 function SettingsScreenInner() {
   const { user, updateUser, logout, isSubscriptionActive, getSubscriptionDaysRemaining, hasPin, checkHasPin, removePin, setupCredentials, updateProfilePhoto } = useAuth();
+
+  // Track keyboard height for modals (prevents inputs being hidden by keyboard)
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const showEv = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEv = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const s: EmitterSubscription = Keyboard.addListener(showEv, (e) => setKeyboardHeight(e.endCoordinates.height));
+    const h: EmitterSubscription = Keyboard.addListener(hideEv, () => setKeyboardHeight(0));
+    return () => { s.remove(); h.remove(); };
+  }, []);
   const router = useRouter();
   const [langModalVisible, setLangModalVisible] = useState(false);
   const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
@@ -141,8 +153,8 @@ function SettingsScreenInner() {
     setCredError('');
     setCredSuccess(false);
 
-    if (!credEmail.trim() && !credUsername.trim()) {
-      setCredError('Entrez au moins un email ou un nom d\'utilisateur');
+    if (!credUsername.trim()) {
+      setCredError('Le nom d\'utilisateur est obligatoire');
       return;
     }
     if (!credPassword || credPassword.length < 6) {
@@ -468,7 +480,7 @@ function SettingsScreenInner() {
           <View style={styles.divider} />
 
           <TouchableOpacity style={styles.settingRow} onPress={() => {
-            const email = 'mtharcisse@thenoly.com';
+            const email = 'tekatekaquality@gmail.com';
             const subject = encodeURIComponent('TekaTeka - Support');
             const body = encodeURIComponent(`Bonjour,\n\nJ'utilise TekaTeka et j'ai besoin d'aide.\n\nTéléphone: ${user?.phoneNumber || ''}\n\nMa question:\n\n`);
             Linking.openURL(`mailto:${email}?subject=${subject}&body=${body}`);
@@ -639,8 +651,8 @@ function SettingsScreenInner() {
       {/* Credential Setup Modal */}
       <Modal visible={credModalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { padding: 24, maxHeight: '85%' }]}>
-            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <View style={[styles.modalContent, { padding: 24, maxHeight: '92%', paddingBottom: keyboardHeight > 0 ? keyboardHeight + 24 : 24 }]}>
+            <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 }}>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Accès collègue</Text>
                 <TouchableOpacity onPress={() => setCredModalVisible(false)}>
@@ -677,7 +689,7 @@ function SettingsScreenInner() {
                     keyboardType="email-address"
                   />
 
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#334155', marginBottom: 6, marginTop: 12 }}>Nom d'utilisateur (optionnel)</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#334155', marginBottom: 6, marginTop: 12 }}>Nom d'utilisateur</Text>
                   <TextInput
                     style={styles.credInput}
                     placeholder="nom_collegue"

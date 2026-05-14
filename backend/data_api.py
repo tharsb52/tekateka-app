@@ -5,9 +5,14 @@ All data stored in MongoDB for multi-device real-time sync
 """
 import os
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from pathlib import Path
+
+# Helper: produce ISO 8601 UTC timestamp with explicit 'Z' suffix so JS clients
+# parse it as UTC (not local time). Without this, frontend displays wrong times.
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
 from fastapi import APIRouter, HTTPException, Depends, Header, Request
 from pydantic import BaseModel, Field
@@ -161,7 +166,7 @@ async def phone_login(req: PhoneLoginRequest = None, phone_number: str = None, p
     
     if not user:
         # Create new user
-        now = datetime.utcnow().isoformat()
+        now = utc_now_iso()
         new_user = {
             "phoneNumber": phone,
             "email": None,
@@ -197,7 +202,7 @@ async def phone_login(req: PhoneLoginRequest = None, phone_number: str = None, p
 @router.post("/auth/setup-credentials")
 async def setup_credentials(req: SetupCredentialsRequest, user_id: str = Depends(get_current_user)):
     """Set email/username + password for an existing phone account."""
-    update = {"passwordHash": pwd_context.hash(req.password), "updatedAt": datetime.utcnow().isoformat()}
+    update = {"passwordHash": pwd_context.hash(req.password), "updatedAt": utc_now_iso()}
     
     if req.email:
         existing = await db.users.find_one({"email": req.email.lower(), "_id": {"$ne": ObjectId(user_id)}})
@@ -255,7 +260,7 @@ async def get_profile(user_id: str = Depends(get_current_user)):
 
 @router.put("/auth/profile")
 async def update_profile(req: UpdateProfileRequest, user_id: str = Depends(get_current_user)):
-    update = {"updatedAt": datetime.utcnow().isoformat()}
+    update = {"updatedAt": utc_now_iso()}
     if req.currency: update["currency"] = req.currency
     if req.language: update["language"] = req.language
     if req.email: update["email"] = req.email.lower()
@@ -277,7 +282,7 @@ async def update_profile_photo(request: Request, user_id: str = Depends(get_curr
         raise HTTPException(status_code=400, detail="Photo trop volumineuse (max 2MB)")
     await db.users.update_one(
         {"_id": ObjectId(user_id)},
-        {"$set": {"profilePhoto": photo, "updatedAt": datetime.utcnow().isoformat()}}
+        {"$set": {"profilePhoto": photo, "updatedAt": utc_now_iso()}}
     )
     user = await db.users.find_one({"_id": ObjectId(user_id)})
     return {"success": True, "user": serialize_user(user)}
@@ -294,7 +299,7 @@ async def get_products(user_id: str = Depends(get_current_user)):
 async def add_product(product: ProductModel, user_id: str = Depends(get_current_user)):
     doc = product.dict()
     doc["userId"] = user_id
-    doc["createdAt"] = datetime.utcnow().isoformat()
+    doc["createdAt"] = utc_now_iso()
     result = await db.products.insert_one(doc)
     doc["id"] = str(result.inserted_id)
     return serialize_doc(doc)
@@ -304,7 +309,7 @@ async def update_product(product_id: str, updates: dict, user_id: str = Depends(
     updates.pop("id", None)
     updates.pop("_id", None)
     updates.pop("userId", None)
-    updates["updatedAt"] = datetime.utcnow().isoformat()
+    updates["updatedAt"] = utc_now_iso()
     await db.products.update_one({"_id": ObjectId(product_id), "userId": user_id}, {"$set": updates})
     doc = await db.products.find_one({"_id": ObjectId(product_id)})
     return serialize_doc(doc) if doc else {}
@@ -326,7 +331,7 @@ async def get_sales(user_id: str = Depends(get_current_user)):
 async def add_sale(sale: SaleModel, user_id: str = Depends(get_current_user)):
     doc = sale.dict()
     doc["userId"] = user_id
-    doc["createdAt"] = doc.get("date") or datetime.utcnow().isoformat()
+    doc["createdAt"] = doc.get("date") or utc_now_iso()
     result = await db.sales.insert_one(doc)
     doc["id"] = str(result.inserted_id)
     
@@ -338,7 +343,7 @@ async def add_sale(sale: SaleModel, user_id: str = Depends(get_current_user)):
                 new_stock = prod.get("stock", 0) - sale.quantity
                 await db.products.update_one(
                     {"_id": ObjectId(sale.productId)},
-                    {"$set": {"stock": new_stock, "updatedAt": datetime.utcnow().isoformat()}}
+                    {"$set": {"stock": new_stock, "updatedAt": utc_now_iso()}}
                 )
                 doc["stockAlert"] = new_stock <= 0
                 doc["productNameAlert"] = prod.get("name", "")
@@ -357,7 +362,7 @@ async def update_sale(sale_id: str, updates: dict, user_id: str = Depends(get_cu
     updates.pop("id", None)
     updates.pop("_id", None)
     updates.pop("userId", None)
-    updates["updatedAt"] = datetime.utcnow().isoformat()
+    updates["updatedAt"] = utc_now_iso()
     await db.sales.update_one({"_id": ObjectId(sale_id), "userId": user_id}, {"$set": updates})
     doc = await db.sales.find_one({"_id": ObjectId(sale_id)})
     return serialize_doc(doc) if doc else {}
@@ -374,7 +379,7 @@ async def get_expenses(user_id: str = Depends(get_current_user)):
 async def add_expense(expense: ExpenseModel, user_id: str = Depends(get_current_user)):
     doc = expense.dict()
     doc["userId"] = user_id
-    doc["createdAt"] = datetime.utcnow().isoformat()
+    doc["createdAt"] = utc_now_iso()
     result = await db.expenses.insert_one(doc)
     doc["id"] = str(result.inserted_id)
     return serialize_doc(doc)
@@ -384,7 +389,7 @@ async def update_expense(expense_id: str, updates: dict, user_id: str = Depends(
     updates.pop("id", None)
     updates.pop("_id", None)
     updates.pop("userId", None)
-    updates["updatedAt"] = datetime.utcnow().isoformat()
+    updates["updatedAt"] = utc_now_iso()
     await db.expenses.update_one({"_id": ObjectId(expense_id), "userId": user_id}, {"$set": updates})
     doc = await db.expenses.find_one({"_id": ObjectId(expense_id)})
     return serialize_doc(doc) if doc else {}
@@ -406,7 +411,7 @@ async def get_debts(user_id: str = Depends(get_current_user)):
 async def add_debt(debt: DebtModel, user_id: str = Depends(get_current_user)):
     doc = debt.dict()
     doc["userId"] = user_id
-    doc["createdAt"] = datetime.utcnow().isoformat()
+    doc["createdAt"] = utc_now_iso()
     result = await db.debts.insert_one(doc)
     doc["id"] = str(result.inserted_id)
     return serialize_doc(doc)
@@ -416,7 +421,7 @@ async def update_debt(debt_id: str, updates: dict, user_id: str = Depends(get_cu
     updates.pop("id", None)
     updates.pop("_id", None)
     updates.pop("userId", None)
-    updates["updatedAt"] = datetime.utcnow().isoformat()
+    updates["updatedAt"] = utc_now_iso()
     await db.debts.update_one({"_id": ObjectId(debt_id), "userId": user_id}, {"$set": updates})
     doc = await db.debts.find_one({"_id": ObjectId(debt_id)})
     return serialize_doc(doc) if doc else {}
@@ -438,7 +443,7 @@ async def get_purchases(user_id: str = Depends(get_current_user)):
 async def add_purchase(purchase: PurchaseModel, user_id: str = Depends(get_current_user)):
     doc = purchase.dict()
     doc["userId"] = user_id
-    doc["createdAt"] = datetime.utcnow().isoformat()
+    doc["createdAt"] = utc_now_iso()
     result = await db.purchases.insert_one(doc)
     doc["id"] = str(result.inserted_id)
     return serialize_doc(doc)
@@ -448,7 +453,7 @@ async def update_purchase(purchase_id: str, updates: dict, user_id: str = Depend
     updates.pop("id", None)
     updates.pop("_id", None)
     updates.pop("userId", None)
-    updates["updatedAt"] = datetime.utcnow().isoformat()
+    updates["updatedAt"] = utc_now_iso()
     await db.purchases.update_one({"_id": ObjectId(purchase_id), "userId": user_id}, {"$set": updates})
     doc = await db.purchases.find_one({"_id": ObjectId(purchase_id)})
     return serialize_doc(doc) if doc else {}
@@ -470,7 +475,7 @@ async def get_notes(user_id: str = Depends(get_current_user)):
 async def add_note(note: NoteModel, user_id: str = Depends(get_current_user)):
     doc = note.dict()
     doc["userId"] = user_id
-    now = datetime.utcnow().isoformat()
+    now = utc_now_iso()
     doc["createdAt"] = now
     doc["updatedAt"] = now
     result = await db.notes.insert_one(doc)
@@ -482,7 +487,7 @@ async def update_note(note_id: str, updates: dict, user_id: str = Depends(get_cu
     updates.pop("id", None)
     updates.pop("_id", None)
     updates.pop("userId", None)
-    updates["updatedAt"] = datetime.utcnow().isoformat()
+    updates["updatedAt"] = utc_now_iso()
     await db.notes.update_one({"_id": ObjectId(note_id), "userId": user_id}, {"$set": updates})
     doc = await db.notes.find_one({"_id": ObjectId(note_id)})
     return serialize_doc(doc) if doc else {}

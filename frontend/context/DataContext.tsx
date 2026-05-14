@@ -93,8 +93,17 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [user?.id]);
 
-  const loadData = async () => {
-    setLoading(true);
+  // Auto-refresh data every 30s when user is logged in (silent sync across devices)
+  useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(() => {
+      loadData(true).catch(() => {});
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [user?.id]);
+
+  const loadData = async (silent: boolean = false) => {
+    if (!silent) setLoading(true);
     try {
       const [prods, sls, exps, dbts, prchs] = await Promise.all([
         productsAPI.getAll().catch(() => []),

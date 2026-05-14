@@ -84,5 +84,72 @@ export async function exportSalesToPDF(sales: Sale[], currency: string, userName
 }
 
 export async function exportSalesToExcel(sales: Sale[], currency: string, userName: string): Promise<void> {
-  Alert.alert('Info', 'Export Excel temporairement indisponible. Utilisez l\'export PDF.');
+  try {
+    const sortedSales = [...sales].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const totalRevenue = sortedSales.reduce((s, sale) => s + sale.totalAmount, 0);
+    const totalQuantity = sortedSales.reduce((s, sale) => s + sale.quantity, 0);
+
+    // CSV with BOM (UTF-8) — Excel reads accents correctly
+    const BOM = '\uFEFF';
+    const escape = (v: any) => {
+      const s = String(v ?? '');
+      return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+
+    const lines: string[] = [];
+    lines.push(`TekaTeka - Rapport de Ventes`);
+    lines.push(`Utilisateur:,${escape(userName)}`);
+    lines.push(`Genere le:,${format(new Date(), 'dd/MM/yyyy HH:mm')}`);
+    lines.push(`Total ventes:,${sortedSales.length}`);
+    lines.push(`Quantite totale:,${totalQuantity}`);
+    lines.push(`Chiffre d'affaires:,${formatCurrency(totalRevenue, currency)}`);
+    lines.push('');
+    lines.push(['Date', 'Heure', 'Produit', 'Quantite', 'Prix unitaire', 'Total', 'Paiement', 'Client'].join(','));
+    sortedSales.forEach(sale => {
+      const date = new Date(sale.createdAt);
+      lines.push([
+        escape(format(date, 'dd/MM/yyyy')),
+        escape(format(date, 'HH:mm')),
+        escape(sale.productName),
+        sale.quantity,
+        sale.price,
+        sale.totalAmount,
+        escape(sale.paymentMethod || 'cash'),
+        escape((sale as any).customerName || ''),
+      ].join(','));
+    });
+
+    const csv = BOM + lines.join('\n');
+    const filename = `TekaTeka_Ventes_${format(new Date(), 'yyyy-MM-dd_HHmm')}.csv`;
+
+    if (Platform.OS === 'web') {
+      // Web: trigger browser download
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      Alert.alert('Succes', `Fichier ${filename} telecharge !`);
+      return;
+    }
+
+    // Mobile: write file and share
+    const FileSystem = require('expo-file-system');
+    const fileUri = `${FileSystem.cacheDirectory}${filename}`;
+    await FileSystem.writeAsStringAsync(fileUri, csv, { encoding: FileSystem.EncodingType?.UTF8 || 'utf8' });
+
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(fileUri, {
+        mimeType: 'text/csv',
+        dialogTitle: 'Exporter les ventes (Excel/CSV)',
+        UTI: 'public.comma-separated-values-text',
+      });
+    } else {
+      Alert.alert('Fichier prepare', `Sauvegarde a: ${fileUri}`);
+    }
+  } catch (error: any) {
+    console.error('Excel export error:', error);
+    Alert.alert('Erreur', error?.message || 'Echec de la generation du fichier Excel');
+  }
 }
