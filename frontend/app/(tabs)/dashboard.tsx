@@ -489,11 +489,62 @@ export default function DashboardScreen() {
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
         <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: 20, width: '100%', maxWidth: 380 }}>
           <Text style={{ fontSize: 18, fontWeight: '700', color: '#1e293b', marginBottom: 16 }}>Période personnalisée</Text>
+
           <Text style={{ fontSize: 13, color: '#64748b', marginBottom: 8 }}>Date de début</Text>
-          <CalendarPicker date={customStartDate} onDateChange={setCustomStartDate} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity
+              style={{ width: 40, height: 40, borderRadius: 8, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center' }}
+              onPress={() => setCustomStartDate(subDays(customStartDate, 1))}
+            >
+              <Ionicons name="chevron-back" size={20} color="#1e293b" />
+            </TouchableOpacity>
+            <View style={{ flex: 1, padding: 12, backgroundColor: '#f8fafc', borderRadius: 8, alignItems: 'center' }}>
+              <Text style={{ fontSize: 15, fontWeight: '600', color: '#1e293b' }}>
+                {format(customStartDate, 'dd MMM yyyy', { locale: fr })}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={{ width: 40, height: 40, borderRadius: 8, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center' }}
+              onPress={() => {
+                const next = new Date(customStartDate);
+                next.setDate(next.getDate() + 1);
+                if (next <= customEndDate) setCustomStartDate(next);
+              }}
+            >
+              <Ionicons name="chevron-forward" size={20} color="#1e293b" />
+            </TouchableOpacity>
+          </View>
+
           <Text style={{ fontSize: 13, color: '#64748b', marginTop: 16, marginBottom: 8 }}>Date de fin</Text>
-          <CalendarPicker date={customEndDate} onDateChange={setCustomEndDate} />
-          <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity
+              style={{ width: 40, height: 40, borderRadius: 8, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center' }}
+              onPress={() => {
+                const prev = new Date(customEndDate);
+                prev.setDate(prev.getDate() - 1);
+                if (prev >= customStartDate) setCustomEndDate(prev);
+              }}
+            >
+              <Ionicons name="chevron-back" size={20} color="#1e293b" />
+            </TouchableOpacity>
+            <View style={{ flex: 1, padding: 12, backgroundColor: '#f8fafc', borderRadius: 8, alignItems: 'center' }}>
+              <Text style={{ fontSize: 15, fontWeight: '600', color: '#1e293b' }}>
+                {format(customEndDate, 'dd MMM yyyy', { locale: fr })}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={{ width: 40, height: 40, borderRadius: 8, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center' }}
+              onPress={() => {
+                const next = new Date(customEndDate);
+                next.setDate(next.getDate() + 1);
+                if (next <= new Date()) setCustomEndDate(next);
+              }}
+            >
+              <Ionicons name="chevron-forward" size={20} color="#1e293b" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={{ flexDirection: 'row', gap: 12, marginTop: 20 }}>
             <TouchableOpacity style={{ flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#f1f5f9', alignItems: 'center' }} onPress={() => setShowCustomDateModal(false)}>
               <Text style={{ color: '#64748b', fontWeight: '600' }}>Annuler</Text>
             </TouchableOpacity>
