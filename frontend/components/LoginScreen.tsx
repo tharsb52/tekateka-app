@@ -409,7 +409,7 @@ export default function LoginScreen() {
           style={
             webViewVisible
               ? { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#0f172a', zIndex: 1000 }
-              : { position: 'absolute', width: 1, height: 1, top: -10, left: -10, opacity: 0, overflow: 'hidden' }
+              : { position: 'absolute', width: 2, height: 2, top: -9999, left: -9999, opacity: 0.01, overflow: 'hidden' }
           }
           pointerEvents={webViewVisible ? 'auto' : 'none'}
         >
@@ -430,13 +430,24 @@ export default function LoginScreen() {
             ref={webViewRef}
             source={{ html, baseUrl: FIREBASE_AUTH_BASE_URL }}
             onMessage={handleWebViewMessage}
-            style={{ flex: 1, backgroundColor: '#0f172a' }}
+            style={{ flex: 1, backgroundColor: '#0f172a', opacity: 0.99 }}
             javaScriptEnabled
             domStorageEnabled
             originWhitelist={['*']}
             mixedContentMode="always"
             thirdPartyCookiesEnabled
             startInLoadingState
+            androidLayerType="hardware"
+            onRenderProcessGone={(syntheticEvent: any) => {
+              const { nativeEvent } = syntheticEvent;
+              console.warn('WebView process crashed:', nativeEvent);
+              setLoading(false);
+              setShowFirebaseWebView(false);
+              setWebViewVisible(false);
+              setOtpSent(false);
+              setOtp('');
+              setLoginError('Erreur technique. Veuillez réessayer.');
+            }}
             renderLoading={() => (
               <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f172a' }}>
                 <ActivityIndicator size="large" color="#f59e0b" />
