@@ -1,170 +1,69 @@
-import { Platform } from 'react-native';
+/**
+ * Notification Service - STUB VERSION (no native notifications)
+ *
+ * Native notifications (expo-notifications) have been DISABLED in this build
+ * because they require google-services.json on Android and were causing
+ * native crashes during OTP login and at app startup.
+ *
+ * All functions are SAFE NO-OPs that never call any native method.
+ * The app uses in-app banners/alerts for trial expiry warnings instead.
+ *
+ * To re-enable native notifications later:
+ *  1. Add google-services.json to /app/frontend/
+ *  2. Add expo-notifications to app.json plugins
+ *  3. Restore the original notificationService.ts from git history
+ */
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Lazy-load expo-notifications and gracefully handle missing native module
-let Notifications: any = null;
-let nativeModuleAvailable = false;
-try {
-  Notifications = require('expo-notifications');
-  // Verify native methods actually exist (not just JS shim)
-  if (Notifications && typeof Notifications.getPermissionsAsync === 'function') {
-    nativeModuleAvailable = true;
-  }
-} catch (e) {
-  console.warn('[notificationService] expo-notifications not available', e);
-}
-
-const NOTIFICATION_KEY = '@tekateka:notifications_scheduled';
 const LAST_ALERT_KEY = '@tekateka:last_expiry_alert';
 
-// Configure notification behavior (safely)
-try {
-  if (Notifications?.setNotificationHandler) {
-    Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge: true,
-      }),
-    });
-  }
-} catch (e) {
-  console.warn('[notificationService] setNotificationHandler failed', e);
-}
+// ===== NO-OP FUNCTIONS (never call native modules) =====
 
 export async function requestNotificationPermissions(): Promise<boolean> {
-  if (Platform.OS === 'web') return false;
-  if (!Notifications) return false;
-
-  try {
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
-
-    if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-
-    return finalStatus === 'granted';
-  } catch (e) {
-    console.warn('[notificationService] permissions failed', e);
-    return false;
-  }
+  return false;
 }
 
-export async function scheduleExpiryReminders(expiryDate: string, isTrialMode: boolean): Promise<void> {
-  if (Platform.OS === 'web' || !Notifications) return;
-
-  try {
-    const hasPermission = await requestNotificationPermissions();
-    if (!hasPermission) return;
-
-    // Cancel all previous scheduled notifications
-    await Notifications.cancelAllScheduledNotificationsAsync();
-
-    const expiry = new Date(expiryDate);
-    const now = new Date();
-
-    const typeLabel = isTrialMode ? "Essai gratuit" : "Abonnement";
-
-    const reminders = [
-      { daysBefore: 7, title: `${typeLabel} - 7 jours restants`, body: `Votre ${typeLabel.toLowerCase()} TekaTeka expire dans 7 jours. Pensez a renouveler !` },
-      { daysBefore: 3, title: `${typeLabel} - 3 jours restants`, body: `Plus que 3 jours ! Renouvelez votre ${typeLabel.toLowerCase()} pour continuer a gerer votre business.` },
-      { daysBefore: 1, title: `${typeLabel} expire demain !`, body: `Attention ! Votre ${typeLabel.toLowerCase()} TekaTeka expire demain. Renouvelez maintenant.` },
-      { daysBefore: 0, title: `${typeLabel} expire aujourd'hui !`, body: `Votre ${typeLabel.toLowerCase()} TekaTeka expire aujourd'hui. Renouvelez pour ne pas perdre l'acces.` },
-    ];
-
-    const scheduledIds: string[] = [];
-
-    for (const reminder of reminders) {
-      const triggerDate = new Date(expiry);
-      triggerDate.setDate(triggerDate.getDate() - reminder.daysBefore);
-      triggerDate.setHours(9, 0, 0, 0);
-
-      if (triggerDate.getTime() > now.getTime()) {
-        try {
-          const id = await Notifications.scheduleNotificationAsync({
-            content: {
-              title: reminder.title,
-              body: reminder.body,
-              sound: true,
-              data: { type: 'expiry_reminder', daysBefore: reminder.daysBefore },
-            },
-            trigger: {
-              type: Notifications.SchedulableTriggerInputTypes?.DATE || 'date',
-              date: triggerDate,
-            },
-          });
-          scheduledIds.push(id);
-        } catch (e) {
-          console.log('Failed to schedule notification:', e);
-        }
-      }
-    }
-
-    await AsyncStorage.setItem(NOTIFICATION_KEY, JSON.stringify(scheduledIds));
-  } catch (e) {
-    console.warn('[notificationService] scheduleExpiryReminders failed', e);
-  }
+export async function scheduleExpiryReminders(_expiryDate: string, _isTrialMode: boolean): Promise<void> {
+  // No-op: native notifications disabled
+  return;
 }
 
 export async function cancelAllReminders(): Promise<void> {
-  if (Platform.OS === 'web' || !Notifications) return;
-
-  try {
-    await Notifications.cancelAllScheduledNotificationsAsync();
-    await AsyncStorage.removeItem(NOTIFICATION_KEY);
-  } catch (e) {
-    console.log('Failed to cancel notifications:', e);
-  }
+  // No-op: native notifications disabled
+  return;
 }
 
-// Check if we should show in-app alert (once per day)
+export async function sendInstantNotification(title: string, body: string, _data?: Record<string, any>): Promise<void> {
+  // No-op on device — just log for debugging
+  try {
+    console.log(`[NOTIFICATION-STUB] ${title}: ${body}`);
+  } catch {}
+}
+
+// ===== IN-APP ALERT HELPERS (pure JS, no native dependency) =====
+
 export async function shouldShowInAppAlert(): Promise<boolean> {
   try {
     const lastAlert = await AsyncStorage.getItem(LAST_ALERT_KEY);
     if (!lastAlert) return true;
-
     const lastDate = new Date(lastAlert);
     const now = new Date();
     const hoursDiff = (now.getTime() - lastDate.getTime()) / (1000 * 60 * 60);
-
-    return hoursDiff >= 24; // Show once per day
+    return hoursDiff >= 24;
   } catch {
     return true;
   }
 }
 
 export async function markAlertShown(): Promise<void> {
-  await AsyncStorage.setItem(LAST_ALERT_KEY, new Date().toISOString());
-}
-
-// Send an immediate local notification (for stock alerts, etc.)
-export async function sendInstantNotification(title: string, body: string, data?: Record<string, any>): Promise<void> {
-  if (Platform.OS === 'web' || !Notifications) {
-    console.log(`[NOTIFICATION] ${title}: ${body}`);
-    return;
-  }
-
-  const hasPermission = await requestNotificationPermissions();
-  if (!hasPermission) return;
-
   try {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title,
-        body,
-        sound: true,
-        data: data || {},
-      },
-      trigger: null, // null = immediate
-    });
-  } catch (e) {
-    console.log('Failed to send instant notification:', e);
-  }
+    await AsyncStorage.setItem(LAST_ALERT_KEY, new Date().toISOString());
+  } catch {}
 }
 
-// Get urgency level based on days remaining
+// ===== URGENCY UTILITIES (pure functions) =====
+
 export function getUrgencyLevel(daysRemaining: number): 'critical' | 'warning' | 'info' | 'none' {
   if (daysRemaining <= 1) return 'critical';
   if (daysRemaining <= 3) return 'warning';
