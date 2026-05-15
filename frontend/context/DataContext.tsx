@@ -94,13 +94,15 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [user?.id]);
 
   // Auto-refresh data every 30s when user is logged in (silent sync across devices)
-  useEffect(() => {
-    if (!user) return;
-    const interval = setInterval(() => {
-      loadData(true).catch(() => {});
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [user?.id]);
+  // DISABLED temporarily — was suspected to cause crash during login transition.
+  // Will re-enable after OTP login is confirmed stable.
+  // useEffect(() => {
+  //   if (!user) return;
+  //   const interval = setInterval(() => {
+  //     loadData(true).catch(() => {});
+  //   }, 30000);
+  //   return () => clearInterval(interval);
+  // }, [user?.id]);
 
   const loadData = async (silent: boolean = false) => {
     if (!silent) setLoading(true);

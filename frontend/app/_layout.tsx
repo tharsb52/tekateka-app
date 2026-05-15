@@ -7,6 +7,7 @@ import { ActivityIndicator, View } from 'react-native';
 import * as Font from 'expo-font';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import ErrorBoundary from '../components/ErrorBoundary';
 
 export default function RootLayout() {
   const [loading, setLoading] = useState(true);
@@ -36,16 +37,18 @@ export default function RootLayout() {
   }
 
   return (
-    <SafeAreaProvider>
-      <AuthProvider>
-        <DataProvider>
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="index" />
-            <Stack.Screen name="subscription" options={{ gestureEnabled: false }} />
-            <Stack.Screen name="(tabs)" />
-          </Stack>
-        </DataProvider>
-      </AuthProvider>
-    </SafeAreaProvider>
+    <ErrorBoundary fallbackLabel="Une erreur s'est produite. Touchez Réessayer pour continuer.">
+      <SafeAreaProvider>
+        <AuthProvider>
+          <DataProvider>
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="index" />
+              <Stack.Screen name="subscription" options={{ gestureEnabled: false }} />
+              <Stack.Screen name="(tabs)" />
+            </Stack>
+          </DataProvider>
+        </AuthProvider>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }

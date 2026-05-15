@@ -19,7 +19,19 @@ import { Ionicons } from '@expo/vector-icons';
 import { formatCurrency, convertCurrency } from '../../utils/currencies';
 import { getUrgencyLevel, getUrgencyColor, shouldShowInAppAlert, markAlertShown } from '../../services/notificationService';
 import { getCountryFromPhone } from '../../utils/countryFlags';
-import { exportSalesToPDF, exportSalesToExcel } from '../../utils/exportService';
+// Lazy import to prevent module-load crash if expo-print/expo-sharing native modules are missing
+const lazyExport = {
+  pdf: async (...args: any[]) => {
+    try { const m = require('../../utils/exportService'); return m.exportSalesToPDF(...args); }
+    catch (e) { console.warn('PDF export unavailable', e); Alert.alert('Export indisponible', "Cette fonction n'est pas disponible dans cette version."); }
+  },
+  excel: async (...args: any[]) => {
+    try { const m = require('../../utils/exportService'); return m.exportSalesToExcel(...args); }
+    catch (e) { console.warn('Excel export unavailable', e); Alert.alert('Export indisponible', "Cette fonction n'est pas disponible dans cette version."); }
+  },
+};
+const exportSalesToPDF = lazyExport.pdf as any;
+const exportSalesToExcel = lazyExport.excel as any;
 import { format, subDays } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
