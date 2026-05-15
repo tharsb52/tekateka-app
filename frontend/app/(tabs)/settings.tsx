@@ -491,7 +491,7 @@ function SettingsScreenInner() {
               </View>
               <View>
                 <Text style={styles.settingTitle}>Contacter le support</Text>
-                <Text style={styles.settingSubtitle}>mtharcisse@thenoly.com</Text>
+                <Text style={styles.settingSubtitle}>tekatekaquality@gmail.com</Text>
               </View>
             </View>
             <Ionicons name="chevron-forward" size={22} color="#94a3b8" />
