@@ -94,15 +94,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [user?.id]);
 
   // Auto-refresh data every 30s when user is logged in (silent sync across devices)
-  // DISABLED temporarily — was suspected to cause crash during login transition.
-  // Will re-enable after OTP login is confirmed stable.
-  // useEffect(() => {
-  //   if (!user) return;
-  //   const interval = setInterval(() => {
-  //     loadData(true).catch(() => {});
-  //   }, 30000);
-  //   return () => clearInterval(interval);
-  // }, [user?.id]);
+  useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(() => {
+      loadData(true).catch(() => {});
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [user?.id]);
 
   const loadData = async (silent: boolean = false) => {
     if (!silent) setLoading(true);
@@ -166,6 +164,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   // SALES
+  // Build a LOCAL ISO timestamp (no UTC conversion) so dates match the device's wall clock
+  const localISONow = (): string => {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  };
+
   const addSale = async (data: Omit<Sale, 'id' | 'createdAt' | 'userId'>) => {
     if (!user) return;
     try {
@@ -176,6 +181,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         total: data.totalAmount || (data.price || 0) * (data.quantity || 1),
         paymentMethod: data.paymentMethod,
         currency: data.currency,
+        clientTime: localISONow(),
       };
       const result = await salesAPI.add(salePayload);
       setSales(prev => [...prev, mapBackendSale(result)]);

@@ -106,6 +106,7 @@ class SaleModel(BaseModel):
     customerCurrency: Optional[str] = None
     customerTotal: Optional[float] = None
     date: Optional[str] = None
+    clientTime: Optional[str] = None  # Local time from device (e.g. "2024-01-15T15:30:00")
 
 class ExpenseModel(BaseModel):
     category: str
@@ -331,7 +332,10 @@ async def get_sales(user_id: str = Depends(get_current_user)):
 async def add_sale(sale: SaleModel, user_id: str = Depends(get_current_user)):
     doc = sale.dict()
     doc["userId"] = user_id
-    doc["createdAt"] = doc.get("date") or utc_now_iso()
+    # Prefer the device's local time (sent by the app) so dates reflect the user's actual wall clock
+    doc["createdAt"] = doc.get("clientTime") or doc.get("date") or utc_now_iso()
+    # Clean up the helper field
+    doc.pop("clientTime", None)
     result = await db.sales.insert_one(doc)
     doc["id"] = str(result.inserted_id)
     

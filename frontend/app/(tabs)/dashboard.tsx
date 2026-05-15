@@ -94,6 +94,13 @@ export default function DashboardScreen() {
 
   const [refreshing, setRefreshing] = useState(false);
 
+  // Live clock — refreshes every 30 seconds so the displayed time stays current
+  const [nowTime, setNowTime] = useState<Date>(new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNowTime(new Date()), 30000);
+    return () => clearInterval(t);
+  }, []);
+
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
@@ -217,9 +224,9 @@ export default function DashboardScreen() {
       {/* Date row + Refresh */}
       <View style={styles.subHeader}>
         <Text style={styles.dateTime}>
-          {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          {nowTime.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
           {'  '}
-          {new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+          {nowTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
         </Text>
         <TouchableOpacity style={styles.refreshBtn} onPress={handleRefresh} disabled={refreshing}>
           {refreshing ? (
@@ -370,13 +377,6 @@ export default function DashboardScreen() {
             >
               <Ionicons name="document-text" size={16} color="#dc2626" />
               <Text style={styles.exportBtnText}>PDF</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.exportBtn}
-              onPress={() => exportSalesToExcel(filteredSales, currency, user?.phoneNumber || '')}
-            >
-              <Ionicons name="grid" size={16} color="#10b981" />
-              <Text style={[styles.exportBtnText, { color: '#10b981' }]}>Excel</Text>
             </TouchableOpacity>
           </View>
         </View>
