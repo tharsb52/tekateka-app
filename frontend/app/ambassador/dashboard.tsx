@@ -8,6 +8,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { formatLocal } from '../../utils/dateUtils';
 
 const BG = '#0f172a';
 const ACCENT = '#f59e0b';
@@ -254,7 +255,7 @@ export default function AmbassadorDashboard() {
                   <View style={styles.saleDetails}>
                     <Text style={styles.salePlan}>{sale.plan}</Text>
                     <Text style={styles.saleDate}>
-                      {sale.createdAt ? new Date(sale.createdAt).toLocaleDateString('fr-FR') : ''}
+                      {formatLocal(sale.createdAt, 'dd/MM/yyyy HH:mm')}
                     </Text>
                   </View>
                 </View>

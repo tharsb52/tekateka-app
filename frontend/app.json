@@ -54,7 +54,8 @@
           "cameraPermission": "Prenez une photo de profil"
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-localization"
     ],
     "experiments": {
       "typedRoutes": true

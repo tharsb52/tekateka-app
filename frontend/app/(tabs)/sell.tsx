@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { formatCurrency, CURRENCIES } from '../../utils/currencies';
 import { format, isToday, isYesterday, parseISO } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { formatLocal, localDayKey } from '../../utils/dateUtils';
 import { cardShadow } from '../../utils/shadows';
 import AppHeader from '../../components/AppHeader';
 import { VoiceInputButton } from '../../components/VoiceInputButton';
@@ -43,7 +44,8 @@ export default function SellScreen() {
     
     filtered.forEach(sale => {
       try {
-        const dateKey = format(new Date(sale.createdAt), 'yyyy-MM-dd');
+        const dateKey = localDayKey(sale.createdAt);
+        if (!dateKey) return;
         if (!dayMap.has(dateKey)) dayMap.set(dateKey, []);
         dayMap.get(dateKey)!.push(sale);
       } catch {
@@ -149,7 +151,7 @@ export default function SellScreen() {
                     <View style={styles.saleInfo}>
                       <Text style={styles.saleName}>{sale.productName}</Text>
                       <Text style={styles.saleDate}>
-                        {(() => { try { return format(new Date(sale.createdAt), 'HH:mm'); } catch { return ''; }})()}
+                        {formatLocal(sale.createdAt, 'HH:mm')}
                       </Text>
                       <Text style={styles.saleDetail}>{sale.quantity}x {formatCurrency(sale.price, sale.currency)}</Text>
                     </View>
@@ -186,7 +188,7 @@ export default function SellScreen() {
                   <View style={styles.saleInfo}>
                     <Text style={styles.saleName}>{sale.productName}</Text>
                     <Text style={styles.saleDate}>
-                      {(() => { try { return format(new Date(sale.createdAt), 'dd/MM/yyyy HH:mm'); } catch { return ''; }})()}
+                      {formatLocal(sale.createdAt, 'dd/MM/yyyy HH:mm')}
                     </Text>
                   </View>
                   <Text style={[styles.saleTotal, { color: '#10b981' }]}>{formatCurrency(sale.totalAmount, sale.currency)}</Text>
@@ -303,7 +305,7 @@ export default function SellScreen() {
               <ScrollView style={{ padding: 20 }} keyboardShouldPersistTaps="handled">
                 <Text style={styles.editLabel}>Produit: {editingSale.productName}</Text>
                 <Text style={styles.editLabel}>Prix unitaire: {formatCurrency(editingSale.price, editingSale.currency)}</Text>
-                <Text style={styles.editLabel}>Date: {(() => { try { return format(new Date(editingSale.createdAt), 'dd/MM/yyyy HH:mm'); } catch { return ''; }})()}</Text>
+                <Text style={styles.editLabel}>Date: {formatLocal(editingSale.createdAt, 'dd/MM/yyyy HH:mm')}</Text>
                 <Text style={[styles.label, { marginTop: 16 }]}>Nouvelle quantite</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <TextInput style={[styles.input, { flex: 1 }]} value={editQty}

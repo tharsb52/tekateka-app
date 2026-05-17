@@ -8,6 +8,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { formatLocal } from '../../utils/dateUtils';
 
 const BG = '#0f172a';
 const ACCENT = '#f59e0b';
@@ -120,7 +121,7 @@ export default function AmbassadorActivateScreen() {
             <View style={styles.resultRow}>
               <Text style={styles.resultLabel}>Expire le:</Text>
               <Text style={styles.resultValue}>
-                {result.subscription?.expiryDate ? new Date(result.subscription.expiryDate).toLocaleDateString('fr-FR') : '-'}
+                {result.subscription?.expiryDate ? formatLocal(result.subscription.expiryDate, 'dd/MM/yyyy') : '-'}
               </Text>
             </View>
             <View style={styles.resultRow}>

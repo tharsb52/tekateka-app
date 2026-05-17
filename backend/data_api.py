@@ -332,9 +332,10 @@ async def get_sales(user_id: str = Depends(get_current_user)):
 async def add_sale(sale: SaleModel, user_id: str = Depends(get_current_user)):
     doc = sale.dict()
     doc["userId"] = user_id
-    # Prefer the device's local time (sent by the app) so dates reflect the user's actual wall clock
-    doc["createdAt"] = doc.get("clientTime") or doc.get("date") or utc_now_iso()
-    # Clean up the helper field
+    # Always store the canonical UTC timestamp. The mobile app converts to the
+    # user's local timezone for display via `utils/dateUtils.formatLocal`.
+    doc["createdAt"] = utc_now_iso()
+    # Clean up legacy helper field if present
     doc.pop("clientTime", None)
     result = await db.sales.insert_one(doc)
     doc["id"] = str(result.inserted_id)

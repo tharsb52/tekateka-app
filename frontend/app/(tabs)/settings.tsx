@@ -20,6 +20,7 @@ import { useRouter } from 'expo-router';
 import i18n from '../../utils/i18n';
 import { Ionicons } from '@expo/vector-icons';
 import { CURRENCIES } from '../../utils/currencies';
+import { formatLocal } from '../../utils/dateUtils';
 import { getOTPProviderInfo } from '../../services/otpService';
 import { getPaymentProviderInfo } from '../../services/paymentService';
 import AppHeader from '../../components/AppHeader';
@@ -214,7 +215,7 @@ function SettingsScreenInner() {
             <View style={styles.profileInfo}>
               <Text style={styles.profilePhone}>+{user?.phoneNumber || ''}</Text>
               <Text style={styles.profileDate}>
-                Membre depuis {user?.createdAt ? new Date(user.createdAt).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }) : ''}
+                Membre depuis {formatLocal(user?.createdAt, 'MM/yyyy')}
               </Text>
             </View>
           </View>

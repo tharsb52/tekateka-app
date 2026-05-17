@@ -34,6 +34,7 @@ const exportSalesToPDF = lazyExport.pdf as any;
 const exportSalesToExcel = lazyExport.excel as any;
 import { format, subDays } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { formatLocal, localDayKey } from '../../utils/dateUtils';
 
 import AppHeader from '../../components/AppHeader';
 import { cardShadow } from '../../utils/shadows';
@@ -162,7 +163,7 @@ export default function DashboardScreen() {
         : format(date, 'd MMM', { locale: fr });
       const dayRevenue = filtered
         .filter(s => {
-          try { return format(new Date(s.createdAt), 'yyyy-MM-dd') === dateKey; } catch { return false; }
+          try { return localDayKey(s.createdAt) === dateKey; } catch { return false; }
         })
         .reduce((sum, s) => sum + convertCurrency(s.totalAmount, s.currency || userCurrency, userCurrency), 0);
       days.push({ label: dayLabel.charAt(0).toUpperCase() + dayLabel.slice(1), value: dayRevenue });
@@ -183,7 +184,7 @@ export default function DashboardScreen() {
     const userCurrency = user?.currency || 'USD';
     const daySales = sales
       .filter(s => {
-        try { return format(new Date(s.createdAt), 'yyyy-MM-dd') === dateKey; } catch { return false; }
+        try { return localDayKey(s.createdAt) === dateKey; } catch { return false; }
       })
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     const total = daySales.reduce((sum, s) => sum + convertCurrency(s.totalAmount, s.currency || userCurrency, userCurrency), 0);
@@ -588,7 +589,7 @@ export default function DashboardScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 15, fontWeight: '600', color: '#1e293b' }}>{sale.productName}</Text>
                     <Text style={{ fontSize: 12, color: '#2563eb', marginTop: 2 }}>
-                      {(() => { try { return format(new Date(sale.createdAt), 'HH:mm'); } catch { return ''; } })()}
+                      {formatLocal(sale.createdAt, 'HH:mm')}
                       {' • '}{sale.quantity}x {formatCurrency(sale.price, sale.currency || currency)}
                       {sale.currency && sale.currency !== currency ? ` (${sale.currency})` : ''}
                     </Text>

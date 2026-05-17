@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { formatCurrency } from '../../utils/currencies';
 import { ExpenseCategoryType } from '../../types';
 import { format } from 'date-fns';
+import { formatLocal } from '../../utils/dateUtils';
 import { cardShadow } from '../../utils/shadows';
 import { VoiceInputButton } from '../../components/VoiceInputButton';
 import AppHeader from '../../components/AppHeader';
@@ -122,7 +123,7 @@ export default function ExpensesScreen() {
                       </Text>
                     ) : null}
                     <Text style={styles.expenseDate}>
-                      {(() => { try { return format(new Date(expense.createdAt), 'dd/MM/yyyy HH:mm'); } catch { return ''; }})()}
+                      {formatLocal(expense.createdAt, 'dd/MM/yyyy HH:mm')}
                     </Text>
                   </View>
                   <View style={styles.expenseRight}>

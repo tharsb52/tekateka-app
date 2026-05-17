@@ -20,6 +20,7 @@ import i18n from '../../utils/i18n';
 import { Ionicons } from '@expo/vector-icons';
 import { formatCurrency } from '../../utils/currencies';
 import { format } from 'date-fns';
+import { formatLocal } from '../../utils/dateUtils';
 import AppHeader from '../../components/AppHeader';
 import CurrencyAmountInput from '../../components/CurrencyAmountInput';
 
@@ -186,14 +187,7 @@ export default function DebtsScreen() {
                     {debt.dueDate ? (
                       <Text style={styles.dueDate}>
                         <Ionicons name="calendar-outline" size={12} color="#64748b" /> 
-                        {' '}Échéance: {(() => {
-                          try {
-                            const date = new Date(debt.dueDate);
-                            return !isNaN(date.getTime()) ? format(date, 'dd/MM/yyyy') : 'Date invalide';
-                          } catch {
-                            return 'Date invalide';
-                          }
-                        })()}
+                        {' '}Échéance: {formatLocal(debt.dueDate, 'dd/MM/yyyy') || 'Date invalide'}
                       </Text>
                     ) : null}
                   </View>
@@ -251,14 +245,7 @@ export default function DebtsScreen() {
                       <View style={styles.paidBadge}>
                         <Ionicons name="checkmark-done" size={14} color="#10b981" /> 
                         <Text style={styles.paidDate}>
-                          Payé le {(() => {
-                            try {
-                              const date = new Date(debt.paidAt);
-                              return !isNaN(date.getTime()) ? format(date, 'dd/MM/yyyy') : 'Date invalide';
-                            } catch {
-                              return 'Date invalide';
-                            }
-                          })()}
+                          Payé le {formatLocal(debt.paidAt, 'dd/MM/yyyy') || 'Date invalide'}
                         </Text>
                         <Text style={styles.addedToRevenue}>+ Chiffre d'affaires</Text>
                       </View>

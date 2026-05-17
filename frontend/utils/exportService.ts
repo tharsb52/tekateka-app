@@ -5,15 +5,17 @@ import { Sale } from '../types';
 import { formatCurrency } from './currencies';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { formatLocal, localDayKey } from './dateUtils';
 
 export async function exportSalesToPDF(sales: Sale[], currency: string, userName: string): Promise<void> {
   const sortedSales = [...sales].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   const totalRevenue = sortedSales.reduce((s, sale) => s + sale.totalAmount, 0);
 
-  // Group by day
+  // Group by day (using LOCAL timezone for grouping)
   const dayMap = new Map<string, Sale[]>();
   sortedSales.forEach(sale => {
-    const key = format(new Date(sale.createdAt), 'yyyy-MM-dd');
+    const key = localDayKey(sale.createdAt);
+    if (!key) return;
     if (!dayMap.has(key)) dayMap.set(key, []);
     dayMap.get(key)!.push(sale);
   });
@@ -21,11 +23,11 @@ export async function exportSalesToPDF(sales: Sale[], currency: string, userName
   let tableRows = '';
   dayMap.forEach((daySales, dateKey) => {
     const dayTotal = daySales.reduce((s, sale) => s + sale.totalAmount, 0);
-    const dayLabel = format(new Date(dateKey), 'EEEE dd MMMM yyyy', { locale: fr });
+    const dayLabel = format(new Date(dateKey + 'T12:00:00'), 'EEEE dd MMMM yyyy', { locale: fr });
     tableRows += `<tr style="background:#eff6ff"><td colspan="7" style="padding:10px;font-weight:bold;color:#2563eb">${dayLabel} — Total: ${formatCurrency(dayTotal, currency)}</td></tr>`;
     daySales.forEach(sale => {
-      const dateStr = format(new Date(sale.createdAt), 'dd/MM/yyyy');
-      const time = format(new Date(sale.createdAt), 'HH:mm');
+      const dateStr = formatLocal(sale.createdAt, 'dd/MM/yyyy');
+      const time = formatLocal(sale.createdAt, 'HH:mm');
       tableRows += `<tr>
         <td style="padding:6px 10px">${dateStr}</td>
         <td style="padding:6px 10px">${time}</td>
@@ -106,10 +108,9 @@ export async function exportSalesToExcel(sales: Sale[], currency: string, userNa
     lines.push('');
     lines.push(['Date', 'Heure', 'Produit', 'Quantite', 'Prix unitaire', 'Total', 'Paiement', 'Client'].join(','));
     sortedSales.forEach(sale => {
-      const date = new Date(sale.createdAt);
       lines.push([
-        escape(format(date, 'dd/MM/yyyy')),
-        escape(format(date, 'HH:mm')),
+        escape(formatLocal(sale.createdAt, 'dd/MM/yyyy')),
+        escape(formatLocal(sale.createdAt, 'HH:mm')),
         escape(sale.productName),
         sale.quantity,
         sale.price,

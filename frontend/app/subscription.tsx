@@ -22,6 +22,7 @@ import { processPayment, getPaymentProviderInfo } from '../services/paymentServi
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AppHeader from '../components/AppHeader';
 import { paymentsAPI } from '../services/apiService';
+import { formatLocal } from '../utils/dateUtils';
 
 const BG = '#fef3e7';
 
@@ -225,7 +226,7 @@ export default function SubscriptionScreen() {
                 <View style={styles.activeSubRow}>
                   <Text style={styles.activeSubLabel}>Date d'expiration</Text>
                   <Text style={styles.activeSubValue}>
-                    {new Date(user.subscriptionEndDate).toLocaleDateString('fr-FR')}
+                    {formatLocal(user.subscriptionEndDate, 'dd/MM/yyyy')}
                   </Text>
                 </View>
               )}

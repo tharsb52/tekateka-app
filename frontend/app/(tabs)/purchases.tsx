@@ -15,6 +15,7 @@ import i18n from '../../utils/i18n';
 import { Ionicons } from '@expo/vector-icons';
 import { formatCurrency } from '../../utils/currencies';
 import { format } from 'date-fns';
+import { formatLocal } from '../../utils/dateUtils';
 
 import { cardShadow } from '../../utils/shadows';
 
@@ -150,7 +151,7 @@ export default function PurchasesScreen() {
                       </Text>
                     ) : null}
                     <Text style={styles.purchaseDate}>
-                      {format(new Date(purchase.createdAt), 'dd MMM yyyy')}
+                      {formatLocal(purchase.createdAt, 'dd/MM/yyyy HH:mm')}
                     </Text>
                   </View>
                   <View style={styles.purchaseRight}>

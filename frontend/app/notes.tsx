@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AppHeader from '../components/AppHeader';
 import { notesAPI } from '../services/apiService';
 import { useAuth } from '../context/AuthContext';
+import { formatLocal } from '../utils/dateUtils';
 
 const BG = '#fef3e7';
 
@@ -112,11 +113,7 @@ export default function NotesScreen() {
     }
   };
 
-  const formatDate = (d: string) => {
-    if (!d) return '';
-    const date = new Date(d);
-    return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-  };
+  const formatDate = (d: string) => formatLocal(d, 'dd/MM/yyyy HH:mm');
 
   return (
     <SafeAreaView style={styles.safe}>
