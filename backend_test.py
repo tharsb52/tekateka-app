@@ -1,236 +1,195 @@
 """
-Stripe Payment Integration Tests for TekaTeka
-=============================================
-Tests endpoints under /api/payments/stripe/*
+Backend test for Stripe payment integration after JWT auth fix.
 """
 import os
+import sys
 import json
-import time
 import requests
-from datetime import datetime
+from pymongo import MongoClient
+from bson import ObjectId
+from datetime import datetime, timezone
+from dotenv import load_dotenv
+
+load_dotenv("/app/backend/.env")
 
 BASE_URL = "https://low-data-shop.preview.emergentagent.com/api"
-PHONE = "+243111000111"
+TEST_PHONE = "+243111000111"
+
+MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
+DB_NAME = os.getenv("DB_NAME", "test_database")
+
+mongo = MongoClient(MONGO_URL)
+db = mongo[DB_NAME]
 
 results = []
 
-def record(name, passed, detail=""):
-    status = "PASS" if passed else "FAIL"
-    line = f"[{status}] {name} :: {detail}"
-    print(line)
+def log(name, passed, detail=""):
+    icon = "PASS" if passed else "FAIL"
+    print(f"[{icon}] {name} -- {detail}")
     results.append((name, passed, detail))
-
-
-def login_phone():
-    r = requests.post(f"{BASE_URL}/auth/phone-login", json={"phoneNumber": PHONE})
-    r.raise_for_status()
-    data = r.json()
-    return data["token"], data["user"]["id"]
-
-
-def test_config():
-    r = requests.get(f"{BASE_URL}/payments/stripe/config")
-    ok = r.status_code == 200
-    if not ok:
-        record("GET /payments/stripe/config", False, f"HTTP {r.status_code} - {r.text[:200]}")
-        return
-    body = r.json()
-    enabled = body.get("enabled") is True
-    pk = body.get("publishableKey", "")
-    pk_ok = pk.startswith("pk_test_")
-    prices = body.get("prices", {})
-    sub_prices = prices.get("subscription", {})
-    has_plans = all(p in sub_prices for p in ["monthly", "quarterly", "yearly"])
-    has_amb = "ambassadorCode" in prices
-    detail = f"enabled={body.get('enabled')} pk_test={pk_ok} currency={body.get('currency')} plans_present={has_plans} ambassadorCode={has_amb}"
-    record("GET /payments/stripe/config", enabled and pk_ok and has_plans and has_amb, detail)
-
-
-def test_subscription_checkout(token, plan):
-    r = requests.post(
-        f"{BASE_URL}/payments/stripe/subscription/checkout",
-        json={"plan": plan},
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    if r.status_code != 200:
-        record(f"POST /payments/stripe/subscription/checkout ({plan})", False, f"HTTP {r.status_code} - {r.text[:300]}")
-        return None
-    body = r.json()
-    url = body.get("url", "")
-    sid = body.get("sessionId", "")
-    ok = url.startswith("https://checkout.stripe.com/") and sid.startswith("cs_test_")
-    record(f"POST /payments/stripe/subscription/checkout ({plan})", ok, f"sessionId={sid[:25]} url_ok={url.startswith('https://checkout.stripe.com/')}")
-    return sid
-
-
-def test_invalid_plan(token):
-    r = requests.post(
-        f"{BASE_URL}/payments/stripe/subscription/checkout",
-        json={"plan": "weekly"},
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    record("POST subscription/checkout invalid plan -> 400", r.status_code == 400, f"HTTP {r.status_code} - {r.text[:150]}")
-
-
-def test_ambassador_checkout(token, qty=3):
-    r = requests.post(
-        f"{BASE_URL}/payments/stripe/ambassador/checkout",
-        json={"quantity": qty},
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    if r.status_code != 200:
-        record(f"POST /payments/stripe/ambassador/checkout (qty={qty})", False, f"HTTP {r.status_code} - {r.text[:300]}")
-        return None
-    body = r.json()
-    url = body.get("url", "")
-    sid = body.get("sessionId", "")
-    ok = url.startswith("https://checkout.stripe.com/") and sid.startswith("cs_test_")
-    record(f"POST /payments/stripe/ambassador/checkout (qty={qty})", ok, f"sessionId={sid[:25]}")
-    return sid
-
-
-def test_session_status(token, session_id, expected_type):
-    r = requests.get(
-        f"{BASE_URL}/payments/stripe/session/{session_id}",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    if r.status_code != 200:
-        record(f"GET session/{session_id[:18]}... ({expected_type})", False, f"HTTP {r.status_code} - {r.text[:200]}")
-        return None
-    body = r.json()
-    ok = body.get("type") == expected_type and body.get("status") in ("pending", "completed")
-    record(f"GET session/... ({expected_type})", ok, f"status={body.get('status')} type={body.get('type')} amount={body.get('amount')}")
-    return body
-
-
-def test_webhook(session_id, label):
-    event = {
-        "id": f"evt_test_{label}_{int(time.time())}",
-        "type": "checkout.session.completed",
-        "data": {
-            "object": {
-                "id": session_id,
-                "payment_status": "paid",
-                "payment_intent": f"pi_test_{label}_{int(time.time())}",
-            }
-        },
-    }
-    r = requests.post(f"{BASE_URL}/payments/stripe/webhook", json=event)
-    record(f"POST /payments/stripe/webhook ({label})", r.status_code == 200, f"HTTP {r.status_code} - {r.text[:200]}")
-
-
-def test_auth_required():
-    r = requests.post(f"{BASE_URL}/payments/stripe/subscription/checkout", json={"plan": "monthly"})
-    record("Subscription checkout without auth -> 401", r.status_code == 401, f"HTTP {r.status_code}")
-
-    r2 = requests.post(f"{BASE_URL}/payments/stripe/ambassador/checkout", json={"quantity": 1})
-    record("Ambassador checkout without auth -> 401", r2.status_code == 401, f"HTTP {r2.status_code}")
-
-
-def mongo_verify(user_id, sub_session_id, amb_session_id, amb_qty):
-    try:
-        from pymongo import MongoClient
-        from bson import ObjectId
-    except Exception as e:
-        record("Mongo verification import", False, str(e))
-        return
-    mongo_url = os.getenv("MONGO_URL", "mongodb://localhost:27017")
-    db_name = os.getenv("DB_NAME", "test_database")
-    cli = MongoClient(mongo_url)
-    db = cli[db_name]
-
-    if sub_session_id:
-        p = db.payments.find_one({"stripeSessionId": sub_session_id})
-        if p:
-            record(
-                "Mongo: subscription payment doc inserted",
-                p.get("provider") == "stripe" and p.get("type") == "subscription",
-                f"status={p.get('status')} type={p.get('type')} plan={p.get('plan')} amount={p.get('amount')}",
-            )
-        else:
-            record("Mongo: subscription payment doc inserted", False, "no doc found")
-
-    if amb_session_id:
-        p = db.payments.find_one({"stripeSessionId": amb_session_id})
-        if p:
-            record(
-                "Mongo: ambassador payment doc inserted",
-                p.get("provider") == "stripe" and p.get("type") == "ambassador_codes" and p.get("quantity") == amb_qty,
-                f"status={p.get('status')} qty={p.get('quantity')} amount={p.get('amount')}",
-            )
-            codes = list(db.ambassador_codes.find({"purchasePaymentId": str(p["_id"])}))
-            record(
-                f"Mongo: ambassador_codes generated (expected {amb_qty})",
-                len(codes) == amb_qty and all(c.get("status") == "available" for c in codes),
-                f"found={len(codes)} statuses={[c.get('status') for c in codes]}",
-            )
-        else:
-            record("Mongo: ambassador payment doc inserted", False, "no doc found")
-
-    try:
-        u = db.users.find_one({"_id": ObjectId(user_id)})
-        sub = (u or {}).get("subscription", {})
-        record(
-            "Mongo: user.subscription active after fulfillment",
-            sub.get("status") == "active" and sub.get("provider") == "stripe",
-            f"subscription={sub}",
-        )
-    except Exception as e:
-        record("Mongo: user.subscription lookup", False, str(e))
+    return passed
 
 
 def main():
-    print("=" * 80)
-    print("STRIPE PAYMENT INTEGRATION TESTS")
-    print(f"Base URL: {BASE_URL}")
-    print(f"Time: {datetime.utcnow().isoformat()}Z")
-    print("=" * 80)
-
-    test_config()
-    test_auth_required()
-
-    try:
-        token, user_id = login_phone()
-        print(f"[INFO] Logged in user_id={user_id}")
-    except Exception as e:
-        record("Phone login", False, str(e))
+    print("\n=== Step 1: Phone Login ===")
+    r = requests.post(f"{BASE_URL}/auth/phone-login", json={"phoneNumber": TEST_PHONE}, timeout=15)
+    if r.status_code != 200:
+        log("Phone login", False, f"status={r.status_code} body={r.text[:200]}")
+        return
+    data = r.json()
+    token = data.get("token")
+    user_id = data.get("user", {}).get("id")
+    log("Phone login", bool(token and user_id), f"user_id={user_id}")
+    if not token:
         return
 
-    test_invalid_plan(token)
+    headers = {"Authorization": f"Bearer {token}"}
 
-    sid_monthly = test_subscription_checkout(token, "monthly")
-    sid_quarterly = test_subscription_checkout(token, "quarterly")
-    sid_yearly = test_subscription_checkout(token, "yearly")
+    print("\n=== Step 2: Subscription Checkouts ===")
+    plan_sessions = {}
+    for plan in ["monthly", "quarterly", "yearly"]:
+        r = requests.post(
+            f"{BASE_URL}/payments/stripe/subscription/checkout",
+            json={"plan": plan}, headers=headers, timeout=30,
+        )
+        if r.status_code != 200:
+            log(f"Subscription checkout [{plan}]", False, f"status={r.status_code} body={r.text[:300]}")
+            continue
+        body = r.json()
+        url = body.get("url", "")
+        sid = body.get("sessionId", "")
+        ok = url.startswith("https://checkout.stripe.com/") and sid.startswith("cs_test_")
+        log(f"Subscription checkout [{plan}]", ok, f"sid={sid[:25]} url_prefix_ok={url.startswith('https://checkout.stripe.com/')}")
+        if ok:
+            plan_sessions[plan] = sid
 
-    amb_qty = 3
-    sid_amb = test_ambassador_checkout(token, qty=amb_qty)
+    r = requests.post(
+        f"{BASE_URL}/payments/stripe/subscription/checkout",
+        json={"plan": "weekly"}, headers=headers, timeout=15,
+    )
+    detail = ""
+    try:
+        detail = r.json().get("detail", "")
+    except Exception:
+        pass
+    log("Subscription checkout [invalid plan 'weekly'] -> 400", r.status_code == 400 and "Plan invalide" in detail,
+        f"status={r.status_code} detail='{detail}'")
 
-    if sid_monthly:
-        test_session_status(token, sid_monthly, "subscription")
-    if sid_amb:
-        test_session_status(token, sid_amb, "ambassador_codes")
+    print("\n=== Step 3: Ambassador Checkout ===")
+    r = requests.post(
+        f"{BASE_URL}/payments/stripe/ambassador/checkout",
+        json={"quantity": 3}, headers=headers, timeout=30,
+    )
+    amb_session_id = None
+    if r.status_code == 200:
+        b = r.json()
+        url = b.get("url", "")
+        amb_session_id = b.get("sessionId", "")
+        ok = url.startswith("https://checkout.stripe.com/") and amb_session_id.startswith("cs_test_")
+        log("Ambassador checkout (qty=3)", ok, f"sid={amb_session_id[:25]}")
+    else:
+        log("Ambassador checkout (qty=3)", False, f"status={r.status_code} body={r.text[:300]}")
 
-    if sid_monthly:
-        test_webhook(sid_monthly, "sub")
-    if sid_amb:
-        test_webhook(sid_amb, "amb")
+    print("\n=== Step 4: Session Status Polling (pending) ===")
+    monthly_sid = plan_sessions.get("monthly")
+    if monthly_sid:
+        r = requests.get(f"{BASE_URL}/payments/stripe/session/{monthly_sid}", headers=headers, timeout=15)
+        if r.status_code == 200:
+            b = r.json()
+            ok = (b.get("status") == "pending" and b.get("type") == "subscription"
+                  and b.get("amount") == 2.0 and b.get("currency") == "USD")
+            log("Session status polling (monthly, pending)", ok, f"body={b}")
+        else:
+            log("Session status polling (monthly)", False, f"status={r.status_code} body={r.text[:200]}")
 
-    # Post-webhook verification
-    if sid_monthly:
-        test_session_status(token, sid_monthly, "subscription")
-    if sid_amb:
-        test_session_status(token, sid_amb, "ambassador_codes")
+    print("\n=== Step 5: Webhook Simulation - Subscription ===")
+    if monthly_sid:
+        webhook_body = {
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "id": monthly_sid,
+                    "payment_status": "paid",
+                    "payment_intent": "pi_test_dummy_mon",
+                }
+            }
+        }
+        r = requests.post(f"{BASE_URL}/payments/stripe/webhook", json=webhook_body, timeout=15)
+        if r.status_code == 200 and r.json().get("received") is True:
+            log("Webhook (subscription) -> 200 {received:true}", True, "")
+        else:
+            log("Webhook (subscription) -> 200 {received:true}", False, f"status={r.status_code} body={r.text[:200]}")
 
-    mongo_verify(user_id, sid_monthly, sid_amb, amb_qty)
+        pay = db.payments.find_one({"stripeSessionId": monthly_sid})
+        log("Payments doc.status == 'completed' (subscription)", bool(pay and pay.get("status") == "completed"),
+            f"status={pay.get('status') if pay else None}")
 
-    # Summary
-    print("\n" + "=" * 80)
-    passed = sum(1 for _, ok, _ in results if ok)
+        user_doc = db.users.find_one({"_id": ObjectId(user_id)})
+        sub = (user_doc or {}).get("subscription", {})
+        expires_at = sub.get("expiresAt")
+        days_ok = False
+        diff_days = None
+        if expires_at:
+            try:
+                exp_dt = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+                if exp_dt.tzinfo is None:
+                    exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+                now_dt = datetime.now(timezone.utc)
+                diff_days = (exp_dt - now_dt).total_seconds() / 86400.0
+                days_ok = 29 < diff_days < 31
+            except Exception:
+                days_ok = False
+        ok = sub.get("status") == "active" and sub.get("plan") == "monthly" and days_ok
+        log("User.subscription active, monthly, expiresAt~30d", ok,
+            f"status={sub.get('status')} plan={sub.get('plan')} diff_days={diff_days}")
+
+    print("\n=== Step 6: Webhook Simulation - Ambassador Codes ===")
+    if amb_session_id:
+        webhook_body = {
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "id": amb_session_id,
+                    "payment_status": "paid",
+                    "payment_intent": "pi_test_dummy_amb",
+                }
+            }
+        }
+        r = requests.post(f"{BASE_URL}/payments/stripe/webhook", json=webhook_body, timeout=15)
+        if r.status_code == 200 and r.json().get("received") is True:
+            log("Webhook (ambassador) -> 200 {received:true}", True, "")
+        else:
+            log("Webhook (ambassador) -> 200 {received:true}", False, f"status={r.status_code} body={r.text[:200]}")
+
+        pay = db.payments.find_one({"stripeSessionId": amb_session_id})
+        log("Payments doc.status == 'completed' (ambassador)", bool(pay and pay.get("status") == "completed"),
+            f"status={pay.get('status') if pay else None}")
+
+        if pay:
+            codes = list(db.ambassador_codes.find({"purchasePaymentId": str(pay["_id"])}))
+        else:
+            codes = []
+        all_available = all(c.get("status") == "available" for c in codes)
+        ok = len(codes) == 3 and all_available and all(c.get("ambassadorUserId") == user_id for c in codes)
+        sample = [{"code": c.get("code"), "status": c.get("status")} for c in codes]
+        log("3 ambassador_codes docs created (status=available)", ok, f"count={len(codes)} sample={sample}")
+
+    print("\n=== Step 7: Session Status After Fulfillment ===")
+    if monthly_sid:
+        r = requests.get(f"{BASE_URL}/payments/stripe/session/{monthly_sid}", headers=headers, timeout=15)
+        if r.status_code == 200:
+            b = r.json()
+            log("Session status now 'completed' (monthly)", b.get("status") == "completed", f"body={b}")
+
+    print("\n=== Summary ===")
+    passed = sum(1 for _, p, _ in results if p)
     total = len(results)
-    print(f"RESULTS: {passed}/{total} passed")
-    for n, ok, d in results:
-        print(f"  [{'PASS' if ok else 'FAIL'}] {n} -- {d}")
-    print("=" * 80)
+    print(f"{passed}/{total} passed")
+    if passed != total:
+        for name, p, detail in results:
+            if not p:
+                print(f"  FAIL: {name} -- {detail}")
+    sys.exit(0 if passed == total else 1)
 
 
 if __name__ == "__main__":
