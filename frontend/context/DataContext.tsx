@@ -164,11 +164,17 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   // SALES
-  // Build a LOCAL ISO timestamp (no UTC conversion) so dates match the device's wall clock
+  // Build a LOCAL ISO timestamp WITH timezone offset (e.g. 2024-01-15T15:30:00+02:00)
+  // so any JS engine (Hermes, V8, JSC) parses it back to the SAME wall-clock time
+  // on the device. Without the offset, Hermes sometimes treats it as UTC.
   const localISONow = (): string => {
     const d = new Date();
     const pad = (n: number) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    const tzMinutes = -d.getTimezoneOffset(); // positive east of UTC
+    const sign = tzMinutes >= 0 ? '+' : '-';
+    const absMin = Math.abs(tzMinutes);
+    const tz = `${sign}${pad(Math.floor(absMin / 60))}:${pad(absMin % 60)}`;
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}${tz}`;
   };
 
   const addSale = async (data: Omit<Sale, 'id' | 'createdAt' | 'userId'>) => {
