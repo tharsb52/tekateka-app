@@ -7,6 +7,8 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { buyAmbassadorCodes } from '../../services/stripeCheckout';
+import { useAuth } from '../../context/AuthContext';
+import { convertCurrency, formatCurrency } from '../../utils/currencies';
 
 type Plan = 'monthly' | 'quarterly' | 'yearly';
 
@@ -22,13 +24,22 @@ const CARD = '#1e293b';
 
 export default function BuyAmbassadorCodesScreen() {
   const router = useRouter();
+  const { user } = useAuth();
+  const userCurrency = user?.currency || 'EUR';
   const [selectedPlan, setSelectedPlan] = useState<Plan>('monthly');
   const [quantity, setQuantity] = useState('5');
   const [loading, setLoading] = useState(false);
 
   const plan = PLANS.find(p => p.id === selectedPlan)!;
   const qty = Math.max(1, Math.min(parseInt(quantity || '1', 10) || 1, 100));
-  const total = plan.price * qty;
+  const totalEur = plan.price * qty;
+
+  const displayPriceForPlan = (eur: number) => {
+    const converted = convertCurrency(eur, 'EUR', userCurrency);
+    const highDenom = ['CDF', 'CFA', 'RWF', 'BIF', 'NGN'].includes(userCurrency);
+    const rounded = highDenom ? Math.round(converted) : Math.round(converted * 100) / 100;
+    return formatCurrency(rounded, userCurrency);
+  };
 
   const handleQuantityChange = (delta: number) => {
     const next = Math.max(1, Math.min(qty + delta, 100));
@@ -38,7 +49,7 @@ export default function BuyAmbassadorCodesScreen() {
   const handleBuy = async () => {
     Alert.alert(
       'Confirmer l\'achat',
-      `${qty} code(s) ${plan.name} — Total: ${total}€\n\nVous allez être redirigé vers Stripe pour le paiement.`,
+      `${qty} code(s) ${plan.name} — Total: ${displayPriceForPlan(totalEur)}\n(facturé ${totalEur}€ par Stripe)\n\nVous allez être redirigé vers Stripe pour le paiement.`,
       [
         { text: 'Annuler', style: 'cancel' },
         {
@@ -114,7 +125,7 @@ export default function BuyAmbassadorCodesScreen() {
                 <Text style={styles.planDuration}>{p.duration} par code</Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
-                <Text style={styles.planPrice}>{p.price}€</Text>
+                <Text style={styles.planPrice}>{displayPriceForPlan(p.price)}</Text>
                 <Text style={styles.planUnit}>/ code</Text>
               </View>
             </TouchableOpacity>
@@ -142,7 +153,12 @@ export default function BuyAmbassadorCodesScreen() {
         {/* Total */}
         <View style={styles.totalCard}>
           <Text style={styles.totalLabel}>Total à payer</Text>
-          <Text style={styles.totalAmount}>{total}€</Text>
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={styles.totalAmount}>{displayPriceForPlan(totalEur)}</Text>
+            {userCurrency !== 'EUR' && (
+              <Text style={styles.totalEurNote}>≈ {totalEur}€ facturés</Text>
+            )}
+          </View>
         </View>
 
         {/* Buy button */}
@@ -214,6 +230,7 @@ const styles = StyleSheet.create({
   },
   totalLabel: { color: '#7dd3fc', fontSize: 14, fontWeight: '600' },
   totalAmount: { color: '#fff', fontSize: 26, fontWeight: '900' },
+  totalEurNote: { color: '#bae6fd', fontSize: 11, fontWeight: '500', marginTop: 2 },
   buyBtn: {
     backgroundColor: ACCENT, marginHorizontal: 16, marginTop: 16,
     paddingVertical: 16, borderRadius: 14,

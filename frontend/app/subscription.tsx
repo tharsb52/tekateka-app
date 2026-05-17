@@ -42,14 +42,27 @@ export default function SubscriptionScreen() {
   const userHasAccess = hasAccess();
   const trialExpired = !isActive && !user?.isSubscribed && trialDays === 0;
 
-  // Direct user prices in EUR (Stripe-backed)
+  // Direct user prices in EUR (canonical — must match backend/.env). When the
+  // user's display currency is different, we convert at the runtime exchange
+  // rate (utils/currencies.ts) — but the actual Stripe charge stays in EUR
+  // because Stripe is configured with EUR as the merchant currency.
   const STRIPE_PRICES_EUR = { monthly: 5, quarterly: 14, yearly: 55 };
+
+  const priceDisplay = (eur: number) => {
+    const converted = convertCurrency(eur, 'EUR', currency);
+    // For high-denomination currencies (CDF, CFA, RWF, BIF, NGN) we round to
+    // the nearest whole unit; otherwise keep 2 decimals.
+    const highDenom = ['CDF', 'CFA', 'RWF', 'BIF', 'NGN'].includes(currency);
+    const rounded = highDenom ? Math.round(converted) : Math.round(converted * 100) / 100;
+    return formatCurrency(rounded, currency);
+  };
 
   const plans = [
     {
       id: 'monthly' as SubscriptionPlan,
       name: 'Mensuel',
       price: STRIPE_PRICES_EUR.monthly,
+      displayPrice: priceDisplay(STRIPE_PRICES_EUR.monthly),
       duration: '1 mois',
       icon: 'calendar-outline' as const,
       color: '#3b82f6',
@@ -60,6 +73,7 @@ export default function SubscriptionScreen() {
       id: 'quarterly' as SubscriptionPlan,
       name: 'Trimestriel',
       price: STRIPE_PRICES_EUR.quarterly,
+      displayPrice: priceDisplay(STRIPE_PRICES_EUR.quarterly),
       duration: '3 mois',
       icon: 'calendar' as const,
       color: '#8b5cf6',
@@ -70,6 +84,7 @@ export default function SubscriptionScreen() {
       id: 'yearly' as SubscriptionPlan,
       name: 'Annuel',
       price: STRIPE_PRICES_EUR.yearly,
+      displayPrice: priceDisplay(STRIPE_PRICES_EUR.yearly),
       duration: '12 mois',
       icon: 'star' as const,
       color: '#10b981',
@@ -88,7 +103,7 @@ export default function SubscriptionScreen() {
 
     Alert.alert(
       'Payer par carte',
-      `Plan ${plan.name} — ${plan.price}€\nVous allez être redirigé vers Stripe (paiement sécurisé).`,
+      `Plan ${plan.name} — ${plan.displayPrice}\n(facturé ${plan.price}€ par Stripe)\n\nVous allez être redirigé vers Stripe (paiement sécurisé).`,
       [
         { text: 'Annuler', style: 'cancel' },
         {
@@ -349,7 +364,7 @@ export default function SubscriptionScreen() {
                 </View>
                 <View style={styles.planPriceContainer}>
                   <Text style={[styles.planPrice, selectedPlan === plan.id && { color: '#2563eb' }]}>
-                    {formatCurrency(plan.price, currency)}
+                    {plan.displayPrice}
                   </Text>
                   {plan.savings ? (
                     <View style={styles.savingsBadge}>
@@ -398,7 +413,7 @@ export default function SubscriptionScreen() {
             <>
               <Ionicons name="card-outline" size={20} color="#fff" />
               <Text style={styles.subscribeButtonText}>
-                {isActive ? 'Renouveler' : 'Payer par carte'} - {(plans.find(p => p.id === selectedPlan)?.price || 0)}€
+                {isActive ? 'Renouveler' : 'Payer par carte'} - {plans.find(p => p.id === selectedPlan)?.displayPrice}
               </Text>
             </>
           )}
@@ -450,7 +465,7 @@ export default function SubscriptionScreen() {
             </View>
 
             <Text style={styles.payModalAmount}>
-              {formatCurrency(plans.find(p => p.id === selectedPlan)?.price || 0, currency)} - {plans.find(p => p.id === selectedPlan)?.name}
+              {plans.find(p => p.id === selectedPlan)?.displayPrice} - {plans.find(p => p.id === selectedPlan)?.name}
             </Text>
 
             {/* Activation Code Section */}
