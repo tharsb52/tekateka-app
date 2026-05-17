@@ -17,7 +17,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { SUBSCRIPTION_PRICES, SubscriptionPlan } from '../types/subscription';
-import { formatCurrency } from '../utils/currencies';
+import { formatCurrency, convertCurrency } from '../utils/currencies';
 import { processPayment, getPaymentProviderInfo } from '../services/paymentService';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AppHeader from '../components/AppHeader';
