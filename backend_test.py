@@ -1,196 +1,287 @@
 """
-Backend test for Stripe payment integration after JWT auth fix.
+TekaTeka - Stripe Integration Backend Tests (EUR + Free Trial)
+================================================================
 """
 import os
 import sys
-import json
+import time
+import uuid
 import requests
-from pymongo import MongoClient
-from bson import ObjectId
 from datetime import datetime, timezone
+from motor.motor_asyncio import AsyncIOMotorClient
+import asyncio
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv("/app/backend/.env")
+load_dotenv(Path(__file__).parent / "backend" / ".env")
+load_dotenv(Path(__file__).parent / "frontend" / ".env")
 
-BASE_URL = "https://low-data-shop.preview.emergentagent.com/api"
-TEST_PHONE = "+243111000111"
-
+BACKEND_URL = os.getenv("EXPO_PUBLIC_BACKEND_URL", "https://low-data-shop.preview.emergentagent.com")
+API = f"{BACKEND_URL}/api"
 MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
 DB_NAME = os.getenv("DB_NAME", "test_database")
 
-mongo = MongoClient(MONGO_URL)
-db = mongo[DB_NAME]
+TEST_PHONE_PRIMARY = "+243111000111"
+FRESH_PHONE = f"+24398{uuid.uuid4().int % 10000000:07d}"
 
 results = []
 
-def log(name, passed, detail=""):
-    icon = "PASS" if passed else "FAIL"
-    print(f"[{icon}] {name} -- {detail}")
-    results.append((name, passed, detail))
-    return passed
+
+def log(name, ok, info=""):
+    tag = "PASS" if ok else "FAIL"
+    print(f"[{tag}] {name}: {info}")
+    results.append((name, ok, info))
 
 
-def main():
-    print("\n=== Step 1: Phone Login ===")
-    r = requests.post(f"{BASE_URL}/auth/phone-login", json={"phoneNumber": TEST_PHONE}, timeout=15)
+def phone_login(phone):
+    return requests.post(f"{API}/auth/phone-login", json={"phoneNumber": phone}, timeout=30)
+
+
+async def get_payment_doc(session_id):
+    client = AsyncIOMotorClient(MONGO_URL)
+    db = client[DB_NAME]
+    doc = await db.payments.find_one({"stripeSessionId": session_id})
+    client.close()
+    return doc
+
+
+async def get_codes_for_session(session_id):
+    client = AsyncIOMotorClient(MONGO_URL)
+    db = client[DB_NAME]
+    payment = await db.payments.find_one({"stripeSessionId": session_id})
+    if not payment:
+        client.close()
+        return None, []
+    codes = await db.ambassador_codes.find({"purchasePaymentId": str(payment["_id"])}).to_list(100)
+    client.close()
+    return payment, codes
+
+
+def test_config():
+    r = requests.get(f"{API}/payments/stripe/config", timeout=15)
     if r.status_code != 200:
-        log("Phone login", False, f"status={r.status_code} body={r.text[:200]}")
-        return
+        log("1. GET /payments/stripe/config", False, f"status={r.status_code}")
+        return False
     data = r.json()
-    token = data.get("token")
-    user_id = data.get("user", {}).get("id")
-    log("Phone login", bool(token and user_id), f"user_id={user_id}")
+    checks = [
+        ("enabled=True", data.get("enabled") is True),
+        ("currency=eur", data.get("currency") == "eur"),
+        ("freeTrialDays=7", data.get("freeTrialDays") == 7),
+        ("subscription prices",
+         (data.get("prices") or {}).get("subscription") == {"monthly": 500, "quarterly": 1400, "yearly": 5500}),
+        ("ambassadorByPlan",
+         (data.get("prices") or {}).get("ambassadorByPlan") == {"monthly": 400, "quarterly": 1200, "yearly": 5000}),
+        ("durations",
+         data.get("durations") == {"monthly": 30, "quarterly": 90, "yearly": 365}),
+    ]
+    all_ok = all(ok for _, ok in checks)
+    info = "; ".join(f"{n}={'OK' if ok else 'FAIL'}" for n, ok in checks)
+    log("1. GET /payments/stripe/config", all_ok, info)
+    return all_ok
+
+
+def test_free_trial():
+    r = phone_login(FRESH_PHONE)
+    if r.status_code != 200:
+        log("2a. phone-login (fresh)", False, f"status={r.status_code} body={r.text[:200]}")
+        return None
+    j = r.json()
+    token = j.get("token")
+    log("2a. phone-login (fresh phone)", bool(token), f"phone={FRESH_PHONE} keys={list(j.keys())}")
     if not token:
-        return
+        return None
 
-    headers = {"Authorization": f"Bearer {token}"}
-
-    print("\n=== Step 2: Subscription Checkouts ===")
-    plan_sessions = {}
-    for plan in ["monthly", "quarterly", "yearly"]:
-        r = requests.post(
-            f"{BASE_URL}/payments/stripe/subscription/checkout",
-            json={"plan": plan}, headers=headers, timeout=30,
-        )
-        if r.status_code != 200:
-            log(f"Subscription checkout [{plan}]", False, f"status={r.status_code} body={r.text[:300]}")
-            continue
-        body = r.json()
-        url = body.get("url", "")
-        sid = body.get("sessionId", "")
-        ok = url.startswith("https://checkout.stripe.com/") and sid.startswith("cs_test_")
-        log(f"Subscription checkout [{plan}]", ok, f"sid={sid[:25]} url_prefix_ok={url.startswith('https://checkout.stripe.com/')}")
-        if ok:
-            plan_sessions[plan] = sid
-
-    r = requests.post(
-        f"{BASE_URL}/payments/stripe/subscription/checkout",
-        json={"plan": "weekly"}, headers=headers, timeout=15,
-    )
-    detail = ""
+    r2 = requests.get(f"{API}/auth/profile", headers={"Authorization": f"Bearer {token}"}, timeout=15)
+    if r2.status_code != 200:
+        log("2b. GET /auth/profile", False, f"status={r2.status_code} body={r2.text[:200]}")
+        return token
+    pdata = r2.json()
+    user_obj = pdata.get("user") or pdata
+    sub = user_obj.get("subscription") or {}
+    checks = [
+        ("plan=trial", sub.get("plan") == "trial"),
+        ("status=trial", sub.get("status") == "trial"),
+        ("expiresAt present", bool(sub.get("expiresAt"))),
+    ]
     try:
-        detail = r.json().get("detail", "")
-    except Exception:
-        pass
-    log("Subscription checkout [invalid plan 'weekly'] -> 400", r.status_code == 400 and "Plan invalide" in detail,
-        f"status={r.status_code} detail='{detail}'")
+        exp_str = sub.get("expiresAt", "").replace("Z", "+00:00")
+        exp_dt = datetime.fromisoformat(exp_str)
+        now = datetime.now(timezone.utc)
+        diff_days = (exp_dt - now).total_seconds() / 86400.0
+        checks.append((f"expiresAt~7d (actual={diff_days:.2f}d)", 6.5 < diff_days < 7.5))
+    except Exception as e:
+        checks.append((f"expiresAt parse: {e}", False))
+    all_ok = all(ok for _, ok in checks)
+    info = "; ".join(f"{n}={'OK' if ok else 'FAIL'}" for n, ok in checks) + f" | sub={sub}"
+    log("2b. New user free trial", all_ok, info)
+    return token
 
-    print("\n=== Step 3: Ambassador Checkout ===")
-    r = requests.post(
-        f"{BASE_URL}/payments/stripe/ambassador/checkout",
-        json={"quantity": 3}, headers=headers, timeout=30,
-    )
-    amb_session_id = None
-    if r.status_code == 200:
-        b = r.json()
-        url = b.get("url", "")
-        amb_session_id = b.get("sessionId", "")
-        ok = url.startswith("https://checkout.stripe.com/") and amb_session_id.startswith("cs_test_")
-        log("Ambassador checkout (qty=3)", ok, f"sid={amb_session_id[:25]}")
+
+def test_subscription_checkout(token):
+    headers = {"Authorization": f"Bearer {token}"}
+    expected = {"monthly": 5.0, "quarterly": 14.0, "yearly": 55.0}
+    overall = True
+    for plan, expected_amount in expected.items():
+        r = requests.post(f"{API}/payments/stripe/subscription/checkout",
+                          json={"plan": plan}, headers=headers, timeout=30)
+        if r.status_code != 200:
+            log(f"3. subscription/checkout plan={plan}", False, f"status={r.status_code} body={r.text[:200]}")
+            overall = False
+            continue
+        j = r.json()
+        url = j.get("url", "")
+        sid = j.get("sessionId", "")
+        url_ok = url.startswith("https://checkout.stripe.com/")
+        sid_ok = sid.startswith("cs_test_")
+        doc = asyncio.run(get_payment_doc(sid))
+        currency_ok = doc and doc.get("currency") == "EUR"
+        amount_ok = doc and abs(float(doc.get("amount", 0)) - expected_amount) < 0.001
+        plan_ok = doc and doc.get("plan") == plan
+        ok = url_ok and sid_ok and currency_ok and amount_ok and plan_ok
+        if not ok:
+            overall = False
+        log(f"3. subscription/checkout plan={plan}", ok,
+            f"url_ok={url_ok}, sid={sid[:30]}, currency={doc and doc.get('currency')}, "
+            f"amount={doc and doc.get('amount')} (exp {expected_amount}), plan={doc and doc.get('plan')}")
+
+    r = requests.post(f"{API}/payments/stripe/subscription/checkout",
+                      json={"plan": "weekly"}, headers=headers, timeout=15)
+    ok = r.status_code == 400
+    log("3b. subscription/checkout plan=weekly invalid", ok, f"status={r.status_code} body={r.text[:200]}")
+    overall = overall and ok
+    return overall
+
+
+def test_ambassador_checkout(token):
+    headers = {"Authorization": f"Bearer {token}"}
+    overall = True
+
+    r = requests.post(f"{API}/payments/stripe/ambassador/checkout",
+                      json={"plan": "monthly", "quantity": 5}, headers=headers, timeout=30)
+    if r.status_code != 200:
+        log("4a. ambassador/checkout monthly qty=5", False, f"status={r.status_code} body={r.text[:200]}")
+        overall = False
     else:
-        log("Ambassador checkout (qty=3)", False, f"status={r.status_code} body={r.text[:300]}")
+        j = r.json()
+        sid = j.get("sessionId", "")
+        url = j.get("url", "")
+        doc = asyncio.run(get_payment_doc(sid))
+        url_ok = url.startswith("https://checkout.stripe.com/")
+        ok = (url_ok and sid.startswith("cs_test_") and doc
+              and doc.get("currency") == "EUR"
+              and abs(float(doc.get("amount", 0)) - 20.0) < 0.001
+              and doc.get("plan") == "monthly"
+              and int(doc.get("quantity", 0)) == 5)
+        if not ok:
+            overall = False
+        log("4a. ambassador/checkout monthly qty=5", ok,
+            f"url_ok={url_ok}, amount={doc and doc.get('amount')} (exp 20.0), "
+            f"plan={doc and doc.get('plan')}, qty={doc and doc.get('quantity')}, currency={doc and doc.get('currency')}")
 
-    print("\n=== Step 4: Session Status Polling (pending) ===")
-    monthly_sid = plan_sessions.get("monthly")
-    if monthly_sid:
-        r = requests.get(f"{BASE_URL}/payments/stripe/session/{monthly_sid}", headers=headers, timeout=15)
-        if r.status_code == 200:
-            b = r.json()
-            ok = (b.get("status") == "pending" and b.get("type") == "subscription"
-                  and b.get("amount") == 2.0 and b.get("currency") == "USD")
-            log("Session status polling (monthly, pending)", ok, f"body={b}")
-        else:
-            log("Session status polling (monthly)", False, f"status={r.status_code} body={r.text[:200]}")
+    r = requests.post(f"{API}/payments/stripe/ambassador/checkout",
+                      json={"plan": "yearly", "quantity": 2}, headers=headers, timeout=30)
+    if r.status_code != 200:
+        log("4b. ambassador/checkout yearly qty=2", False, f"status={r.status_code} body={r.text[:200]}")
+        overall = False
+    else:
+        j = r.json()
+        sid = j.get("sessionId", "")
+        doc = asyncio.run(get_payment_doc(sid))
+        ok = (doc and abs(float(doc.get("amount", 0)) - 100.0) < 0.001
+              and doc.get("plan") == "yearly"
+              and int(doc.get("quantity", 0)) == 2
+              and doc.get("currency") == "EUR")
+        if not ok:
+            overall = False
+        log("4b. ambassador/checkout yearly qty=2", ok,
+            f"amount={doc and doc.get('amount')} (exp 100.0), plan={doc and doc.get('plan')}, qty={doc and doc.get('quantity')}")
 
-    print("\n=== Step 5: Webhook Simulation - Subscription ===")
-    if monthly_sid:
-        webhook_body = {
-            "type": "checkout.session.completed",
-            "data": {
-                "object": {
-                    "id": monthly_sid,
-                    "payment_status": "paid",
-                    "payment_intent": "pi_test_dummy_mon",
-                }
+    r = requests.post(f"{API}/payments/stripe/ambassador/checkout",
+                      json={"plan": "invalidPlan", "quantity": 1}, headers=headers, timeout=15)
+    ok = r.status_code == 400
+    log("4c. ambassador/checkout invalid plan", ok, f"status={r.status_code} body={r.text[:200]}")
+    overall = overall and ok
+    return overall
+
+
+def test_webhook_fulfillment(token):
+    headers = {"Authorization": f"Bearer {token}"}
+    r = requests.post(f"{API}/payments/stripe/ambassador/checkout",
+                      json={"plan": "quarterly", "quantity": 3}, headers=headers, timeout=30)
+    if r.status_code != 200:
+        log("5. ambassador/checkout quarterly qty=3 (setup)", False, f"status={r.status_code} body={r.text[:200]}")
+        return False
+    j = r.json()
+    sid = j.get("sessionId")
+    log("5a. setup ambassador checkout (quarterly qty=3)", True, f"sid={sid[:30]}")
+
+    webhook_body = {
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": sid,
+                "payment_status": "paid",
+                "payment_intent": "pi_test_webhook",
             }
-        }
-        r = requests.post(f"{BASE_URL}/payments/stripe/webhook", json=webhook_body, timeout=15)
-        if r.status_code == 200 and r.json().get("received") is True:
-            log("Webhook (subscription) -> 200 {received:true}", True, "")
-        else:
-            log("Webhook (subscription) -> 200 {received:true}", False, f"status={r.status_code} body={r.text[:200]}")
+        },
+    }
+    wr = requests.post(f"{API}/payments/stripe/webhook", json=webhook_body, timeout=20)
+    if wr.status_code != 200:
+        log("5b. POST /payments/stripe/webhook", False, f"status={wr.status_code} body={wr.text[:200]}")
+        return False
+    log("5b. POST /payments/stripe/webhook", True, f"resp={wr.json()}")
 
-        pay = db.payments.find_one({"stripeSessionId": monthly_sid})
-        log("Payments doc.status == 'completed' (subscription)", bool(pay and pay.get("status") == "completed"),
-            f"status={pay.get('status') if pay else None}")
-
-        user_doc = db.users.find_one({"_id": ObjectId(user_id)})
-        sub = (user_doc or {}).get("subscription", {})
-        expires_at = sub.get("expiresAt")
-        days_ok = False
-        diff_days = None
-        if expires_at:
-            try:
-                exp_dt = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
-                if exp_dt.tzinfo is None:
-                    exp_dt = exp_dt.replace(tzinfo=timezone.utc)
-                now_dt = datetime.now(timezone.utc)
-                diff_days = (exp_dt - now_dt).total_seconds() / 86400.0
-                days_ok = 29 < diff_days < 31
-            except Exception:
-                days_ok = False
-        ok = sub.get("status") == "active" and sub.get("plan") == "monthly" and days_ok
-        log("User.subscription active, monthly, expiresAt~30d", ok,
-            f"status={sub.get('status')} plan={sub.get('plan')} diff_days={diff_days}")
-
-    print("\n=== Step 6: Webhook Simulation - Ambassador Codes ===")
-    if amb_session_id:
-        webhook_body = {
-            "type": "checkout.session.completed",
-            "data": {
-                "object": {
-                    "id": amb_session_id,
-                    "payment_status": "paid",
-                    "payment_intent": "pi_test_dummy_amb",
-                }
-            }
-        }
-        r = requests.post(f"{BASE_URL}/payments/stripe/webhook", json=webhook_body, timeout=15)
-        if r.status_code == 200 and r.json().get("received") is True:
-            log("Webhook (ambassador) -> 200 {received:true}", True, "")
-        else:
-            log("Webhook (ambassador) -> 200 {received:true}", False, f"status={r.status_code} body={r.text[:200]}")
-
-        pay = db.payments.find_one({"stripeSessionId": amb_session_id})
-        log("Payments doc.status == 'completed' (ambassador)", bool(pay and pay.get("status") == "completed"),
-            f"status={pay.get('status') if pay else None}")
-
-        if pay:
-            codes = list(db.ambassador_codes.find({"purchasePaymentId": str(pay["_id"])}))
-        else:
-            codes = []
-        all_available = all(c.get("status") == "available" for c in codes)
-        ok = len(codes) == 3 and all_available and all(c.get("ambassadorUserId") == user_id for c in codes)
-        sample = [{"code": c.get("code"), "status": c.get("status")} for c in codes]
-        log("3 ambassador_codes docs created (status=available)", ok, f"count={len(codes)} sample={sample}")
-
-    print("\n=== Step 7: Session Status After Fulfillment ===")
-    if monthly_sid:
-        r = requests.get(f"{BASE_URL}/payments/stripe/session/{monthly_sid}", headers=headers, timeout=15)
-        if r.status_code == 200:
-            b = r.json()
-            log("Session status now 'completed' (monthly)", b.get("status") == "completed", f"body={b}")
-
-    print("\n=== Summary ===")
-    passed = sum(1 for _, p, _ in results if p)
-    total = len(results)
-    print(f"{passed}/{total} passed")
-    if passed != total:
-        for name, p, detail in results:
-            if not p:
-                print(f"  FAIL: {name} -- {detail}")
-    sys.exit(0 if passed == total else 1)
+    time.sleep(0.5)
+    payment, codes = asyncio.run(get_codes_for_session(sid))
+    if not payment:
+        log("5c. verify fulfillment", False, "no payment doc")
+        return False
+    checks = [
+        ("payment.status=completed", payment.get("status") == "completed"),
+        ("3 codes created", len(codes) == 3),
+        ("all plan=quarterly", all(c.get("plan") == "quarterly" for c in codes)),
+        ("all durationDays=90", all(c.get("durationDays") == 90 for c in codes)),
+        ("all status=available", all(c.get("status") == "available" for c in codes)),
+        ("all start with TK-", all(c.get("code", "").startswith("TK-") for c in codes)),
+    ]
+    all_ok = all(ok for _, ok in checks)
+    info = "; ".join(f"{n}={'OK' if ok else 'FAIL'}" for n, ok in checks)
+    info += f" | codes={[c.get('code') for c in codes]}"
+    log("5c. verify fulfillment", all_ok, info)
+    return all_ok
 
 
 if __name__ == "__main__":
-    main()
+    print(f"\n=== TekaTeka Stripe Integration Test ===")
+    print(f"Backend: {API}\n")
+
+    test_config()
+    trial_token = test_free_trial()
+
+    rp = phone_login(TEST_PHONE_PRIMARY)
+    if rp.status_code == 200:
+        primary_token = rp.json().get("token")
+        log("Primary user phone-login", bool(primary_token), f"phone={TEST_PHONE_PRIMARY}")
+    else:
+        primary_token = None
+        log("Primary user phone-login", False, f"status={rp.status_code} body={rp.text[:200]}")
+
+    token = primary_token or trial_token
+    if not token:
+        print("\nCRITICAL: No JWT token available")
+        sys.exit(1)
+
+    test_subscription_checkout(token)
+    test_ambassador_checkout(token)
+    test_webhook_fulfillment(token)
+
+    print("\n=== SUMMARY ===")
+    passed = sum(1 for _, ok, _ in results if ok)
+    total = len(results)
+    print(f"{passed}/{total} checks passed\n")
+    for name, ok, info in results:
+        tag = "PASS" if ok else "FAIL"
+        print(f"[{tag}] {name}")
+        if not ok:
+            print(f"      -> {info}")
+    sys.exit(0 if passed == total else 1)

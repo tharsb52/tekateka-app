@@ -78,13 +78,20 @@ def get_current_user(request: Request) -> str:
         raise HTTPException(status_code=401, detail="Token invalide")
 
 
-# --- Pricing (USD cents) -------------------------------------------------
-# Single source of truth. If you later want per-region pricing, switch to
-# Stripe Prices/Products and reference price_ids here instead.
+# --- Pricing (EUR cents) -------------------------------------------------
+# Direct user subscription (sold via /payments/stripe/subscription/checkout)
 SUBSCRIPTION_PRICES_CENTS = {
-    "monthly":   200,   # $2.00
-    "quarterly": 500,   # $5.00
-    "yearly":   1500,   # $15.00
+    "monthly":    500,   # €5.00
+    "quarterly": 1400,   # €14.00
+    "yearly":    5500,   # €55.00
+}
+
+# Ambassador wholesale price for activation codes by plan
+# (sold via /payments/stripe/ambassador/checkout)
+AMBASSADOR_PLAN_PRICES_CENTS = {
+    "monthly":    400,   # €4.00 per code
+    "quarterly": 1200,   # €12.00 per code
+    "yearly":    5000,   # €50.00 per code
 }
 
 SUBSCRIPTION_DURATION_DAYS = {
@@ -93,8 +100,10 @@ SUBSCRIPTION_DURATION_DAYS = {
     "yearly":   365,
 }
 
-# Ambassador activation code default price (USD cents).
-AMBASSADOR_CODE_PRICE_CENTS = 200  # $2.00 per activation code (matches monthly sub)
+# Free trial granted to new users at signup
+FREE_TRIAL_DAYS = 7
+
+PAYMENT_CURRENCY = "eur"
 
 
 # --- Schemas ------------------------------------------------------------
@@ -103,7 +112,8 @@ class SubscriptionCheckoutRequest(BaseModel):
 
 
 class AmbassadorCheckoutRequest(BaseModel):
-    quantity: int = 1  # number of activation codes to buy
+    plan: str = "monthly"  # "monthly" | "quarterly" | "yearly"
+    quantity: int = 1       # number of activation codes to buy
 
 
 class CheckoutResponse(BaseModel):
@@ -118,11 +128,13 @@ async def stripe_config():
     return {
         "enabled": STRIPE_ENABLED,
         "publishableKey": STRIPE_PUBLISHABLE_KEY,
-        "currency": "usd",
+        "currency": PAYMENT_CURRENCY,
+        "freeTrialDays": FREE_TRIAL_DAYS,
         "prices": {
             "subscription": SUBSCRIPTION_PRICES_CENTS,
-            "ambassadorCode": AMBASSADOR_CODE_PRICE_CENTS,
+            "ambassadorByPlan": AMBASSADOR_PLAN_PRICES_CENTS,
         },
+        "durations": SUBSCRIPTION_DURATION_DAYS,
     }
 
 
@@ -156,7 +168,7 @@ async def create_subscription_checkout(
             line_items=[{
                 "quantity": 1,
                 "price_data": {
-                    "currency": "usd",
+                    "currency": PAYMENT_CURRENCY,
                     "unit_amount": amount_cents,
                     "product_data": {
                         "name": f"TekaTeka - Abonnement {payload.plan}",
@@ -184,7 +196,7 @@ async def create_subscription_checkout(
         "type": "subscription",
         "plan": payload.plan,
         "amount": amount_cents / 100.0,
-        "currency": "USD",
+        "currency": PAYMENT_CURRENCY.upper(),
         "provider": "stripe",
         "stripeSessionId": session.id,
         "status": "pending",
@@ -200,16 +212,25 @@ async def create_ambassador_checkout(
     payload: AmbassadorCheckoutRequest,
     user_id: str = Depends(get_current_user),
 ):
-    """Create a Stripe Checkout session for an ambassador buying activation codes."""
+    """Create a Stripe Checkout session for an ambassador buying activation codes.
+
+    Each code is bound to a plan (monthly / quarterly / yearly) which determines
+    the duration the client gets when they activate it.
+    """
     if not STRIPE_ENABLED:
         raise HTTPException(status_code=503, detail="Stripe non configuré")
+
+    plan = payload.plan
+    if plan not in AMBASSADOR_PLAN_PRICES_CENTS:
+        raise HTTPException(status_code=400, detail="Plan invalide")
 
     qty = max(1, min(int(payload.quantity or 1), 100))
     user = await db.users.find_one({"_id": ObjectId(user_id)})
     if not user:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
 
-    idempotency_key = f"amb-{user_id}-{qty}-{uuid.uuid4().hex[:8]}"
+    unit_amount = AMBASSADOR_PLAN_PRICES_CENTS[plan]
+    idempotency_key = f"amb-{user_id}-{plan}-{qty}-{uuid.uuid4().hex[:8]}"
 
     try:
         session = stripe.checkout.Session.create(
@@ -218,11 +239,11 @@ async def create_ambassador_checkout(
             line_items=[{
                 "quantity": qty,
                 "price_data": {
-                    "currency": "usd",
-                    "unit_amount": AMBASSADOR_CODE_PRICE_CENTS,
+                    "currency": PAYMENT_CURRENCY,
+                    "unit_amount": unit_amount,
                     "product_data": {
-                        "name": "TekaTeka - Code d'activation ambassadeur",
-                        "description": "Code d'activation client (30 jours)",
+                        "name": f"TekaTeka - Code d'activation {plan}",
+                        "description": f"Code d'activation client ({SUBSCRIPTION_DURATION_DAYS[plan]} jours)",
                     },
                 },
             }],
@@ -232,6 +253,7 @@ async def create_ambassador_checkout(
             metadata={
                 "userId": user_id,
                 "type": "ambassador_codes",
+                "plan": plan,
                 "quantity": str(qty),
             },
             idempotency_key=idempotency_key,
@@ -243,9 +265,10 @@ async def create_ambassador_checkout(
     await db.payments.insert_one({
         "userId": user_id,
         "type": "ambassador_codes",
+        "plan": plan,
         "quantity": qty,
-        "amount": (AMBASSADOR_CODE_PRICE_CENTS * qty) / 100.0,
-        "currency": "USD",
+        "amount": (unit_amount * qty) / 100.0,
+        "currency": PAYMENT_CURRENCY.upper(),
         "provider": "stripe",
         "stripeSessionId": session.id,
         "status": "pending",
@@ -369,15 +392,19 @@ async def _fulfill_payment(payment: dict, session: dict):
 
     elif ptype == "ambassador_codes":
         qty = int(payment.get("quantity", 1))
+        plan = payment.get("plan", "monthly")
+        duration_days = SUBSCRIPTION_DURATION_DAYS.get(plan, 30)
         codes_created = []
         for _ in range(qty):
             code = f"TK-{uuid.uuid4().hex[:8].upper()}"
             await db.ambassador_codes.insert_one({
                 "code": code,
                 "ambassadorUserId": user_id,
+                "plan": plan,
+                "durationDays": duration_days,
                 "status": "available",
                 "purchasePaymentId": str(payment["_id"]),
                 "createdAt": now.isoformat() + "Z",
             })
             codes_created.append(code)
-        logger.info(f"Created {qty} ambassador codes for user {user_id}: {codes_created}")
+        logger.info(f"Created {qty} ambassador codes ({plan}) for user {user_id}: {codes_created}")

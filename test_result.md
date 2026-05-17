@@ -392,6 +392,9 @@ backend:
         - working: true
           agent: "testing"
           comment: "GET /api/payments/stripe/config working correctly (no auth). Returns enabled=true, publishableKey starting with pk_test_, currency=usd, and prices object with subscription tiers (monthly=200, quarterly=500, yearly=1500 cents) and ambassadorCode=200 cents."
+        - working: true
+          agent: "testing"
+          comment: "RETESTED 2026-05-17 (EUR + Free Trial update). GET /api/payments/stripe/config returns enabled=true, currency='eur', freeTrialDays=7, prices.subscription={monthly:500, quarterly:1400, yearly:5500}, prices.ambassadorByPlan={monthly:400, quarterly:1200, yearly:5000}, durations={monthly:30, quarterly:90, yearly:365}. All values match the new EUR pricing and 7-day trial spec."
 
   - task: "Stripe Subscription Checkout"
     implemented: true
@@ -407,6 +410,9 @@ backend:
         - working: true
           agent: "testing"
           comment: "RETESTED after JWT auth fix - ALL PASS. POST /api/payments/stripe/subscription/checkout with valid Bearer JWT returns 200 with valid checkout URL (starts with https://checkout.stripe.com/) and sessionId (cs_test_*) for monthly ($2), quarterly ($5), yearly ($15). Invalid plan 'weekly' correctly returns 400 'Plan invalide'. MongoDB payments docs inserted with status='pending'."
+        - working: true
+          agent: "testing"
+          comment: "RETESTED 2026-05-17 with new EUR pricing. POST /api/payments/stripe/subscription/checkout returns 200 + valid https://checkout.stripe.com/ URL + cs_test_ sessionId for monthly (€5.00), quarterly (€14.00), yearly (€55.00). MongoDB payments doc inserted with currency='EUR' and correct amount (5.0 / 14.0 / 55.0). Invalid plan 'weekly' returns 400 'Plan invalide'."
 
   - task: "Stripe Ambassador Checkout"
     implemented: true
@@ -422,6 +428,36 @@ backend:
         - working: true
           agent: "testing"
           comment: "RETESTED after auth fix - PASS. POST /api/payments/stripe/ambassador/checkout with body {quantity:3} returns 200 with valid Stripe checkout URL and cs_test_ sessionId. MongoDB payments doc inserted with type='ambassador_codes', quantity=3, amount=6.00 USD, status='pending'."
+        - working: true
+          agent: "testing"
+          comment: "RETESTED 2026-05-17 with new plan-aware EUR pricing. POST /api/payments/stripe/ambassador/checkout with body {plan:'monthly', quantity:5} returns 200, MongoDB doc currency='EUR', amount=20.0 (5 × €4), plan='monthly', quantity=5. Body {plan:'yearly', quantity:2} returns 200 with amount=100.0 (2 × €50). Body {plan:'invalidPlan', quantity:1} returns 400 'Plan invalide'."
+
+  - task: "Stripe Webhook Fulfillment"
+    implemented: true
+    working: true
+    file: "stripe_api.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "POST /api/payments/stripe/webhook (signature check skipped in dev because STRIPE_WEBHOOK_SECRET is empty) works end-to-end. Subscription fulfillment: payments doc status -> 'completed', user.subscription set to {plan:'monthly', status:'active', expiresAt:~30d future, provider:'stripe'} (verified diff_days=29.9999). Ambassador fulfillment: payments doc status -> 'completed', 3 new ambassador_codes docs inserted with status='available', ambassadorUserId linked to user, codes formatted TK-XXXXXXXX. Webhook returns {received: true} 200. Idempotency works (subsequent status polling sees 'completed' without re-fulfilling)."
+        - working: true
+          agent: "testing"
+          comment: "RETESTED 2026-05-17 with plan-aware ambassador fulfillment. After ambassador/checkout {plan:'quarterly', quantity:3}, POST /payments/stripe/webhook with checkout.session.completed event returns 200 {received:true}. MongoDB verification: payments.status='completed'; 3 new ambassador_codes docs inserted, each with plan='quarterly', durationDays=90, status='available', code matching TK-XXXXXXXX (e.g. TK-5091A15E, TK-51E8A346, TK-B20231EC). Plan-based duration fields now correctly populated."
+
+  - task: "Free Trial 7 days on signup"
+    implemented: true
+    working: true
+    file: "data_api.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Tested 2026-05-17. POST /api/auth/phone-login with a fresh phone number creates a new user. GET /api/auth/profile returns user.subscription = {plan:'trial', status:'trial', expiresAt: now+7d (verified actual=7.00d), trialEndsAt: same, startedAt: now}. Free trial is automatically granted on signup."
 
   - task: "Stripe Session Status Polling"
     implemented: true
@@ -583,3 +619,5 @@ agent_communication:
     - agent: "testing"
       message: "STRIPE RETEST AFTER JWT AUTH FIX - ALL 14 TESTS PASSED. The 1-line fix in stripe_api.py line 74 (`payload.get('sub') or payload.get('user_id')`) resolved the auth bug completely. Full end-to-end flow verified: (1) Phone login obtains JWT; (2) Subscription checkout for monthly/quarterly/yearly all return 200 with valid https://checkout.stripe.com/ URLs and cs_test_ sessionIds; (3) Invalid plan 'weekly' returns 400 'Plan invalide'; (4) Ambassador checkout qty=3 returns 200 with valid Stripe URL; (5) Session status polling returns {status:'pending', type:'subscription', amount:2.0, currency:'USD'}; (6) Webhook simulation (STRIPE_WEBHOOK_SECRET empty -> signature check skipped) returns 200 {received:true}; (7) After subscription webhook: MongoDB payments doc status='completed', user.subscription={plan:'monthly', status:'active', expiresAt=~30 days future (29.9999d), provider:'stripe'}; (8) After ambassador webhook: MongoDB payments doc status='completed', 3 new ambassador_codes docs inserted with status='available', linked to ambassadorUserId, formatted TK-XXXXXXXX (e.g., TK-AED69ED6, TK-F4EA516E, TK-2D73C883); (9) Subsequent session polling correctly shows status='completed' (idempotent). MongoDB collections verified: payments, users.subscription, ambassador_codes all populated correctly. Stripe payment integration is production-ready."
       message: "STRIPE PAYMENT INTEGRATION TESTING - CRITICAL BUG FOUND: ❌ POST /api/payments/stripe/subscription/checkout and POST /api/payments/stripe/ambassador/checkout return 401 'Token invalide' for valid JWT tokens. ROOT CAUSE: JWT payload field mismatch. /app/backend/data_api.py line 133 creates tokens as `{\"sub\": user_id, \"phone\": phone, \"exp\": expire}`, but /app/backend/stripe_api.py line 74 reads `payload[\"user_id\"]` which is not present, raising KeyError caught by the broad `except Exception` clause -> returns 401. SIMPLE FIX: Change /app/backend/stripe_api.py line 74 from `return payload[\"user_id\"]` to `return payload.get(\"sub\") or payload.get(\"user_id\")` (the OR keeps it forward-compatible if you ever standardize on user_id). ✅ Working: GET /api/payments/stripe/config returns correct enabled=true, pk_test_ key, and full prices object (monthly=200c, quarterly=500c, yearly=1500c, ambassadorCode=200c). ✅ Auth gating works (401 without Bearer header). ⚠️ Blocked by auth bug: invalid plan 400 test, all 3 subscription plan checkouts, ambassador checkout (qty=3), session status polling, webhook end-to-end fulfillment, MongoDB payments-doc insertion verification, ambassador_codes generation verification. Re-test all of these after the 1-line auth fix. I did NOT modify stripe_api.py per testing-agent rules - main agent needs to apply the fix."
+    - agent: "testing"
+      message: "STRIPE EUR + FREE TRIAL RE-TEST (2026-05-17) – ALL 14 CHECKS PASS. (1) GET /api/payments/stripe/config returns enabled=true, currency='eur', freeTrialDays=7, prices.subscription={monthly:500,quarterly:1400,yearly:5500}, prices.ambassadorByPlan={monthly:400,quarterly:1200,yearly:5000}, durations={monthly:30,quarterly:90,yearly:365}. ✅ (2) Fresh phone (+24398xxxxxxx) signup via POST /api/auth/phone-login auto-creates user with subscription={plan:'trial', status:'trial', expiresAt=now+7.00d, trialEndsAt=same, startedAt=now}. GET /api/auth/profile confirms. ✅ (3) Subscription checkout for +243111000111 token: monthly→200, MongoDB doc currency='EUR' amount=5.0; quarterly→200, amount=14.0; yearly→200, amount=55.0; invalid 'weekly'→400 'Plan invalide'. All URLs valid https://checkout.stripe.com/ and cs_test_* sessionIds. ✅ (4) Ambassador checkout: {plan:'monthly',quantity:5}→200, doc amount=20.0 EUR, plan=monthly, quantity=5; {plan:'yearly',quantity:2}→200, amount=100.0; {plan:'invalidPlan',quantity:1}→400. ✅ (5) Webhook fulfillment for ambassador {plan:'quarterly',quantity:3}: POST /api/payments/stripe/webhook with checkout.session.completed returns 200 {received:true}. MongoDB: payments.status='completed', 3 ambassador_codes inserted (TK-5091A15E, TK-51E8A346, TK-B20231EC) each with plan='quarterly', durationDays=90, status='available'. ✅ Stripe EUR pricing, 7-day free trial on signup, plan-aware ambassador codes (with durationDays) are all production-ready."

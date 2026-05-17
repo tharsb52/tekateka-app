@@ -166,20 +166,22 @@ async def phone_login(req: PhoneLoginRequest = None, phone_number: str = None, p
     user = await db.users.find_one({"phoneNumber": phone})
     
     if not user:
-        # Create new user
+        # Create new user with a 7-day free trial
         now = utc_now_iso()
+        trial_end = (datetime.utcnow() + timedelta(days=7)).isoformat() + "Z"
         new_user = {
             "phoneNumber": phone,
             "email": None,
             "username": None,
             "passwordHash": None,
-            "currency": "USD",
+            "currency": "EUR",
             "language": "fr",
             "subscription": {
-                "plan": None,
+                "plan": "trial",
                 "status": "trial",
-                "trialEndsAt": (datetime.utcnow() + timedelta(days=7)).isoformat(),
-                "expiresAt": None,
+                "trialEndsAt": trial_end,
+                "expiresAt": trial_end,
+                "startedAt": now,
             },
             "createdAt": now,
             "updatedAt": now,

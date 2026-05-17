@@ -22,6 +22,7 @@ import { processPayment, getPaymentProviderInfo } from '../services/paymentServi
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AppHeader from '../components/AppHeader';
 import { paymentsAPI } from '../services/apiService';
+import { buySubscription } from '../services/stripeCheckout';
 import { formatLocal } from '../utils/dateUtils';
 
 const BG = '#fef3e7';
@@ -41,11 +42,14 @@ export default function SubscriptionScreen() {
   const userHasAccess = hasAccess();
   const trialExpired = !isActive && !user?.isSubscribed && trialDays === 0;
 
+  // Direct user prices in EUR (Stripe-backed)
+  const STRIPE_PRICES_EUR = { monthly: 5, quarterly: 14, yearly: 55 };
+
   const plans = [
     {
       id: 'monthly' as SubscriptionPlan,
       name: 'Mensuel',
-      price: SUBSCRIPTION_PRICES.monthly[currency as keyof typeof SUBSCRIPTION_PRICES.monthly] || 8,
+      price: STRIPE_PRICES_EUR.monthly,
       duration: '1 mois',
       icon: 'calendar-outline' as const,
       color: '#3b82f6',
@@ -55,21 +59,21 @@ export default function SubscriptionScreen() {
     {
       id: 'quarterly' as SubscriptionPlan,
       name: 'Trimestriel',
-      price: SUBSCRIPTION_PRICES.quarterly[currency as keyof typeof SUBSCRIPTION_PRICES.quarterly] || 20,
+      price: STRIPE_PRICES_EUR.quarterly,
       duration: '3 mois',
       icon: 'calendar' as const,
       color: '#8b5cf6',
-      savings: '17%',
+      savings: '7%',
       popular: false,
     },
     {
       id: 'yearly' as SubscriptionPlan,
       name: 'Annuel',
-      price: SUBSCRIPTION_PRICES.yearly[currency as keyof typeof SUBSCRIPTION_PRICES.yearly] || 78,
+      price: STRIPE_PRICES_EUR.yearly,
       duration: '12 mois',
       icon: 'star' as const,
       color: '#10b981',
-      savings: '19%',
+      savings: '8%',
       popular: true,
     },
   ];
@@ -78,7 +82,49 @@ export default function SubscriptionScreen() {
   const [activationCode, setActivationCode] = useState('');
   const [codeLoading, setCodeLoading] = useState(false);
 
-  const handleSubscribe = () => {
+  const handleSubscribe = async () => {
+    const plan = plans.find(p => p.id === selectedPlan);
+    if (!plan) return;
+
+    Alert.alert(
+      'Payer par carte',
+      `Plan ${plan.name} — ${plan.price}€\nVous allez être redirigé vers Stripe (paiement sécurisé).`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Continuer',
+          onPress: async () => {
+            setLoading(true);
+            try {
+              const outcome = await buySubscription(selectedPlan);
+              if (outcome.status === 'completed') {
+                // Refresh user profile so subscription.expiresAt is up to date
+                try { await (subscribe as any)?.(selectedPlan, 'card'); } catch {}
+                Alert.alert(
+                  'Abonnement activé !',
+                  `Plan ${plan.name} activé avec succès.`,
+                  [{ text: 'Continuer', onPress: () => router.replace('/(tabs)/dashboard') }]
+                );
+              } else if (outcome.status === 'pending') {
+                Alert.alert(
+                  'Paiement en attente',
+                  "Votre paiement est en cours de vérification. L'abonnement sera activé automatiquement dans quelques secondes."
+                );
+              } else if (outcome.status === 'cancelled') {
+                // silent — user voluntarily closed the page
+              } else {
+                Alert.alert('Erreur', outcome.error || 'Paiement échoué');
+              }
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const openActivationCodeModal = () => {
     setPaymentMethodModal(true);
   };
 
@@ -339,7 +385,7 @@ export default function SubscriptionScreen() {
           ))}
         </View>
 
-        {/* Subscribe Button */}
+        {/* Subscribe Button (Stripe Checkout) */}
         <TouchableOpacity
           style={[styles.subscribeButton, loading && styles.subscribeButtonDisabled]}
           onPress={handleSubscribe}
@@ -350,14 +396,22 @@ export default function SubscriptionScreen() {
             <ActivityIndicator color="#fff" size="small" />
           ) : (
             <>
+              <Ionicons name="card-outline" size={20} color="#fff" />
               <Text style={styles.subscribeButtonText}>
-                {isActive ? 'Renouveler' : "S'abonner"} - {formatCurrency(
-                  plans.find(p => p.id === selectedPlan)?.price || 0, currency
-                )}
+                {isActive ? 'Renouveler' : 'Payer par carte'} - {(plans.find(p => p.id === selectedPlan)?.price || 0)}€
               </Text>
-              <Ionicons name="arrow-forward" size={20} color="#fff" />
             </>
           )}
+        </TouchableOpacity>
+
+        {/* Activation code shortcut */}
+        <TouchableOpacity
+          style={styles.codeButton}
+          onPress={openActivationCodeModal}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="key-outline" size={18} color="#2563eb" />
+          <Text style={styles.codeButtonText}>J'ai un code d'activation</Text>
         </TouchableOpacity>
 
         <Text style={styles.disclaimer}>
@@ -741,6 +795,25 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 17,
     fontWeight: 'bold',
+  },
+  codeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#2563eb',
+    backgroundColor: '#eff6ff',
+    gap: 8,
+    marginTop: 12,
+    minHeight: 50,
+  },
+  codeButtonText: {
+    color: '#2563eb',
+    fontSize: 15,
+    fontWeight: '600',
   },
   disclaimer: {
     textAlign: 'center',

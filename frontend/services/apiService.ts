@@ -321,4 +321,22 @@ export const paymentsAPI = {
   }),
 
   history: () => apiFetch('/payments/history'),
+
+  // --- Stripe Checkout (web hosted) ---
+  stripeConfig: () => apiFetch('/payments/stripe/config'),
+
+  stripeSubscriptionCheckout: (plan: 'monthly' | 'quarterly' | 'yearly') =>
+    apiFetch('/payments/stripe/subscription/checkout', {
+      method: 'POST',
+      body: JSON.stringify({ plan }),
+    }),
+
+  stripeAmbassadorCheckout: (plan: 'monthly' | 'quarterly' | 'yearly', quantity: number) =>
+    apiFetch('/payments/stripe/ambassador/checkout', {
+      method: 'POST',
+      body: JSON.stringify({ plan, quantity }),
+    }),
+
+  stripeSessionStatus: (sessionId: string) =>
+    apiFetch(`/payments/stripe/session/${encodeURIComponent(sessionId)}`),
 };

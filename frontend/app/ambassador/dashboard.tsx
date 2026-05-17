@@ -144,6 +144,17 @@ export default function AmbassadorDashboard() {
           </TouchableOpacity>
         </View>
 
+        {/* Buy Codes Button (Stripe) */}
+        <TouchableOpacity
+          style={styles.buyCodesBtn}
+          onPress={() => router.push('/ambassador/buy-codes')}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="card" size={22} color="#0f172a" />
+          <Text style={styles.buyCodesText}>Acheter des codes d'activation</Text>
+          <Ionicons name="arrow-forward" size={20} color="#0f172a" />
+        </TouchableOpacity>
+
         {/* Tabs */}
         <View style={styles.tabsRow}>
           <TouchableOpacity style={[styles.tab, activeTab === 'stats' && styles.tabActive]} onPress={() => setActiveTab('stats')}>
@@ -285,6 +296,14 @@ const styles = StyleSheet.create({
   actionsRow: { flexDirection: 'row', paddingHorizontal: 16, gap: 12, marginTop: 20 },
   actionBtn: { flex: 1, backgroundColor: '#2563eb', borderRadius: 16, padding: 20, alignItems: 'center', gap: 8 },
   actionText: { fontSize: 14, fontWeight: '600', color: '#fff' },
+  buyCodesBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: ACCENT,
+    marginHorizontal: 16, marginTop: 12,
+    paddingVertical: 14, paddingHorizontal: 16,
+    borderRadius: 14, gap: 8, minHeight: 52,
+  },
+  buyCodesText: { color: '#0f172a', fontWeight: '800', fontSize: 15, flex: 1, textAlign: 'center' },
   tabsRow: { flexDirection: 'row', marginHorizontal: 16, marginTop: 24, backgroundColor: CARD, borderRadius: 12, padding: 4 },
   tab: { flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
   tabActive: { backgroundColor: ACCENT },
