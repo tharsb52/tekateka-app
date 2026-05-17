@@ -1,13 +1,15 @@
 /**
- * App Constants - URLs for production / preview builds
+ * App Constants - Backend base URL
  *
- * The base URL is read from EXPO_PUBLIC_BACKEND_URL at build time so different
- * EAS profiles (preview vs production) can target different backends without
- * code changes. Falls back to the production deployment domain.
+ * MUST come from EXPO_PUBLIC_BACKEND_URL at build time. Set per EAS profile:
+ *   - production -> https://low-data-shop.emergent.host
+ *   - preview    -> https://low-data-shop.preview.emergentagent.com
  *
- * Production URL: https://low-data-shop.emergent.host (Emergent native deployment)
- * Preview URL:    https://low-data-shop.preview.emergentagent.com (dev only)
+ * No fallback: if the env var is missing, deployment is misconfigured and
+ * we want to fail loudly rather than silently hit the wrong backend.
  */
-export const API_BASE_URL: string =
-  (process.env.EXPO_PUBLIC_BACKEND_URL as string | undefined) ||
-  'https://low-data-shop.emergent.host';
+export const API_BASE_URL: string = (process.env.EXPO_PUBLIC_BACKEND_URL as string) || '';
+
+if (!API_BASE_URL && typeof console !== 'undefined') {
+  console.warn('[constants] EXPO_PUBLIC_BACKEND_URL is not set!');
+}
