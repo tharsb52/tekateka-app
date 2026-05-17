@@ -381,6 +381,66 @@ backend:
           agent: "testing"
           comment: "Admin sales reporting endpoint (/api/admin/ambassador-sales) working perfectly. Returns detailed sales records with ambassador info, client details, commission amounts, and activation codes. Complete sales audit trail functioning correctly."
 
+  - task: "Stripe Config Endpoint"
+    implemented: true
+    working: true
+    file: "stripe_api.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "GET /api/payments/stripe/config working correctly (no auth). Returns enabled=true, publishableKey starting with pk_test_, currency=usd, and prices object with subscription tiers (monthly=200, quarterly=500, yearly=1500 cents) and ambassadorCode=200 cents."
+
+  - task: "Stripe Subscription Checkout"
+    implemented: true
+    working: false
+    file: "stripe_api.py"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: false
+          agent: "testing"
+          comment: "CRITICAL BUG: POST /api/payments/stripe/subscription/checkout returns 401 'Token invalide' for ALL valid JWT tokens. Root cause: JWT field mismatch. data_api.py issues JWT with user_id stored under key 'sub' (line 133: {\"sub\": user_id, ...}), but stripe_api.py line 74 reads payload['user_id'] which raises KeyError -> caught by the broad `except Exception` -> 401. FIX: Change line 74 of /app/backend/stripe_api.py from `return payload[\"user_id\"]` to `return payload.get(\"sub\") or payload.get(\"user_id\")`. Also affects invalid-plan 400 test (also returns 401 instead). Auth-required gating (401 without Bearer token) works correctly. Cannot verify Stripe session creation, MongoDB payments insertion, or any downstream flow until auth is fixed."
+
+  - task: "Stripe Ambassador Checkout"
+    implemented: true
+    working: false
+    file: "stripe_api.py"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: false
+          agent: "testing"
+          comment: "CRITICAL BUG (same root cause): POST /api/payments/stripe/ambassador/checkout returns 401 'Token invalide' for valid JWT. Same JWT field mismatch as subscription checkout (payload['user_id'] vs 'sub'). Auth gating without token returns 401 correctly. Cannot verify Stripe session creation or MongoDB payments doc insertion until auth bug is fixed."
+
+  - task: "Stripe Session Status Polling"
+    implemented: true
+    working: "NA"
+    file: "stripe_api.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "testing"
+          comment: "Cannot test GET /api/payments/stripe/session/{session_id} - blocked by the same JWT 'user_id' vs 'sub' bug AND we cannot create a checkout session in the first place to obtain a valid session_id. Retest after the auth fix."
+
+  - task: "Stripe Webhook Fulfillment"
+    implemented: true
+    working: "NA"
+    file: "stripe_api.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "testing"
+          comment: "Webhook endpoint POST /api/payments/stripe/webhook (no auth, dev mode signature skip) is reachable but could not be end-to-end tested because no checkout session could be created (auth bug above blocks creation -> no payments doc exists -> webhook lookup `db.payments.find_one({stripeSessionId: ...})` would return None -> 'unknown session' warning, no fulfillment). Code review of _fulfill_payment looks correct: idempotent on status==completed, updates payment doc, sets user.subscription for subscription type, inserts ambassador_codes docs for ambassador_codes type. Re-test once subscription/ambassador checkout endpoints return 200."
+
 frontend:
   - task: "Login Screen with Dual Tabs"
     implemented: true
@@ -486,16 +546,11 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Ambassador Creation (Admin)"
-    - "Ambassador Authentication"
-    - "Activation Code Generation (Admin)"
-    - "Ambassador Dashboard"
-    - "Ambassador Codes Management"
-    - "Client Scanning"
-    - "Code Activation"
-    - "Ambassador Sales Tracking"
-    - "Admin Ambassador Management"
-    - "Admin Sales Reporting"
+    - "Stripe Config Endpoint"
+    - "Stripe Subscription Checkout"
+    - "Stripe Ambassador Checkout"
+    - "Stripe Session Status Polling"
+    - "Stripe Webhook Fulfillment"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -519,3 +574,5 @@ agent_communication:
       message: "KEYBOARD & PAYMENT METHOD UI TESTING COMPLETED: ✅ Login Flow - Phone number 111000111 accepted, OTP codes displayed in yellow box (tested codes: 3947, 2319, 6135), verification working correctly. ✅ Keyboard Fixes - Code review confirmed KeyboardAvoidingView + TouchableWithoutFeedback + ScrollView(keyboardShouldPersistTaps=handled) implemented in ALL modal forms (products.tsx, sell.tsx, expenses.tsx, debts.tsx). ✅ Payment Methods - Code review confirmed 3 payment methods implemented in sell.tsx: 'cash' (Cash icon), 'mobileMoney' (Mobile Money with phone icon), 'card' (Carte with card icon). All payment buttons have proper styling and selection states. ✅ Mobile Responsive - All tests conducted on 390x844 viewport, UI elements properly sized for mobile. The keyboard fixes and 3 payment method buttons are correctly implemented as requested."
     - agent: "testing"
       message: "AMBASSADOR SYSTEM API TESTING COMPLETED SUCCESSFULLY: ✅ All 10 test scenarios passed with 100% success rate. ✅ Ambassador Creation (Admin) - Creates ambassadors with proper authentication and password hashing. ✅ Ambassador Login - JWT token authentication working correctly. ✅ Code Generation (Admin) - Generates 5 activation codes with TK-XXXX-XXXX format. ✅ Ambassador Dashboard - Returns accurate stats and updates correctly after sales. ✅ Ambassador Codes Management - Lists codes with proper status tracking. ✅ Client Scanning - Retrieves client info by user ID. ✅ Code Activation - Activates subscriptions, calculates commissions, updates user accounts. ✅ Sales Tracking - Dashboard updates correctly (totalSales: 1, usedCodes: 1, remainingCodes: 4). ✅ Admin Ambassador Management - Lists ambassadors with complete stats. ✅ Admin Sales Reporting - Returns detailed sales records with audit trail. The complete Ambassador System is fully functional and ready for production use."
+    - agent: "testing"
+      message: "STRIPE PAYMENT INTEGRATION TESTING - CRITICAL BUG FOUND: ❌ POST /api/payments/stripe/subscription/checkout and POST /api/payments/stripe/ambassador/checkout return 401 'Token invalide' for valid JWT tokens. ROOT CAUSE: JWT payload field mismatch. /app/backend/data_api.py line 133 creates tokens as `{\"sub\": user_id, \"phone\": phone, \"exp\": expire}`, but /app/backend/stripe_api.py line 74 reads `payload[\"user_id\"]` which is not present, raising KeyError caught by the broad `except Exception` clause -> returns 401. SIMPLE FIX: Change /app/backend/stripe_api.py line 74 from `return payload[\"user_id\"]` to `return payload.get(\"sub\") or payload.get(\"user_id\")` (the OR keeps it forward-compatible if you ever standardize on user_id). ✅ Working: GET /api/payments/stripe/config returns correct enabled=true, pk_test_ key, and full prices object (monthly=200c, quarterly=500c, yearly=1500c, ambassadorCode=200c). ✅ Auth gating works (401 without Bearer header). ⚠️ Blocked by auth bug: invalid plan 400 test, all 3 subscription plan checkouts, ambassador checkout (qty=3), session status polling, webhook end-to-end fulfillment, MongoDB payments-doc insertion verification, ambassador_codes generation verification. Re-test all of these after the 1-line auth fix. I did NOT modify stripe_api.py per testing-agent rules - main agent needs to apply the fix."

@@ -1,415 +1,237 @@
-#!/usr/bin/env python3
 """
-TekaTeka Ambassador System API Testing
-Tests all 10 scenarios from the review request
+Stripe Payment Integration Tests for TekaTeka
+=============================================
+Tests endpoints under /api/payments/stripe/*
 """
-
-import requests
+import os
 import json
-import sys
+import time
+import requests
 from datetime import datetime
 
-# Configuration
-BASE_URL = "https://low-data-shop.preview.emergentagent.com"
-ADMIN_PASSWORD = "TekaTeka2025"
+BASE_URL = "https://low-data-shop.preview.emergentagent.com/api"
+PHONE = "+243111000111"
 
-class AmbassadorAPITester:
-    def __init__(self):
-        self.base_url = BASE_URL
-        self.admin_password = ADMIN_PASSWORD
-        self.ambassador_id = None
-        self.ambassador_token = None
-        self.client_user_id = None
-        self.test_results = []
-        
-    def log_test(self, test_name, success, details=""):
-        """Log test results"""
-        status = "✅ PASS" if success else "❌ FAIL"
-        print(f"{status} {test_name}")
-        if details:
-            print(f"   Details: {details}")
-        self.test_results.append({
-            "test": test_name,
-            "success": success,
-            "details": details
-        })
-        
-    def make_request(self, method, endpoint, data=None, headers=None):
-        """Make HTTP request with error handling"""
-        url = f"{self.base_url}{endpoint}"
-        try:
-            if method.upper() == "POST":
-                response = requests.post(url, json=data, headers=headers, timeout=30)
-            elif method.upper() == "GET":
-                response = requests.get(url, headers=headers, timeout=30)
-            else:
-                raise ValueError(f"Unsupported method: {method}")
-                
-            print(f"Request: {method} {endpoint}")
-            print(f"Status: {response.status_code}")
-            if data:
-                print(f"Body: {json.dumps(data, indent=2)}")
-            
-            try:
-                response_data = response.json()
-                print(f"Response: {json.dumps(response_data, indent=2)}")
-                return response.status_code, response_data
-            except:
-                print(f"Response (text): {response.text}")
-                return response.status_code, response.text
-                
-        except requests.exceptions.RequestException as e:
-            print(f"Request failed: {e}")
-            return None, str(e)
-    
-    def test_1_create_ambassador(self):
-        """Test 1: Create Ambassador (Admin)"""
-        print("\n" + "="*50)
-        print("TEST 1: Create Ambassador (Admin)")
-        print("="*50)
-        
-        data = {
-            "adminPassword": self.admin_password,
-            "name": "Jean Ambassadeur",
-            "country": "Congo",
-            "city": "Kinshasa",
-            "email": "ambassador@tekateka.com",
-            "ambassadorPassword": "Ambassador2025"
-        }
-        
-        status, response = self.make_request("POST", "/api/admin/ambassadors/create", data)
-        
-        if status == 200 and isinstance(response, dict) and response.get("success"):
-            self.ambassador_id = response["ambassador"]["id"]
-            self.log_test("Create Ambassador", True, f"Ambassador ID: {self.ambassador_id}")
-            return True
+results = []
+
+def record(name, passed, detail=""):
+    status = "PASS" if passed else "FAIL"
+    line = f"[{status}] {name} :: {detail}"
+    print(line)
+    results.append((name, passed, detail))
+
+
+def login_phone():
+    r = requests.post(f"{BASE_URL}/auth/phone-login", json={"phoneNumber": PHONE})
+    r.raise_for_status()
+    data = r.json()
+    return data["token"], data["user"]["id"]
+
+
+def test_config():
+    r = requests.get(f"{BASE_URL}/payments/stripe/config")
+    ok = r.status_code == 200
+    if not ok:
+        record("GET /payments/stripe/config", False, f"HTTP {r.status_code} - {r.text[:200]}")
+        return
+    body = r.json()
+    enabled = body.get("enabled") is True
+    pk = body.get("publishableKey", "")
+    pk_ok = pk.startswith("pk_test_")
+    prices = body.get("prices", {})
+    sub_prices = prices.get("subscription", {})
+    has_plans = all(p in sub_prices for p in ["monthly", "quarterly", "yearly"])
+    has_amb = "ambassadorCode" in prices
+    detail = f"enabled={body.get('enabled')} pk_test={pk_ok} currency={body.get('currency')} plans_present={has_plans} ambassadorCode={has_amb}"
+    record("GET /payments/stripe/config", enabled and pk_ok and has_plans and has_amb, detail)
+
+
+def test_subscription_checkout(token, plan):
+    r = requests.post(
+        f"{BASE_URL}/payments/stripe/subscription/checkout",
+        json={"plan": plan},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    if r.status_code != 200:
+        record(f"POST /payments/stripe/subscription/checkout ({plan})", False, f"HTTP {r.status_code} - {r.text[:300]}")
+        return None
+    body = r.json()
+    url = body.get("url", "")
+    sid = body.get("sessionId", "")
+    ok = url.startswith("https://checkout.stripe.com/") and sid.startswith("cs_test_")
+    record(f"POST /payments/stripe/subscription/checkout ({plan})", ok, f"sessionId={sid[:25]} url_ok={url.startswith('https://checkout.stripe.com/')}")
+    return sid
+
+
+def test_invalid_plan(token):
+    r = requests.post(
+        f"{BASE_URL}/payments/stripe/subscription/checkout",
+        json={"plan": "weekly"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    record("POST subscription/checkout invalid plan -> 400", r.status_code == 400, f"HTTP {r.status_code} - {r.text[:150]}")
+
+
+def test_ambassador_checkout(token, qty=3):
+    r = requests.post(
+        f"{BASE_URL}/payments/stripe/ambassador/checkout",
+        json={"quantity": qty},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    if r.status_code != 200:
+        record(f"POST /payments/stripe/ambassador/checkout (qty={qty})", False, f"HTTP {r.status_code} - {r.text[:300]}")
+        return None
+    body = r.json()
+    url = body.get("url", "")
+    sid = body.get("sessionId", "")
+    ok = url.startswith("https://checkout.stripe.com/") and sid.startswith("cs_test_")
+    record(f"POST /payments/stripe/ambassador/checkout (qty={qty})", ok, f"sessionId={sid[:25]}")
+    return sid
+
+
+def test_session_status(token, session_id, expected_type):
+    r = requests.get(
+        f"{BASE_URL}/payments/stripe/session/{session_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    if r.status_code != 200:
+        record(f"GET session/{session_id[:18]}... ({expected_type})", False, f"HTTP {r.status_code} - {r.text[:200]}")
+        return None
+    body = r.json()
+    ok = body.get("type") == expected_type and body.get("status") in ("pending", "completed")
+    record(f"GET session/... ({expected_type})", ok, f"status={body.get('status')} type={body.get('type')} amount={body.get('amount')}")
+    return body
+
+
+def test_webhook(session_id, label):
+    event = {
+        "id": f"evt_test_{label}_{int(time.time())}",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": session_id,
+                "payment_status": "paid",
+                "payment_intent": f"pi_test_{label}_{int(time.time())}",
+            }
+        },
+    }
+    r = requests.post(f"{BASE_URL}/payments/stripe/webhook", json=event)
+    record(f"POST /payments/stripe/webhook ({label})", r.status_code == 200, f"HTTP {r.status_code} - {r.text[:200]}")
+
+
+def test_auth_required():
+    r = requests.post(f"{BASE_URL}/payments/stripe/subscription/checkout", json={"plan": "monthly"})
+    record("Subscription checkout without auth -> 401", r.status_code == 401, f"HTTP {r.status_code}")
+
+    r2 = requests.post(f"{BASE_URL}/payments/stripe/ambassador/checkout", json={"quantity": 1})
+    record("Ambassador checkout without auth -> 401", r2.status_code == 401, f"HTTP {r2.status_code}")
+
+
+def mongo_verify(user_id, sub_session_id, amb_session_id, amb_qty):
+    try:
+        from pymongo import MongoClient
+        from bson import ObjectId
+    except Exception as e:
+        record("Mongo verification import", False, str(e))
+        return
+    mongo_url = os.getenv("MONGO_URL", "mongodb://localhost:27017")
+    db_name = os.getenv("DB_NAME", "test_database")
+    cli = MongoClient(mongo_url)
+    db = cli[db_name]
+
+    if sub_session_id:
+        p = db.payments.find_one({"stripeSessionId": sub_session_id})
+        if p:
+            record(
+                "Mongo: subscription payment doc inserted",
+                p.get("provider") == "stripe" and p.get("type") == "subscription",
+                f"status={p.get('status')} type={p.get('type')} plan={p.get('plan')} amount={p.get('amount')}",
+            )
         else:
-            self.log_test("Create Ambassador", False, f"Status: {status}, Response: {response}")
-            return False
-    
-    def test_2_ambassador_login(self):
-        """Test 2: Ambassador Login"""
-        print("\n" + "="*50)
-        print("TEST 2: Ambassador Login")
-        print("="*50)
-        
-        data = {
-            "email": "ambassador@tekateka.com",
-            "password": "Ambassador2025"
-        }
-        
-        status, response = self.make_request("POST", "/api/ambassador/login", data)
-        
-        if status == 200 and isinstance(response, dict) and "token" in response:
-            self.ambassador_token = response["token"]
-            self.log_test("Ambassador Login", True, f"Token received: {self.ambassador_token[:20]}...")
-            return True
+            record("Mongo: subscription payment doc inserted", False, "no doc found")
+
+    if amb_session_id:
+        p = db.payments.find_one({"stripeSessionId": amb_session_id})
+        if p:
+            record(
+                "Mongo: ambassador payment doc inserted",
+                p.get("provider") == "stripe" and p.get("type") == "ambassador_codes" and p.get("quantity") == amb_qty,
+                f"status={p.get('status')} qty={p.get('quantity')} amount={p.get('amount')}",
+            )
+            codes = list(db.ambassador_codes.find({"purchasePaymentId": str(p["_id"])}))
+            record(
+                f"Mongo: ambassador_codes generated (expected {amb_qty})",
+                len(codes) == amb_qty and all(c.get("status") == "available" for c in codes),
+                f"found={len(codes)} statuses={[c.get('status') for c in codes]}",
+            )
         else:
-            self.log_test("Ambassador Login", False, f"Status: {status}, Response: {response}")
-            return False
-    
-    def test_3_generate_codes(self):
-        """Test 3: Generate Codes (Admin)"""
-        print("\n" + "="*50)
-        print("TEST 3: Generate Codes (Admin)")
-        print("="*50)
-        
-        if not self.ambassador_id:
-            self.log_test("Generate Codes", False, "No ambassador ID available")
-            return False
-            
-        data = {
-            "adminPassword": self.admin_password,
-            "ambassadorId": self.ambassador_id,
-            "count": 5,
-            "plan": "monthly"
-        }
-        
-        status, response = self.make_request("POST", "/api/admin/codes/generate", data)
-        
-        if status == 200 and isinstance(response, dict) and response.get("success"):
-            codes = response.get("codes", [])
-            if len(codes) == 5:
-                self.log_test("Generate Codes", True, f"Generated {len(codes)} codes")
-                return True
-            else:
-                self.log_test("Generate Codes", False, f"Expected 5 codes, got {len(codes)}")
-                return False
-        else:
-            self.log_test("Generate Codes", False, f"Status: {status}, Response: {response}")
-            return False
-    
-    def test_4_ambassador_dashboard(self):
-        """Test 4: Ambassador Dashboard"""
-        print("\n" + "="*50)
-        print("TEST 4: Ambassador Dashboard")
-        print("="*50)
-        
-        if not self.ambassador_token:
-            self.log_test("Ambassador Dashboard", False, "No ambassador token available")
-            return False
-            
-        data = {"token": self.ambassador_token}
-        
-        status, response = self.make_request("POST", "/api/ambassador/dashboard", data)
-        
-        if status == 200 and isinstance(response, dict):
-            stats = response.get("stats", {})
-            total_sales = stats.get("totalSales", -1)
-            remaining_codes = stats.get("remainingCodes", -1)
-            
-            if total_sales == 0 and remaining_codes == 5:
-                self.log_test("Ambassador Dashboard", True, f"totalSales: {total_sales}, remainingCodes: {remaining_codes}")
-                return True
-            else:
-                self.log_test("Ambassador Dashboard", False, f"Expected totalSales: 0, remainingCodes: 5, got totalSales: {total_sales}, remainingCodes: {remaining_codes}")
-                return False
-        else:
-            self.log_test("Ambassador Dashboard", False, f"Status: {status}, Response: {response}")
-            return False
-    
-    def test_5_ambassador_codes_list(self):
-        """Test 5: Ambassador Codes List"""
-        print("\n" + "="*50)
-        print("TEST 5: Ambassador Codes List")
-        print("="*50)
-        
-        if not self.ambassador_token:
-            self.log_test("Ambassador Codes List", False, "No ambassador token available")
-            return False
-            
-        data = {"token": self.ambassador_token}
-        
-        status, response = self.make_request("POST", "/api/ambassador/codes", data)
-        
-        if status == 200 and isinstance(response, list):
-            if len(response) == 5:
-                unused_codes = [code for code in response if code.get("status") == "unused"]
-                if len(unused_codes) == 5:
-                    self.log_test("Ambassador Codes List", True, f"5 codes with status: unused")
-                    return True
-                else:
-                    self.log_test("Ambassador Codes List", False, f"Expected 5 unused codes, got {len(unused_codes)}")
-                    return False
-            else:
-                self.log_test("Ambassador Codes List", False, f"Expected 5 codes, got {len(response)}")
-                return False
-        else:
-            self.log_test("Ambassador Codes List", False, f"Status: {status}, Response: {response}")
-            return False
-    
-    def test_6_scan_client(self):
-        """Test 6: Scan Client (First create a user via phone login)"""
-        print("\n" + "="*50)
-        print("TEST 6: Scan Client")
-        print("="*50)
-        
-        # First create a user via phone login
-        print("Creating user via phone login...")
-        phone_data = {"phoneNumber": "+243111000111"}
-        status, response = self.make_request("POST", "/api/auth/phone-login", phone_data)
-        
-        if status == 200 and isinstance(response, dict) and "user" in response:
-            self.client_user_id = response["user"]["id"]
-            print(f"User created with ID: {self.client_user_id}")
-        else:
-            self.log_test("Scan Client", False, f"Failed to create user. Status: {status}, Response: {response}")
-            return False
-        
-        # Now scan the client
-        if not self.ambassador_token:
-            self.log_test("Scan Client", False, "No ambassador token available")
-            return False
-            
-        data = {
-            "token": self.ambassador_token,
-            "clientUserId": self.client_user_id
-        }
-        
-        status, response = self.make_request("POST", "/api/ambassador/scan-client", data)
-        
-        if status == 200 and isinstance(response, dict) and "client" in response:
-            client = response["client"]
-            if client.get("id") == self.client_user_id:
-                self.log_test("Scan Client", True, f"Client info retrieved: {client.get('name', 'N/A')}")
-                return True
-            else:
-                self.log_test("Scan Client", False, f"Client ID mismatch")
-                return False
-        else:
-            self.log_test("Scan Client", False, f"Status: {status}, Response: {response}")
-            return False
-    
-    def test_7_activate_code(self):
-        """Test 7: Activate Code for Client"""
-        print("\n" + "="*50)
-        print("TEST 7: Activate Code for Client")
-        print("="*50)
-        
-        if not self.ambassador_token or not self.client_user_id:
-            self.log_test("Activate Code", False, "Missing ambassador token or client user ID")
-            return False
-            
-        data = {
-            "token": self.ambassador_token,
-            "clientUserId": self.client_user_id,
-            "plan": "monthly"
-        }
-        
-        status, response = self.make_request("POST", "/api/ambassador/activate", data)
-        
-        if status == 200 and isinstance(response, dict) and response.get("success"):
-            commission = response.get("commission", 0)
-            code = response.get("code", "")
-            self.log_test("Activate Code", True, f"Code activated: {code}, Commission: {commission}")
-            return True
-        else:
-            self.log_test("Activate Code", False, f"Status: {status}, Response: {response}")
-            return False
-    
-    def test_8_verify_dashboard_updated(self):
-        """Test 8: Verify Dashboard Updated"""
-        print("\n" + "="*50)
-        print("TEST 8: Verify Dashboard Updated")
-        print("="*50)
-        
-        if not self.ambassador_token:
-            self.log_test("Verify Dashboard Updated", False, "No ambassador token available")
-            return False
-            
-        data = {"token": self.ambassador_token}
-        
-        status, response = self.make_request("POST", "/api/ambassador/dashboard", data)
-        
-        if status == 200 and isinstance(response, dict):
-            stats = response.get("stats", {})
-            total_sales = stats.get("totalSales", -1)
-            used_codes = stats.get("usedCodes", -1)
-            remaining_codes = stats.get("remainingCodes", -1)
-            
-            if total_sales == 1 and used_codes == 1 and remaining_codes == 4:
-                self.log_test("Verify Dashboard Updated", True, f"totalSales: {total_sales}, usedCodes: {used_codes}, remainingCodes: {remaining_codes}")
-                return True
-            else:
-                self.log_test("Verify Dashboard Updated", False, f"Expected totalSales: 1, usedCodes: 1, remainingCodes: 4, got totalSales: {total_sales}, usedCodes: {used_codes}, remainingCodes: {remaining_codes}")
-                return False
-        else:
-            self.log_test("Verify Dashboard Updated", False, f"Status: {status}, Response: {response}")
-            return False
-    
-    def test_9_list_ambassadors(self):
-        """Test 9: List Ambassadors (Admin)"""
-        print("\n" + "="*50)
-        print("TEST 9: List Ambassadors (Admin)")
-        print("="*50)
-        
-        data = {"adminPassword": self.admin_password}
-        
-        status, response = self.make_request("POST", "/api/admin/ambassadors/list", data)
-        
-        if status == 200 and isinstance(response, list):
-            if len(response) >= 1:
-                # Check if our ambassador is in the list
-                found_ambassador = False
-                for amb in response:
-                    if amb.get("email") == "ambassador@tekateka.com":
-                        found_ambassador = True
-                        break
-                
-                if found_ambassador:
-                    self.log_test("List Ambassadors", True, f"Found {len(response)} ambassadors including our test ambassador")
-                    return True
-                else:
-                    self.log_test("List Ambassadors", False, "Test ambassador not found in list")
-                    return False
-            else:
-                self.log_test("List Ambassadors", False, f"Expected at least 1 ambassador, got {len(response)}")
-                return False
-        else:
-            self.log_test("List Ambassadors", False, f"Status: {status}, Response: {response}")
-            return False
-    
-    def test_10_all_ambassador_sales(self):
-        """Test 10: All Ambassador Sales (Admin)"""
-        print("\n" + "="*50)
-        print("TEST 10: All Ambassador Sales (Admin)")
-        print("="*50)
-        
-        data = {"adminPassword": self.admin_password}
-        
-        status, response = self.make_request("POST", "/api/admin/ambassador-sales", data)
-        
-        if status == 200 and isinstance(response, list):
-            if len(response) >= 1:
-                # Check if our sale is in the list
-                found_sale = False
-                for sale in response:
-                    if sale.get("ambassadorId") == self.ambassador_id and sale.get("clientUserId") == self.client_user_id:
-                        found_sale = True
-                        break
-                
-                if found_sale:
-                    self.log_test("All Ambassador Sales", True, f"Found {len(response)} sales including our test sale")
-                    return True
-                else:
-                    self.log_test("All Ambassador Sales", False, "Test sale not found in list")
-                    return False
-            else:
-                self.log_test("All Ambassador Sales", False, f"Expected at least 1 sale, got {len(response)}")
-                return False
-        else:
-            self.log_test("All Ambassador Sales", False, f"Status: {status}, Response: {response}")
-            return False
-    
-    def run_all_tests(self):
-        """Run all test scenarios"""
-        print("🚀 Starting TekaTeka Ambassador System API Tests")
-        print(f"Base URL: {self.base_url}")
-        print(f"Admin Password: {self.admin_password}")
-        print("="*70)
-        
-        tests = [
-            self.test_1_create_ambassador,
-            self.test_2_ambassador_login,
-            self.test_3_generate_codes,
-            self.test_4_ambassador_dashboard,
-            self.test_5_ambassador_codes_list,
-            self.test_6_scan_client,
-            self.test_7_activate_code,
-            self.test_8_verify_dashboard_updated,
-            self.test_9_list_ambassadors,
-            self.test_10_all_ambassador_sales,
-        ]
-        
-        passed = 0
-        failed = 0
-        
-        for test in tests:
-            try:
-                if test():
-                    passed += 1
-                else:
-                    failed += 1
-            except Exception as e:
-                print(f"❌ EXCEPTION in {test.__name__}: {e}")
-                failed += 1
-        
-        print("\n" + "="*70)
-        print("📊 TEST SUMMARY")
-        print("="*70)
-        print(f"✅ Passed: {passed}")
-        print(f"❌ Failed: {failed}")
-        print(f"📈 Success Rate: {(passed/(passed+failed)*100):.1f}%")
-        
-        if failed > 0:
-            print("\n🔍 FAILED TESTS:")
-            for result in self.test_results:
-                if not result["success"]:
-                    print(f"   ❌ {result['test']}: {result['details']}")
-        
-        return failed == 0
+            record("Mongo: ambassador payment doc inserted", False, "no doc found")
+
+    try:
+        u = db.users.find_one({"_id": ObjectId(user_id)})
+        sub = (u or {}).get("subscription", {})
+        record(
+            "Mongo: user.subscription active after fulfillment",
+            sub.get("status") == "active" and sub.get("provider") == "stripe",
+            f"subscription={sub}",
+        )
+    except Exception as e:
+        record("Mongo: user.subscription lookup", False, str(e))
+
+
+def main():
+    print("=" * 80)
+    print("STRIPE PAYMENT INTEGRATION TESTS")
+    print(f"Base URL: {BASE_URL}")
+    print(f"Time: {datetime.utcnow().isoformat()}Z")
+    print("=" * 80)
+
+    test_config()
+    test_auth_required()
+
+    try:
+        token, user_id = login_phone()
+        print(f"[INFO] Logged in user_id={user_id}")
+    except Exception as e:
+        record("Phone login", False, str(e))
+        return
+
+    test_invalid_plan(token)
+
+    sid_monthly = test_subscription_checkout(token, "monthly")
+    sid_quarterly = test_subscription_checkout(token, "quarterly")
+    sid_yearly = test_subscription_checkout(token, "yearly")
+
+    amb_qty = 3
+    sid_amb = test_ambassador_checkout(token, qty=amb_qty)
+
+    if sid_monthly:
+        test_session_status(token, sid_monthly, "subscription")
+    if sid_amb:
+        test_session_status(token, sid_amb, "ambassador_codes")
+
+    if sid_monthly:
+        test_webhook(sid_monthly, "sub")
+    if sid_amb:
+        test_webhook(sid_amb, "amb")
+
+    # Post-webhook verification
+    if sid_monthly:
+        test_session_status(token, sid_monthly, "subscription")
+    if sid_amb:
+        test_session_status(token, sid_amb, "ambassador_codes")
+
+    mongo_verify(user_id, sid_monthly, sid_amb, amb_qty)
+
+    # Summary
+    print("\n" + "=" * 80)
+    passed = sum(1 for _, ok, _ in results if ok)
+    total = len(results)
+    print(f"RESULTS: {passed}/{total} passed")
+    for n, ok, d in results:
+        print(f"  [{'PASS' if ok else 'FAIL'}] {n} -- {d}")
+    print("=" * 80)
+
 
 if __name__ == "__main__":
-    tester = AmbassadorAPITester()
-    success = tester.run_all_tests()
-    sys.exit(0 if success else 1)
+    main()

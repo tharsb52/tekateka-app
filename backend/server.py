@@ -20,6 +20,7 @@ from otp_service import send_otp, verify_otp
 from data_api import router as data_router
 from admin_api import router as admin_router
 from payment_api import router as payment_router
+from stripe_api import router as stripe_router
 from ambassador_api import router as ambassador_router
 from admin_ambassador_panel import router as amb_panel_router
 from firebase_auth_page import router as firebase_page_router
@@ -168,6 +169,7 @@ app.include_router(admin_router, prefix="/api")
 
 # Include payment API router
 app.include_router(payment_router, prefix="/api")
+app.include_router(stripe_router, prefix="/api", tags=["stripe-payments"])
 
 app.add_middleware(
     CORSMiddleware,
