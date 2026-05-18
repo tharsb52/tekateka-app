@@ -49,13 +49,40 @@ DB_NAME = os.getenv("DB_NAME", "test_database")
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
-STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
-STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "https://tekateka.app")
+# Stripe secret key. Single source of truth: STRIPE_SECRET_KEY env var.
+# Must NEVER appear in code or in any tracked file (.env is gitignored).
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "").strip()
+
+# Publishable key — accept both common naming conventions so the deployment
+# platform can use whichever it prefers without code changes.
+STRIPE_PUBLISHABLE_KEY = (
+    os.getenv("STRIPE_PUBLISHABLE_KEY", "").strip()
+    or os.getenv("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY", "").strip()
+    or os.getenv("EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY", "").strip()
+)
+
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()
+FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "https://tekateka.app").strip()
 
 stripe.api_key = STRIPE_SECRET_KEY
 STRIPE_ENABLED = bool(STRIPE_SECRET_KEY) and STRIPE_SECRET_KEY.startswith("sk_")
+# Detect environment from the key prefix (Stripe convention):
+#   sk_live_ / pk_live_  -> production
+#   sk_test_ / pk_test_  -> test
+STRIPE_LIVE_MODE = STRIPE_SECRET_KEY.startswith("sk_live_")
+
+if STRIPE_ENABLED:
+    mode = "LIVE (production)" if STRIPE_LIVE_MODE else "TEST (sandbox)"
+    logger.info(f"Stripe enabled in {mode} mode")
+    if STRIPE_LIVE_MODE and not STRIPE_WEBHOOK_SECRET:
+        logger.warning(
+            "STRIPE_LIVE_MODE is on but STRIPE_WEBHOOK_SECRET is empty. "
+            "Webhook signature verification is DISABLED — this is unsafe in "
+            "production. Set STRIPE_WEBHOOK_SECRET from the Stripe Dashboard "
+            "(Developers -> Webhooks -> your endpoint -> Signing secret)."
+        )
+else:
+    logger.warning("Stripe is NOT enabled (STRIPE_SECRET_KEY is missing or invalid)")
 
 # JWT auth (reuse data_api logic)
 import jwt
@@ -124,10 +151,13 @@ class CheckoutResponse(BaseModel):
 # --- Endpoints ----------------------------------------------------------
 @router.get("/payments/stripe/config")
 async def stripe_config():
-    """Expose the publishable key (safe to share with frontend)."""
+    """Expose Stripe config to the frontend.
+    Returns whether we're in live or test mode so the UI can adapt
+    (hide "Test mode" warnings in production, show them in dev)."""
     return {
         "enabled": STRIPE_ENABLED,
         "publishableKey": STRIPE_PUBLISHABLE_KEY,
+        "mode": "live" if STRIPE_LIVE_MODE else "test",
         "currency": PAYMENT_CURRENCY,
         "freeTrialDays": FREE_TRIAL_DAYS,
         "prices": {
@@ -312,18 +342,11 @@ async def get_session_status(session_id: str, user_id: str = Depends(get_current
 # --- Webhook ------------------------------------------------------------
 @router.post("/payments/stripe/webhook", include_in_schema=False)
 async def stripe_webhook(request: Request, stripe_signature: Optional[str] = Header(None)):
-    """Receives Stripe webhook events. Signature-verified."""
+    """Receives Stripe webhook events. Signature-verified in production."""
     raw_body = await request.body()
 
-    if not STRIPE_WEBHOOK_SECRET:
-        # In dev we accept unsigned events for easy testing.
-        logger.warning("STRIPE_WEBHOOK_SECRET is empty - skipping signature check (DEV ONLY)")
-        try:
-            import json
-            event = json.loads(raw_body)
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid payload")
-    else:
+    if STRIPE_WEBHOOK_SECRET:
+        # Production path: verify signature (REQUIRED in live mode)
         try:
             event = stripe.Webhook.construct_event(
                 payload=raw_body,
@@ -334,6 +357,26 @@ async def stripe_webhook(request: Request, stripe_signature: Optional[str] = Hea
             raise HTTPException(status_code=400, detail="Invalid payload")
         except stripe.error.SignatureVerificationError:
             raise HTTPException(status_code=400, detail="Invalid signature")
+    else:
+        # Dev fallback: accept unsigned payloads ONLY in test mode. In live
+        # mode we refuse, because anyone could fake a "payment completed"
+        # event and activate subscriptions for free.
+        if STRIPE_LIVE_MODE:
+            logger.error(
+                "Webhook received in LIVE mode but STRIPE_WEBHOOK_SECRET is empty. "
+                "Refusing to process. Configure the signing secret from the Stripe "
+                "Dashboard (Developers -> Webhooks)."
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="Webhook secret not configured (live mode requires signature verification)",
+            )
+        logger.warning("STRIPE_WEBHOOK_SECRET is empty - skipping signature check (DEV/TEST ONLY)")
+        try:
+            import json
+            event = json.loads(raw_body)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid payload")
 
     event_type = event.get("type") if isinstance(event, dict) else event["type"]
     data_object = (event.get("data") or {}).get("object") if isinstance(event, dict) else event["data"]["object"]
@@ -345,6 +388,18 @@ async def stripe_webhook(request: Request, stripe_signature: Optional[str] = Hea
             await _fulfill_payment(payment, data_object)
         else:
             logger.warning(f"Received checkout.session.completed for unknown session {session_id}")
+    elif event_type == "checkout.session.async_payment_succeeded":
+        # Some payment methods (SEPA, bank transfers) complete asynchronously
+        session_id = data_object.get("id")
+        payment = await db.payments.find_one({"stripeSessionId": session_id})
+        if payment:
+            await _fulfill_payment(payment, data_object)
+    elif event_type == "checkout.session.expired" or event_type == "checkout.session.async_payment_failed":
+        session_id = data_object.get("id")
+        await db.payments.update_one(
+            {"stripeSessionId": session_id, "status": "pending"},
+            {"$set": {"status": "failed", "completedAt": datetime.utcnow().isoformat() + "Z"}}
+        )
 
     return {"received": True}
 

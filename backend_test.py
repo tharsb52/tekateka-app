@@ -63,8 +63,11 @@ def test_config():
         log("1. GET /payments/stripe/config", False, f"status={r.status_code}")
         return False
     data = r.json()
+    pk = data.get("publishableKey", "") or ""
     checks = [
         ("enabled=True", data.get("enabled") is True),
+        ("mode=test", data.get("mode") == "test"),
+        ("publishableKey starts pk_test_", pk.startswith("pk_test_")),
         ("currency=eur", data.get("currency") == "eur"),
         ("freeTrialDays=7", data.get("freeTrialDays") == 7),
         ("subscription prices",
@@ -251,6 +254,116 @@ def test_webhook_fulfillment(token):
     return all_ok
 
 
+def test_webhook_expired(token):
+    """TEST 2: checkout.session.expired -> payment status='failed', subscription NOT activated."""
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Snapshot subscription state BEFORE
+    rp = requests.get(f"{API}/auth/profile", headers=headers, timeout=15)
+    sub_before = ((rp.json().get("user") or rp.json()).get("subscription") or {}) if rp.status_code == 200 else {}
+
+    # Create subscription monthly checkout
+    r = requests.post(f"{API}/payments/stripe/subscription/checkout",
+                      json={"plan": "monthly"}, headers=headers, timeout=30)
+    if r.status_code != 200:
+        log("6a. expired-flow setup checkout", False, f"status={r.status_code} body={r.text[:200]}")
+        return False
+    sid = r.json().get("sessionId")
+    log("6a. expired-flow setup checkout", True, f"sid={sid[:30]}")
+
+    # Send checkout.session.expired webhook
+    webhook_body = {
+        "type": "checkout.session.expired",
+        "data": {"object": {"id": sid}}
+    }
+    wr = requests.post(f"{API}/payments/stripe/webhook", json=webhook_body, timeout=20)
+    log("6b. webhook checkout.session.expired -> 200", wr.status_code == 200,
+        f"status={wr.status_code} body={wr.text[:200]}")
+
+    # Verify payment doc status == 'failed' in MongoDB
+    time.sleep(0.5)
+    doc = asyncio.run(get_payment_doc(sid))
+    status_ok = doc and doc.get("status") == "failed"
+    log("6c. payment doc status='failed' in Mongo", bool(status_ok),
+        f"doc.status={doc and doc.get('status')}, completedAt={doc and doc.get('completedAt')}")
+
+    # Verify subscription NOT activated by this event (state unchanged or still trial)
+    rp2 = requests.get(f"{API}/auth/profile", headers=headers, timeout=15)
+    sub_after = ((rp2.json().get("user") or rp2.json()).get("subscription") or {}) if rp2.status_code == 200 else {}
+    # The invariant: subscription was NOT changed by this expired webhook
+    not_activated = (sub_before == sub_after)
+    log("6d. subscription NOT activated by expired webhook", not_activated,
+        f"before={sub_before} after={sub_after}")
+
+    return bool(status_ok) and not_activated
+
+
+def test_webhook_async_succeeded(token):
+    """TEST 3: checkout.session.async_payment_succeeded -> payment 'completed' + subscription active."""
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Create another monthly checkout
+    r = requests.post(f"{API}/payments/stripe/subscription/checkout",
+                      json={"plan": "monthly"}, headers=headers, timeout=30)
+    if r.status_code != 200:
+        log("7a. async-succeeded-flow setup checkout", False, f"status={r.status_code} body={r.text[:200]}")
+        return False
+    sid = r.json().get("sessionId")
+    log("7a. async-succeeded-flow setup checkout", True, f"sid={sid[:30]}")
+
+    # Send async_payment_succeeded webhook with payment_status=paid
+    webhook_body = {
+        "type": "checkout.session.async_payment_succeeded",
+        "data": {
+            "object": {
+                "id": sid,
+                "payment_status": "paid",
+                "payment_intent": "pi_test_async_succ",
+            }
+        },
+    }
+    wr = requests.post(f"{API}/payments/stripe/webhook", json=webhook_body, timeout=20)
+    log("7b. webhook async_payment_succeeded -> 200", wr.status_code == 200,
+        f"status={wr.status_code} body={wr.text[:200]}")
+
+    # Verify payment doc completed
+    time.sleep(0.5)
+    doc = asyncio.run(get_payment_doc(sid))
+    status_ok = doc and doc.get("status") == "completed"
+    log("7c. payment doc status='completed' in Mongo", bool(status_ok),
+        f"doc.status={doc and doc.get('status')}")
+
+    # Verify subscription activated
+    rp = requests.get(f"{API}/auth/profile", headers=headers, timeout=15)
+    sub = ((rp.json().get("user") or rp.json()).get("subscription") or {}) if rp.status_code == 200 else {}
+    checks = [
+        ("subscription.status=active", sub.get("status") == "active"),
+        ("subscription.plan=monthly", sub.get("plan") == "monthly"),
+        ("subscription.provider=stripe", sub.get("provider") == "stripe"),
+    ]
+    all_ok = all(ok for _, ok in checks) and bool(status_ok)
+    info = "; ".join(f"{n}={'OK' if ok else 'FAIL'}" for n, ok in checks) + f" | sub={sub}"
+    log("7d. subscription activated by async_payment_succeeded", all_ok, info)
+    return all_ok
+
+
+def test_session_status_polling(token):
+    """TEST 4: Session status polling returns proper status."""
+    headers = {"Authorization": f"Bearer {token}"}
+    r = requests.post(f"{API}/payments/stripe/subscription/checkout",
+                      json={"plan": "monthly"}, headers=headers, timeout=30)
+    if r.status_code != 200:
+        log("8a. polling setup checkout", False, f"status={r.status_code}")
+        return False
+    sid = r.json().get("sessionId")
+
+    sr = requests.get(f"{API}/payments/stripe/session/{sid}", headers=headers, timeout=20)
+    ok = sr.status_code == 200 and sr.json().get("status") in ("pending", "completed", "failed")
+    log("8a. GET /payments/stripe/session/{id} returns proper status", ok,
+        f"status={sr.status_code} body={sr.text[:200]}")
+    return ok
+
+
 if __name__ == "__main__":
     print(f"\n=== TekaTeka Stripe Integration Test ===")
     print(f"Backend: {API}\n")
@@ -274,6 +387,9 @@ if __name__ == "__main__":
     test_subscription_checkout(token)
     test_ambassador_checkout(token)
     test_webhook_fulfillment(token)
+    test_webhook_expired(token)
+    test_webhook_async_succeeded(token)
+    test_session_status_polling(token)
 
     print("\n=== SUMMARY ===")
     passed = sum(1 for _, ok, _ in results if ok)
