@@ -246,8 +246,8 @@ export default function SubscriptionScreen() {
               }
             }}
           >
-            <Ionicons name="arrow-back" size={24} color="#1e293b" />
-            <Text style={{ fontSize: 16, color: '#1e293b', marginLeft: 8, fontWeight: '600' }}>Retour</Text>
+            <Ionicons name="arrow-back" size={20} color="#2563eb" />
+            <Text style={{ fontSize: 15, color: '#2563eb', fontWeight: '700' }}>Retour</Text>
           </TouchableOpacity>
         )}
 
@@ -540,11 +540,18 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   backButton: {
-    width: 44,
-    height: 44,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
+    alignSelf: 'flex-start',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: '#eff6ff',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#bfdbfe',
+    marginBottom: 12,
+    minHeight: 44,
+    gap: 6,
   },
   logoutButton: {
     flexDirection: 'row',

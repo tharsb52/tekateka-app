@@ -122,6 +122,125 @@ export default function DashboardScreen() {
   const [showPeriodPicker, setShowPeriodPicker] = useState(false);
   const [showCustomDateModal, setShowCustomDateModal] = useState(false);
 
+  // State for monthly report + graphs (use a "month anchor" date that points
+  // to the 1st of the selected month at noon — avoids DST edge cases).
+  const [selectedMonth, setSelectedMonth] = useState<Date>(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1, 12, 0, 0);
+  });
+  const [expandedProductId, setExpandedProductId] = useState<string | null>(null);
+
+  // Stock indicator: low = 1 unit, empty = 0 units
+  const stockStats = useMemo(() => {
+    const empty = products.filter(p => (p.stock ?? 0) === 0);
+    const low = products.filter(p => (p.stock ?? 0) === 1);
+    return { empty, low };
+  }, [products]);
+
+  // Monthly per-product report (purchases + sales in the selected month)
+  const monthlyReport = useMemo(() => {
+    const start = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), 1, 0, 0, 0);
+    const end = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 1, 0, 0, 0);
+    const userCurrency = user?.currency || 'USD';
+    type Row = {
+      productId: string;
+      name: string;
+      purchaseQty: number;
+      purchaseAmount: number;
+      purchaseDates: string[]; // ISO
+      saleQty: number;
+      saleAmount: number;
+      saleDates: string[]; // ISO
+    };
+    const map = new Map<string, Row>();
+    const ensure = (id: string, name: string): Row => {
+      let row = map.get(id);
+      if (!row) {
+        row = { productId: id, name, purchaseQty: 0, purchaseAmount: 0, purchaseDates: [], saleQty: 0, saleAmount: 0, saleDates: [] };
+        map.set(id, row);
+      }
+      return row;
+    };
+    // Purchases
+    (purchases || []).forEach(p => {
+      try {
+        const d = new Date(p.createdAt);
+        if (d < start || d >= end) return;
+        const pid = (p as any).productId || (p as any).id;
+        const row = ensure(pid, (p as any).productName || 'Produit');
+        row.purchaseQty += Number((p as any).quantity || 0);
+        row.purchaseAmount += convertCurrency(Number((p as any).totalAmount || 0), (p as any).currency || userCurrency, userCurrency);
+        row.purchaseDates.push(p.createdAt);
+      } catch {}
+    });
+    // Sales
+    (sales || []).forEach(s => {
+      try {
+        const d = new Date(s.createdAt);
+        if (d < start || d >= end) return;
+        const pid = (s as any).productId || (s as any).id;
+        const row = ensure(pid, (s as any).productName || 'Produit');
+        row.saleQty += Number((s as any).quantity || 0);
+        row.saleAmount += convertCurrency(Number((s as any).totalAmount || 0), (s as any).currency || userCurrency, userCurrency);
+        row.saleDates.push(s.createdAt);
+      } catch {}
+    });
+    return Array.from(map.values()).sort((a, b) => (b.saleAmount + b.purchaseAmount) - (a.saleAmount + a.purchaseAmount));
+  }, [selectedMonth, purchases, sales, user]);
+
+  // Daily series for monthly graphs (purchases / sales / expenses)
+  const monthlyDailySeries = useMemo(() => {
+    const year = selectedMonth.getFullYear();
+    const month = selectedMonth.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const userCurrency = user?.currency || 'USD';
+    const purchasesArr: number[] = new Array(daysInMonth).fill(0);
+    const salesArr: number[] = new Array(daysInMonth).fill(0);
+    const expensesArr: number[] = new Array(daysInMonth).fill(0);
+
+    (purchases || []).forEach(p => {
+      try {
+        const d = new Date(p.createdAt);
+        if (d.getFullYear() === year && d.getMonth() === month) {
+          purchasesArr[d.getDate() - 1] += convertCurrency(Number((p as any).totalAmount || 0), (p as any).currency || userCurrency, userCurrency);
+        }
+      } catch {}
+    });
+    (sales || []).forEach(s => {
+      try {
+        const d = new Date(s.createdAt);
+        if (d.getFullYear() === year && d.getMonth() === month) {
+          salesArr[d.getDate() - 1] += convertCurrency(Number((s as any).totalAmount || 0), (s as any).currency || userCurrency, userCurrency);
+        }
+      } catch {}
+    });
+    (expenses || []).forEach(e => {
+      try {
+        const d = new Date(e.createdAt);
+        if (d.getFullYear() === year && d.getMonth() === month) {
+          expensesArr[d.getDate() - 1] += convertCurrency(Number((e as any).amount || 0), (e as any).currency || userCurrency, userCurrency);
+        }
+      } catch {}
+    });
+
+    const labels = Array.from({ length: daysInMonth }, (_, i) => String(i + 1));
+    return { labels, purchasesArr, salesArr, expensesArr, daysInMonth };
+  }, [selectedMonth, purchases, sales, expenses, user]);
+
+  const goPrevMonth = () => {
+    setSelectedMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1, 12, 0, 0));
+    setExpandedProductId(null);
+  };
+  const goNextMonth = () => {
+    const next = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 1, 12, 0, 0);
+    // Don't allow going beyond current month
+    const now = new Date();
+    if (next > new Date(now.getFullYear(), now.getMonth(), 1)) return;
+    setSelectedMonth(next);
+    setExpandedProductId(null);
+  };
+  const monthLabel = format(selectedMonth, 'MMMM yyyy', { locale: fr });
+
   // Revenue chart data based on selected period - converted to user currency
   const { chartData, periodLabel, filteredSales } = useMemo(() => {
     const userCurrency = user?.currency || 'USD';
@@ -302,22 +421,6 @@ export default function DashboardScreen() {
           <Text style={styles.statCount}>{expenses.length} charges</Text>
         </View>
 
-        {/* Purchases Card */}
-        <TouchableOpacity
-          style={[styles.statCard, styles.purchasesCard]}
-          onPress={() => router.push('/(tabs)/purchases')}
-        >
-          <View style={styles.statHeader}>
-            <Ionicons name="bag-handle" size={24} color="#7c3aed" />
-            <Text style={styles.statLabel}>{i18n.t('totalPurchases')}</Text>
-          </View>
-          <Text style={[styles.statValue, { color: '#7c3aed' }]}>
-            {formatCurrency(stats.totalPurchases, user?.currency || 'USD')}
-          </Text>
-          <Text style={styles.statCount}>{purchases.length} achats</Text>
-          <Ionicons name="chevron-forward" size={20} color="#7c3aed" style={styles.cardArrow} />
-        </TouchableOpacity>
-
         {/* Debts Card */}
         <TouchableOpacity
           style={[styles.statCard, styles.debtsCard]}
@@ -361,7 +464,7 @@ export default function DashboardScreen() {
       <View style={styles.section}>
         <View style={styles.chartHeader}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.sectionTitle}>Chiffre d'affaires</Text>
+            <Text style={styles.sectionTitle}>Historique des ventes</Text>
             <Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{periodLabel} · {filteredSales.length} vente(s)</Text>
           </View>
           <View style={styles.exportButtons}>
@@ -408,6 +511,196 @@ export default function DashboardScreen() {
         </ScrollView>
       </View>
 
+      {/* ============ STOCK INDICATOR ============ */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>État du stock</Text>
+        <View style={{ flexDirection: 'row', gap: 12 }}>
+          <View style={[styles.stockCard, { backgroundColor: '#fff7ed', borderColor: '#fed7aa' }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Ionicons name="warning" size={22} color="#f97316" />
+              <Text style={{ color: '#9a3412', fontWeight: '700', fontSize: 13 }}>Stock faible</Text>
+            </View>
+            <Text style={[styles.stockCardValue, { color: '#f97316' }]}>{stockStats.low.length}</Text>
+            <Text style={styles.stockCardHint}>produit(s) avec 1 unité</Text>
+          </View>
+          <View style={[styles.stockCard, { backgroundColor: '#fef2f2', borderColor: '#fecaca' }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Ionicons name="close-circle" size={22} color="#dc2626" />
+              <Text style={{ color: '#991b1b', fontWeight: '700', fontSize: 13 }}>Stock nul</Text>
+            </View>
+            <Text style={[styles.stockCardValue, { color: '#dc2626' }]}>{stockStats.empty.length}</Text>
+            <Text style={styles.stockCardHint}>produit(s) épuisé(s)</Text>
+          </View>
+        </View>
+        {(stockStats.low.length > 0 || stockStats.empty.length > 0) && (
+          <View style={{ marginTop: 12 }}>
+            {stockStats.empty.map(p => (
+              <View key={`e-${p.id}`} style={styles.stockListItem}>
+                <View style={[styles.stockDot, { backgroundColor: '#dc2626' }]} />
+                <Text style={{ flex: 1, fontSize: 14, color: '#1e293b' }}>{p.name}</Text>
+                <Text style={{ fontSize: 12, color: '#dc2626', fontWeight: '700' }}>0 en stock</Text>
+              </View>
+            ))}
+            {stockStats.low.map(p => (
+              <View key={`l-${p.id}`} style={styles.stockListItem}>
+                <View style={[styles.stockDot, { backgroundColor: '#f97316' }]} />
+                <Text style={{ flex: 1, fontSize: 14, color: '#1e293b' }}>{p.name}</Text>
+                <Text style={{ fontSize: 12, color: '#f97316', fontWeight: '700' }}>1 restant</Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+
+      {/* ============ MONTHLY OVERVIEW (selector + graphs + per-product report) ============ */}
+      <View style={styles.section}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <Text style={styles.sectionTitle}>Bilan mensuel</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity onPress={goPrevMonth} style={styles.monthArrow}>
+              <Ionicons name="chevron-back" size={20} color="#2563eb" />
+            </TouchableOpacity>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: '#1e293b', textTransform: 'capitalize', minWidth: 110, textAlign: 'center' }}>
+              {monthLabel}
+            </Text>
+            <TouchableOpacity onPress={goNextMonth} style={styles.monthArrow}>
+              <Ionicons name="chevron-forward" size={20} color="#2563eb" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* 3 graphs: sales / purchases / expenses */}
+        {(['sales', 'purchases', 'expenses'] as const).map((kind) => {
+          const arr = kind === 'sales' ? monthlyDailySeries.salesArr
+                    : kind === 'purchases' ? monthlyDailySeries.purchasesArr
+                    : monthlyDailySeries.expensesArr;
+          const max = Math.max(...arr, 1);
+          const total = arr.reduce((a, b) => a + b, 0);
+          const meta = kind === 'sales'
+            ? { title: 'Ventes', color: '#2563eb', light: '#93c5fd', icon: 'trending-up' as const }
+            : kind === 'purchases'
+              ? { title: 'Achats', color: '#7c3aed', light: '#c4b5fd', icon: 'bag-handle' as const }
+              : { title: 'Charges', color: '#dc2626', light: '#fca5a5', icon: 'trending-down' as const };
+          return (
+            <View key={kind} style={styles.monthlyChartBox}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Ionicons name={meta.icon} size={16} color={meta.color} />
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#1e293b' }}>{meta.title}</Text>
+                </View>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: meta.color }}>
+                  {formatCurrency(total, user?.currency || 'USD')}
+                </Text>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={[styles.chartContainer, { minWidth: monthlyDailySeries.daysInMonth * 22, height: 110 }]}>
+                  {arr.map((v, i) => (
+                    <View key={i} style={[styles.chartColumn, { minWidth: 22 }]}>
+                      <Text style={[styles.chartValue, { fontSize: 8 }]}>
+                        {v > 0 ? (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : Math.round(v).toString()) : ''}
+                      </Text>
+                      <View style={[styles.chartBarBg, { height: 70 }]}>
+                        <View
+                          style={[
+                            styles.chartBar,
+                            {
+                              height: `${Math.max((v / max) * 100, 2)}%`,
+                              backgroundColor: v > 0 ? meta.color : meta.light,
+                            },
+                          ]}
+                        />
+                      </View>
+                      <Text style={[styles.chartLabel, { fontSize: 8 }]}>{monthlyDailySeries.labels[i]}</Text>
+                    </View>
+                  ))}
+                </View>
+              </ScrollView>
+            </View>
+          );
+        })}
+
+        {/* Per-product monthly report */}
+        <View style={{ marginTop: 8 }}>
+          <Text style={{ fontSize: 14, fontWeight: '700', color: '#1e293b', marginBottom: 8 }}>
+            Détail par produit
+          </Text>
+          {monthlyReport.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="document-outline" size={42} color="#cbd5e1" />
+              <Text style={styles.emptyText}>Aucune activité ce mois-ci</Text>
+            </View>
+          ) : (
+            monthlyReport.map(row => {
+              const isOpen = expandedProductId === row.productId;
+              return (
+                <TouchableOpacity
+                  key={row.productId}
+                  style={styles.productReportCard}
+                  onPress={() => setExpandedProductId(isOpen ? null : row.productId)}
+                  activeOpacity={0.85}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Ionicons name="cube-outline" size={18} color="#2563eb" />
+                    <Text style={{ flex: 1, fontSize: 15, fontWeight: '700', color: '#1e293b' }} numberOfLines={1}>
+                      {row.name}
+                    </Text>
+                    <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} size={18} color="#64748b" />
+                  </View>
+                  <View style={{ flexDirection: 'row', marginTop: 8, gap: 10 }}>
+                    <View style={{ flex: 1, backgroundColor: '#f3e8ff', padding: 8, borderRadius: 8 }}>
+                      <Text style={{ fontSize: 11, color: '#6b21a8', fontWeight: '600' }}>ACHATS</Text>
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: '#7c3aed', marginTop: 2 }}>
+                        {row.purchaseQty} unité(s)
+                      </Text>
+                      <Text style={{ fontSize: 12, color: '#7c3aed', fontWeight: '600' }}>
+                        {formatCurrency(row.purchaseAmount, user?.currency || 'USD')}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1, backgroundColor: '#dbeafe', padding: 8, borderRadius: 8 }}>
+                      <Text style={{ fontSize: 11, color: '#1e40af', fontWeight: '600' }}>VENTES</Text>
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: '#2563eb', marginTop: 2 }}>
+                        {row.saleQty} unité(s)
+                      </Text>
+                      <Text style={{ fontSize: 12, color: '#2563eb', fontWeight: '600' }}>
+                        {formatCurrency(row.saleAmount, user?.currency || 'USD')}
+                      </Text>
+                    </View>
+                  </View>
+                  {isOpen && (
+                    <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#e2e8f0' }}>
+                      {row.purchaseDates.length > 0 && (
+                        <View style={{ marginBottom: 6 }}>
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: '#7c3aed', marginBottom: 4 }}>
+                            Dates d'achat ({row.purchaseDates.length})
+                          </Text>
+                          {row.purchaseDates.map((d, i) => (
+                            <Text key={i} style={{ fontSize: 12, color: '#475569', marginLeft: 8 }}>
+                              • {formatLocal(d, 'dd/MM/yyyy HH:mm')}
+                            </Text>
+                          ))}
+                        </View>
+                      )}
+                      {row.saleDates.length > 0 && (
+                        <View>
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: '#2563eb', marginBottom: 4 }}>
+                            Dates de vente ({row.saleDates.length})
+                          </Text>
+                          {row.saleDates.map((d, i) => (
+                            <Text key={i} style={{ fontSize: 12, color: '#475569', marginLeft: 8 }}>
+                              • {formatLocal(d, 'dd/MM/yyyy HH:mm')}
+                            </Text>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })
+          )}
+        </View>
+      </View>
+
       {/* Top Products */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{i18n.t('topProducts')}</Text>
@@ -433,23 +726,7 @@ export default function DashboardScreen() {
         )}
       </View>
 
-      {/* Low Stock Alert */}
-      {products.filter(p => p.stock < 5 && p.stock > 0).length > 0 && (
-        <View style={styles.section}>
-          <View style={styles.alertHeader}>
-            <Ionicons name="warning" size={24} color="#f59e0b" />
-            <Text style={styles.alertTitle}>Stock faible</Text>
-          </View>
-          {products
-            .filter(p => p.stock < 5 && p.stock > 0)
-            .map((product) => (
-              <View key={product.id} style={styles.alertItem}>
-                <Text style={styles.alertProductName}>{product.name}</Text>
-                <Text style={styles.alertStock}>{product.stock} restant(s)</Text>
-              </View>
-            ))}
-        </View>
-      )}
+      {/* (Old low stock section removed — replaced by the dedicated "État du stock" card above) */}
 
       <View style={{ height: 80 }} />
 
@@ -972,6 +1249,62 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#dc2626',
+  },
+  // Stock indicator
+  stockCard: {
+    flex: 1,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1.5,
+  },
+  stockCardValue: {
+    fontSize: 30,
+    fontWeight: '800',
+    marginTop: 6,
+  },
+  stockCardHint: {
+    fontSize: 11,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  stockListItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    gap: 10,
+  },
+  stockDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  // Monthly overview
+  monthArrow: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#eff6ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  monthlyChartBox: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  productReportCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
   // Chart styles
   chartHeader: {
