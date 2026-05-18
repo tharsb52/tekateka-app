@@ -18,11 +18,20 @@ Frontend flow:
   POST /api/payments/stripe/subscription/checkout  -> returns { url }
   Mobile app opens `url` via Linking.openURL(...)
   User pays on Stripe-hosted page
-  Stripe redirects to success_url / cancel_url
+  Stripe redirects to success_url / cancel_url (BACKEND pages — see below)
   Stripe webhook -> /api/payments/stripe/webhook updates DB authoritatively
 
 The webhook is the **source of truth** for activation. The success_url
 should only display a "thank you" page and re-fetch the user profile.
+
+success_url / cancel_url
+------------------------
+We point Stripe back to OUR OWN backend (not a frontend domain). Reasons:
+  * The mobile app has NO website — pointing to `tekateka.app` causes
+    DNS errors on the user's phone after payment.
+  * Our backend always has a working public DNS (low-data-shop.emergent.host).
+  * We serve a tiny HTML page that says "Payment confirmed — return to
+    the app" and attempts to deep-link back to the TekaTeka app.
 """
 import os
 import logging
@@ -33,6 +42,7 @@ from typing import Optional
 
 import stripe
 from fastapi import APIRouter, HTTPException, Depends, Request, Header
+from fastapi.responses import HTMLResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 from dotenv import load_dotenv
@@ -149,6 +159,23 @@ class CheckoutResponse(BaseModel):
 
 
 # --- Endpoints ----------------------------------------------------------
+def _build_redirect_base(request: Request) -> str:
+    """Compute the public base URL of this backend from the incoming request.
+
+    We use this instead of FRONTEND_BASE_URL because:
+      * The mobile app has no website — pointing to a non-existent frontend
+        domain produces a DNS error after Stripe redirects.
+      * The backend always has a working public DNS.
+
+    Returns e.g. "https://low-data-shop.emergent.host".
+    """
+    # X-Forwarded-* headers are set by the Kubernetes ingress / Emergent proxy
+    scheme = request.headers.get("x-forwarded-proto") or request.url.scheme or "https"
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+    # Strip any internal port info (e.g. host:8001 -> host)
+    return f"{scheme}://{host}".rstrip("/")
+
+
 @router.get("/payments/stripe/config")
 async def stripe_config():
     """Expose Stripe config to the frontend.
@@ -168,9 +195,71 @@ async def stripe_config():
     }
 
 
+# --- Stripe return pages (served as plain HTML on the backend domain) ---
+SUCCESS_HTML = """<!doctype html>
+<html lang="fr"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Paiement confirmé - TekaTeka</title>
+<style>
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:linear-gradient(135deg,#10b981 0%,#059669 100%);color:#fff;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+  .card{background:#fff;color:#0f172a;border-radius:20px;padding:32px 24px;max-width:380px;width:100%;text-align:center;box-shadow:0 20px 50px rgba(0,0,0,.2)}
+  .check{width:80px;height:80px;border-radius:50%;background:#10b981;display:inline-flex;align-items:center;justify-content:center;margin-bottom:16px}
+  .check svg{width:48px;height:48px;color:#fff}
+  h1{margin:0 0 8px;font-size:22px;color:#10b981}
+  p{margin:8px 0;color:#475569;font-size:15px;line-height:1.5}
+  .btn{display:inline-block;margin-top:18px;padding:14px 22px;background:#2563eb;color:#fff;border-radius:10px;text-decoration:none;font-weight:600;font-size:15px}
+  .hint{margin-top:14px;font-size:13px;color:#94a3b8}
+</style></head><body>
+<div class="card">
+  <div class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></div>
+  <h1>Paiement confirmé !</h1>
+  <p>Votre paiement a bien été traité par Stripe.<br>Votre abonnement TekaTeka est en cours d'activation.</p>
+  <a class="btn" href="#" onclick="window.close();return false;">Retourner à l'application</a>
+  <p class="hint">Vous pouvez maintenant fermer cette fenêtre et revenir à TekaTeka. Votre abonnement sera visible dans quelques secondes.</p>
+</div>
+<script>
+  // Try to close the in-app browser automatically after a short delay
+  setTimeout(function(){ try{ window.close(); }catch(e){} }, 2500);
+</script>
+</body></html>"""
+
+CANCEL_HTML = """<!doctype html>
+<html lang="fr"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Paiement annulé - TekaTeka</title>
+<style>
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:linear-gradient(135deg,#64748b 0%,#475569 100%);color:#fff;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+  .card{background:#fff;color:#0f172a;border-radius:20px;padding:32px 24px;max-width:380px;width:100%;text-align:center;box-shadow:0 20px 50px rgba(0,0,0,.2)}
+  .x{width:80px;height:80px;border-radius:50%;background:#64748b;display:inline-flex;align-items:center;justify-content:center;margin-bottom:16px}
+  .x svg{width:48px;height:48px;color:#fff}
+  h1{margin:0 0 8px;font-size:22px;color:#64748b}
+  p{margin:8px 0;color:#475569;font-size:15px;line-height:1.5}
+  .btn{display:inline-block;margin-top:18px;padding:14px 22px;background:#2563eb;color:#fff;border-radius:10px;text-decoration:none;font-weight:600;font-size:15px}
+</style></head><body>
+<div class="card">
+  <div class="x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></div>
+  <h1>Paiement annulé</h1>
+  <p>Aucune somme n'a été débitée. Vous pouvez réessayer à tout moment depuis l'application.</p>
+  <a class="btn" href="#" onclick="window.close();return false;">Retourner à l'application</a>
+</div>
+<script>setTimeout(function(){ try{ window.close(); }catch(e){} }, 2500);</script>
+</body></html>"""
+
+
+@router.get("/payments/stripe/success", include_in_schema=False)
+async def stripe_success_page():
+    return HTMLResponse(content=SUCCESS_HTML, status_code=200)
+
+
+@router.get("/payments/stripe/cancel", include_in_schema=False)
+async def stripe_cancel_page():
+    return HTMLResponse(content=CANCEL_HTML, status_code=200)
+
+
 @router.post("/payments/stripe/subscription/checkout", response_model=CheckoutResponse)
 async def create_subscription_checkout(
     payload: SubscriptionCheckoutRequest,
+    request: Request,
     user_id: str = Depends(get_current_user),
 ):
     """Create a Stripe Checkout session for a subscription purchase.
@@ -207,8 +296,8 @@ async def create_subscription_checkout(
                 },
             }],
             customer_email=user.get("email") or None,
-            success_url=f"{FRONTEND_BASE_URL}/billing/success?session_id={{CHECKOUT_SESSION_ID}}",
-            cancel_url=f"{FRONTEND_BASE_URL}/billing/cancel",
+            success_url=f"{_build_redirect_base(request)}/api/payments/stripe/success?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{_build_redirect_base(request)}/api/payments/stripe/cancel",
             metadata={
                 "userId": user_id,
                 "type": "subscription",
@@ -240,6 +329,7 @@ async def create_subscription_checkout(
 @router.post("/payments/stripe/ambassador/checkout", response_model=CheckoutResponse)
 async def create_ambassador_checkout(
     payload: AmbassadorCheckoutRequest,
+    request: Request,
     user_id: str = Depends(get_current_user),
 ):
     """Create a Stripe Checkout session for an ambassador buying activation codes.
@@ -278,8 +368,8 @@ async def create_ambassador_checkout(
                 },
             }],
             customer_email=user.get("email") or None,
-            success_url=f"{FRONTEND_BASE_URL}/ambassador/success?session_id={{CHECKOUT_SESSION_ID}}",
-            cancel_url=f"{FRONTEND_BASE_URL}/ambassador/cancel",
+            success_url=f"{_build_redirect_base(request)}/api/payments/stripe/success?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{_build_redirect_base(request)}/api/payments/stripe/cancel",
             metadata={
                 "userId": user_id,
                 "type": "ambassador_codes",
