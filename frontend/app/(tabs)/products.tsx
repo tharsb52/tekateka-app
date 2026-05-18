@@ -187,8 +187,12 @@ export default function ProductsScreen() {
       </ScrollView>
 
       {/* Add/Edit Modal */}
-      <Modal visible={modalVisible} animationType="slide" transparent>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <Modal visible={modalVisible} animationType="slide" transparent statusBarTranslucent>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
+        >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -201,7 +205,14 @@ export default function ProductsScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalForm} keyboardShouldPersistTaps="handled">
+            <ScrollView
+              style={styles.modalForm}
+              contentContainerStyle={{ paddingBottom: 240 }}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              showsVerticalScrollIndicator={false}
+              automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+            >
               <View style={styles.fieldRow}>
                 <Text style={styles.label}>Nom du produit *</Text>
                 <VoiceInputButton onTranscript={(t) => setFormData({ ...formData, name: t })} />

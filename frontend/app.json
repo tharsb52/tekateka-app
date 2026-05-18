@@ -24,6 +24,7 @@
         "backgroundColor": "#fef3e7"
       },
       "edgeToEdgeEnabled": true,
+      "softwareKeyboardLayoutMode": "resize",
       "permissions": [
         "RECORD_AUDIO",
         "CAMERA",

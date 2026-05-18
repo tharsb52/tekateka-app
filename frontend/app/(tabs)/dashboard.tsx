@@ -129,6 +129,7 @@ export default function DashboardScreen() {
     return new Date(d.getFullYear(), d.getMonth(), 1, 12, 0, 0);
   });
   const [expandedProductId, setExpandedProductId] = useState<string | null>(null);
+  const [monthlyOpen, setMonthlyOpen] = useState<boolean>(false);
 
   // Stock indicator: low = 1 unit, empty = 0 units
   const stockStats = useMemo(() => {
@@ -137,7 +138,14 @@ export default function DashboardScreen() {
     return { empty, low };
   }, [products]);
 
-  // Monthly per-product report (purchases + sales in the selected month)
+  // Monthly per-product report.
+  //
+  // Important business rule (user request):
+  //   "Achats" come from PRODUCTS that were registered with a purchase price
+  //   in the Products page — NOT from a separate purchases collection. So for
+  //   each product whose `createdAt` falls in the selected month and which has
+  //   `purchasePrice > 0`, we count it as a purchase of `stock + soldThisMonth`
+  //   units (we add back what was sold to recover the original quantity).
   const monthlyReport = useMemo(() => {
     const start = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), 1, 0, 0, 0);
     const end = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 1, 0, 0, 0);
@@ -161,19 +169,20 @@ export default function DashboardScreen() {
       }
       return row;
     };
-    // Purchases
-    (purchases || []).forEach(p => {
+
+    // Pre-compute units sold *in the selected month* per product so we can
+    // reconstruct the original purchased quantity.
+    const soldThisMonthByProduct = new Map<string, number>();
+    (sales || []).forEach(s => {
       try {
-        const d = new Date(p.createdAt);
+        const d = new Date(s.createdAt);
         if (d < start || d >= end) return;
-        const pid = (p as any).productId || (p as any).id;
-        const row = ensure(pid, (p as any).productName || 'Produit');
-        row.purchaseQty += Number((p as any).quantity || 0);
-        row.purchaseAmount += convertCurrency(Number((p as any).totalAmount || 0), (p as any).currency || userCurrency, userCurrency);
-        row.purchaseDates.push(p.createdAt);
+        const pid = (s as any).productId || (s as any).id;
+        soldThisMonthByProduct.set(pid, (soldThisMonthByProduct.get(pid) || 0) + Number((s as any).quantity || 0));
       } catch {}
     });
-    // Sales
+
+    // Sales rows
     (sales || []).forEach(s => {
       try {
         const d = new Date(s.createdAt);
@@ -185,8 +194,25 @@ export default function DashboardScreen() {
         row.saleDates.push(s.createdAt);
       } catch {}
     });
+
+    // Purchase rows derived from products registered this month
+    (products || []).forEach(p => {
+      try {
+        if (!p.createdAt || !(p as any).purchasePrice || (p as any).purchasePrice <= 0) return;
+        const d = new Date(p.createdAt);
+        if (d < start || d >= end) return;
+        const row = ensure(p.id, p.name);
+        const soldThisMonth = soldThisMonthByProduct.get(p.id) || 0;
+        const originalQty = Math.max(0, (p.stock ?? 0) + soldThisMonth);
+        const unitCost = Number((p as any).purchasePrice || 0);
+        row.purchaseQty += originalQty;
+        row.purchaseAmount += convertCurrency(unitCost * originalQty, (p as any).currency || userCurrency, userCurrency);
+        row.purchaseDates.push(p.createdAt);
+      } catch {}
+    });
+
     return Array.from(map.values()).sort((a, b) => (b.saleAmount + b.purchaseAmount) - (a.saleAmount + a.purchaseAmount));
-  }, [selectedMonth, purchases, sales, user]);
+  }, [selectedMonth, products, sales, user]);
 
   // Daily series for monthly graphs (purchases / sales / expenses)
   const monthlyDailySeries = useMemo(() => {
@@ -198,14 +224,31 @@ export default function DashboardScreen() {
     const salesArr: number[] = new Array(daysInMonth).fill(0);
     const expensesArr: number[] = new Array(daysInMonth).fill(0);
 
-    (purchases || []).forEach(p => {
+    // Sold-per-day-per-product for purchase qty reconstruction
+    const soldByPidThisMonth: Record<string, number> = {};
+    (sales || []).forEach(s => {
       try {
-        const d = new Date(p.createdAt);
-        if (d.getFullYear() === year && d.getMonth() === month) {
-          purchasesArr[d.getDate() - 1] += convertCurrency(Number((p as any).totalAmount || 0), (p as any).currency || userCurrency, userCurrency);
-        }
+        const d = new Date(s.createdAt);
+        if (d.getFullYear() !== year || d.getMonth() !== month) return;
+        const pid = (s as any).productId || (s as any).id;
+        soldByPidThisMonth[pid] = (soldByPidThisMonth[pid] || 0) + Number((s as any).quantity || 0);
       } catch {}
     });
+
+    // Purchases = products with purchasePrice, created in this month
+    (products || []).forEach(p => {
+      try {
+        if (!p.createdAt || !(p as any).purchasePrice || (p as any).purchasePrice <= 0) return;
+        const d = new Date(p.createdAt);
+        if (d.getFullYear() !== year || d.getMonth() !== month) return;
+        const soldThisMonth = soldByPidThisMonth[p.id] || 0;
+        const originalQty = Math.max(0, (p.stock ?? 0) + soldThisMonth);
+        const unitCost = Number((p as any).purchasePrice || 0);
+        const amount = convertCurrency(unitCost * originalQty, (p as any).currency || userCurrency, userCurrency);
+        purchasesArr[d.getDate() - 1] += amount;
+      } catch {}
+    });
+
     (sales || []).forEach(s => {
       try {
         const d = new Date(s.createdAt);
@@ -225,7 +268,7 @@ export default function DashboardScreen() {
 
     const labels = Array.from({ length: daysInMonth }, (_, i) => String(i + 1));
     return { labels, purchasesArr, salesArr, expensesArr, daysInMonth };
-  }, [selectedMonth, purchases, sales, expenses, user]);
+  }, [selectedMonth, products, sales, expenses, user]);
 
   const goPrevMonth = () => {
     setSelectedMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1, 12, 0, 0));
@@ -233,9 +276,13 @@ export default function DashboardScreen() {
   };
   const goNextMonth = () => {
     const next = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 1, 12, 0, 0);
-    // Don't allow going beyond current month
+    // Don't allow going BEYOND the current month (we compare year+month, not full dates,
+    // so the user can navigate INTO the current month).
     const now = new Date();
-    if (next > new Date(now.getFullYear(), now.getMonth(), 1)) return;
+    const nextIsFuture =
+      next.getFullYear() > now.getFullYear() ||
+      (next.getFullYear() === now.getFullYear() && next.getMonth() > now.getMonth());
+    if (nextIsFuture) return;
     setSelectedMonth(next);
     setExpandedProductId(null);
   };
@@ -554,19 +601,35 @@ export default function DashboardScreen() {
 
       {/* ============ MONTHLY OVERVIEW (selector + graphs + per-product report) ============ */}
       <View style={styles.section}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <Text style={styles.sectionTitle}>Bilan mensuel</Text>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => setMonthlyOpen(o => !o)}
+          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#eff6ff', padding: 14, borderRadius: 12, borderWidth: 1.5, borderColor: '#bfdbfe' }}
+        >
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <TouchableOpacity onPress={goPrevMonth} style={styles.monthArrow}>
-              <Ionicons name="chevron-back" size={20} color="#2563eb" />
-            </TouchableOpacity>
-            <Text style={{ fontSize: 14, fontWeight: '700', color: '#1e293b', textTransform: 'capitalize', minWidth: 110, textAlign: 'center' }}>
+            <Ionicons name="bar-chart" size={20} color="#2563eb" />
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#1e293b' }}>Bilan mensuel</Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Text style={{ fontSize: 13, color: '#2563eb', fontWeight: '600', textTransform: 'capitalize' }}>
               {monthLabel}
             </Text>
-            <TouchableOpacity onPress={goNextMonth} style={styles.monthArrow}>
-              <Ionicons name="chevron-forward" size={20} color="#2563eb" />
-            </TouchableOpacity>
+            <Ionicons name={monthlyOpen ? 'chevron-up' : 'chevron-down'} size={20} color="#2563eb" />
           </View>
+        </TouchableOpacity>
+
+        {monthlyOpen && (
+        <>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 12, marginBottom: 12, gap: 10 }}>
+          <TouchableOpacity onPress={goPrevMonth} style={styles.monthArrow}>
+            <Ionicons name="chevron-back" size={20} color="#2563eb" />
+          </TouchableOpacity>
+          <Text style={{ fontSize: 15, fontWeight: '700', color: '#1e293b', textTransform: 'capitalize', minWidth: 130, textAlign: 'center' }}>
+            {monthLabel}
+          </Text>
+          <TouchableOpacity onPress={goNextMonth} style={styles.monthArrow}>
+            <Ionicons name="chevron-forward" size={20} color="#2563eb" />
+          </TouchableOpacity>
         </View>
 
         {/* 3 graphs: sales / purchases / expenses */}
@@ -699,11 +762,26 @@ export default function DashboardScreen() {
             })
           )}
         </View>
+        </>
+        )}
       </View>
 
-      {/* Top Products */}
+      {/* Top Products - Meilleures ventes (button -> /best-sellers) */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{i18n.t('topProducts')}</Text>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => router.push('/best-sellers')}
+          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fef3c7', padding: 14, borderRadius: 12, borderWidth: 1.5, borderColor: '#fde68a', marginBottom: 12 }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Ionicons name="trophy" size={20} color="#d97706" />
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#1e293b' }}>Meilleures ventes</Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Text style={{ fontSize: 12, color: '#d97706', fontWeight: '600' }}>Voir la liste</Text>
+            <Ionicons name="arrow-forward" size={18} color="#d97706" />
+          </View>
+        </TouchableOpacity>
         {stats.topProducts.length === 0 ? (
           <View style={styles.emptyState}>
             <Ionicons name="bar-chart-outline" size={48} color="#cbd5e1" />
