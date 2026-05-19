@@ -86,8 +86,21 @@ export default function ProductsScreen() {
   };
 
   const handleDelete = (id: string, name: string) => {
-    deleteProduct(id);
-    Alert.alert(i18n.t('success'), `"${name}" supprimé`);
+    Alert.alert(
+      'Supprimer le produit',
+      `Voulez-vous vraiment supprimer "${name}" ?\n\nCette action est irréversible.`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Supprimer',
+          style: 'destructive',
+          onPress: () => {
+            deleteProduct(id);
+            Alert.alert(i18n.t('success'), `"${name}" supprimé`);
+          },
+        },
+      ]
+    );
   };
 
   const getEffectivePrice = (p: any) => p.promotionPrice && p.promotionPrice > 0 ? p.promotionPrice : (p.salePrice || p.price || 0);

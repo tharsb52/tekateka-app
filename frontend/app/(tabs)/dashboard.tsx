@@ -558,220 +558,44 @@ export default function DashboardScreen() {
         </ScrollView>
       </View>
 
-      {/* ============ STOCK INDICATOR ============ */}
+      {/* ============ STOCK ALERT (clickable cards -> /stock-alerts) ============ */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>État du stock</Text>
+        <Text style={styles.sectionTitle}>Alerte Stock</Text>
         <View style={{ flexDirection: 'row', gap: 12 }}>
-          <View style={[styles.stockCard, { backgroundColor: '#fff7ed', borderColor: '#fed7aa' }]}>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => router.push({ pathname: '/stock-alerts', params: { type: 'low' } })}
+            style={[styles.stockCard, { backgroundColor: '#fff7ed', borderColor: '#fed7aa' }]}
+          >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Ionicons name="warning" size={22} color="#f97316" />
               <Text style={{ color: '#9a3412', fontWeight: '700', fontSize: 13 }}>Stock faible</Text>
             </View>
             <Text style={[styles.stockCardValue, { color: '#f97316' }]}>{stockStats.low.length}</Text>
             <Text style={styles.stockCardHint}>produit(s) avec 1 unité</Text>
-          </View>
-          <View style={[styles.stockCard, { backgroundColor: '#fef2f2', borderColor: '#fecaca' }]}>
+          </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => router.push({ pathname: '/stock-alerts', params: { type: 'empty' } })}
+            style={[styles.stockCard, { backgroundColor: '#fef2f2', borderColor: '#fecaca' }]}
+          >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Ionicons name="close-circle" size={22} color="#dc2626" />
               <Text style={{ color: '#991b1b', fontWeight: '700', fontSize: 13 }}>Stock nul</Text>
             </View>
             <Text style={[styles.stockCardValue, { color: '#dc2626' }]}>{stockStats.empty.length}</Text>
             <Text style={styles.stockCardHint}>produit(s) épuisé(s)</Text>
-          </View>
-        </View>
-        {(stockStats.low.length > 0 || stockStats.empty.length > 0) && (
-          <View style={{ marginTop: 12 }}>
-            {stockStats.empty.map(p => (
-              <View key={`e-${p.id}`} style={styles.stockListItem}>
-                <View style={[styles.stockDot, { backgroundColor: '#dc2626' }]} />
-                <Text style={{ flex: 1, fontSize: 14, color: '#1e293b' }}>{p.name}</Text>
-                <Text style={{ fontSize: 12, color: '#dc2626', fontWeight: '700' }}>0 en stock</Text>
-              </View>
-            ))}
-            {stockStats.low.map(p => (
-              <View key={`l-${p.id}`} style={styles.stockListItem}>
-                <View style={[styles.stockDot, { backgroundColor: '#f97316' }]} />
-                <Text style={{ flex: 1, fontSize: 14, color: '#1e293b' }}>{p.name}</Text>
-                <Text style={{ fontSize: 12, color: '#f97316', fontWeight: '700' }}>1 restant</Text>
-              </View>
-            ))}
-          </View>
-        )}
-      </View>
-
-      {/* ============ MONTHLY OVERVIEW (selector + graphs + per-product report) ============ */}
-      <View style={styles.section}>
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={() => setMonthlyOpen(o => !o)}
-          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#eff6ff', padding: 14, borderRadius: 12, borderWidth: 1.5, borderColor: '#bfdbfe' }}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Ionicons name="bar-chart" size={20} color="#2563eb" />
-            <Text style={{ fontSize: 16, fontWeight: '700', color: '#1e293b' }}>Bilan mensuel</Text>
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Text style={{ fontSize: 13, color: '#2563eb', fontWeight: '600', textTransform: 'capitalize' }}>
-              {monthLabel}
-            </Text>
-            <Ionicons name={monthlyOpen ? 'chevron-up' : 'chevron-down'} size={20} color="#2563eb" />
-          </View>
-        </TouchableOpacity>
-
-        {monthlyOpen && (
-        <>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 12, marginBottom: 12, gap: 10 }}>
-          <TouchableOpacity onPress={goPrevMonth} style={styles.monthArrow}>
-            <Ionicons name="chevron-back" size={20} color="#2563eb" />
-          </TouchableOpacity>
-          <Text style={{ fontSize: 15, fontWeight: '700', color: '#1e293b', textTransform: 'capitalize', minWidth: 130, textAlign: 'center' }}>
-            {monthLabel}
-          </Text>
-          <TouchableOpacity onPress={goNextMonth} style={styles.monthArrow}>
-            <Ionicons name="chevron-forward" size={20} color="#2563eb" />
           </TouchableOpacity>
         </View>
-
-        {/* 3 graphs: sales / purchases / expenses */}
-        {(['sales', 'purchases', 'expenses'] as const).map((kind) => {
-          const arr = kind === 'sales' ? monthlyDailySeries.salesArr
-                    : kind === 'purchases' ? monthlyDailySeries.purchasesArr
-                    : monthlyDailySeries.expensesArr;
-          const max = Math.max(...arr, 1);
-          const total = arr.reduce((a, b) => a + b, 0);
-          const meta = kind === 'sales'
-            ? { title: 'Ventes', color: '#2563eb', light: '#93c5fd', icon: 'trending-up' as const }
-            : kind === 'purchases'
-              ? { title: 'Achats', color: '#7c3aed', light: '#c4b5fd', icon: 'bag-handle' as const }
-              : { title: 'Charges', color: '#dc2626', light: '#fca5a5', icon: 'trending-down' as const };
-          return (
-            <View key={kind} style={styles.monthlyChartBox}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Ionicons name={meta.icon} size={16} color={meta.color} />
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#1e293b' }}>{meta.title}</Text>
-                </View>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: meta.color }}>
-                  {formatCurrency(total, user?.currency || 'USD')}
-                </Text>
-              </View>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={[styles.chartContainer, { minWidth: monthlyDailySeries.daysInMonth * 22, height: 110 }]}>
-                  {arr.map((v, i) => (
-                    <View key={i} style={[styles.chartColumn, { minWidth: 22 }]}>
-                      <Text style={[styles.chartValue, { fontSize: 8 }]}>
-                        {v > 0 ? (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : Math.round(v).toString()) : ''}
-                      </Text>
-                      <View style={[styles.chartBarBg, { height: 70 }]}>
-                        <View
-                          style={[
-                            styles.chartBar,
-                            {
-                              height: `${Math.max((v / max) * 100, 2)}%`,
-                              backgroundColor: v > 0 ? meta.color : meta.light,
-                            },
-                          ]}
-                        />
-                      </View>
-                      <Text style={[styles.chartLabel, { fontSize: 8 }]}>{monthlyDailySeries.labels[i]}</Text>
-                    </View>
-                  ))}
-                </View>
-              </ScrollView>
-            </View>
-          );
-        })}
-
-        {/* Per-product monthly report */}
-        <View style={{ marginTop: 8 }}>
-          <Text style={{ fontSize: 14, fontWeight: '700', color: '#1e293b', marginBottom: 8 }}>
-            Détail par produit
-          </Text>
-          {monthlyReport.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="document-outline" size={42} color="#cbd5e1" />
-              <Text style={styles.emptyText}>Aucune activité ce mois-ci</Text>
-            </View>
-          ) : (
-            monthlyReport.map(row => {
-              const isOpen = expandedProductId === row.productId;
-              return (
-                <TouchableOpacity
-                  key={row.productId}
-                  style={styles.productReportCard}
-                  onPress={() => setExpandedProductId(isOpen ? null : row.productId)}
-                  activeOpacity={0.85}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Ionicons name="cube-outline" size={18} color="#2563eb" />
-                    <Text style={{ flex: 1, fontSize: 15, fontWeight: '700', color: '#1e293b' }} numberOfLines={1}>
-                      {row.name}
-                    </Text>
-                    <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} size={18} color="#64748b" />
-                  </View>
-                  <View style={{ flexDirection: 'row', marginTop: 8, gap: 10 }}>
-                    <View style={{ flex: 1, backgroundColor: '#f3e8ff', padding: 8, borderRadius: 8 }}>
-                      <Text style={{ fontSize: 11, color: '#6b21a8', fontWeight: '600' }}>ACHATS</Text>
-                      <Text style={{ fontSize: 14, fontWeight: '700', color: '#7c3aed', marginTop: 2 }}>
-                        {row.purchaseQty} unité(s)
-                      </Text>
-                      <Text style={{ fontSize: 12, color: '#7c3aed', fontWeight: '600' }}>
-                        {formatCurrency(row.purchaseAmount, user?.currency || 'USD')}
-                      </Text>
-                    </View>
-                    <View style={{ flex: 1, backgroundColor: '#dbeafe', padding: 8, borderRadius: 8 }}>
-                      <Text style={{ fontSize: 11, color: '#1e40af', fontWeight: '600' }}>VENTES</Text>
-                      <Text style={{ fontSize: 14, fontWeight: '700', color: '#2563eb', marginTop: 2 }}>
-                        {row.saleQty} unité(s)
-                      </Text>
-                      <Text style={{ fontSize: 12, color: '#2563eb', fontWeight: '600' }}>
-                        {formatCurrency(row.saleAmount, user?.currency || 'USD')}
-                      </Text>
-                    </View>
-                  </View>
-                  {isOpen && (
-                    <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#e2e8f0' }}>
-                      {row.purchaseDates.length > 0 && (
-                        <View style={{ marginBottom: 6 }}>
-                          <Text style={{ fontSize: 12, fontWeight: '700', color: '#7c3aed', marginBottom: 4 }}>
-                            Dates d'achat ({row.purchaseDates.length})
-                          </Text>
-                          {row.purchaseDates.map((d, i) => (
-                            <Text key={i} style={{ fontSize: 12, color: '#475569', marginLeft: 8 }}>
-                              • {formatLocal(d, 'dd/MM/yyyy HH:mm')}
-                            </Text>
-                          ))}
-                        </View>
-                      )}
-                      {row.saleDates.length > 0 && (
-                        <View>
-                          <Text style={{ fontSize: 12, fontWeight: '700', color: '#2563eb', marginBottom: 4 }}>
-                            Dates de vente ({row.saleDates.length})
-                          </Text>
-                          {row.saleDates.map((d, i) => (
-                            <Text key={i} style={{ fontSize: 12, color: '#475569', marginLeft: 8 }}>
-                              • {formatLocal(d, 'dd/MM/yyyy HH:mm')}
-                            </Text>
-                          ))}
-                        </View>
-                      )}
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })
-          )}
-        </View>
-        </>
-        )}
       </View>
 
+      {/* (Bilan mensuel moved to "Plus" page -> /monthly-report) */}
       {/* Top Products - Meilleures ventes (button -> /best-sellers) */}
       <View style={styles.section}>
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={() => router.push('/best-sellers')}
-          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fef3c7', padding: 14, borderRadius: 12, borderWidth: 1.5, borderColor: '#fde68a', marginBottom: 12 }}
+          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fef3c7', padding: 14, borderRadius: 12, borderWidth: 1.5, borderColor: '#fde68a' }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Ionicons name="trophy" size={20} color="#d97706" />
@@ -782,26 +606,6 @@ export default function DashboardScreen() {
             <Ionicons name="arrow-forward" size={18} color="#d97706" />
           </View>
         </TouchableOpacity>
-        {stats.topProducts.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="bar-chart-outline" size={48} color="#cbd5e1" />
-            <Text style={styles.emptyText}>Aucune vente</Text>
-          </View>
-        ) : (
-          stats.topProducts.map((product, index) => (
-            <View key={index} style={styles.productItem}>
-              <View style={styles.productRank}>
-                <Text style={styles.rankNumber}>{index + 1}</Text>
-              </View>
-              <View style={styles.productInfo}>
-                <Text style={styles.productName}>{product.name}</Text>
-                <Text style={styles.productStats}>
-                  {product.quantity} vendus • {formatCurrency(product.revenue, user?.currency || 'USD')}
-                </Text>
-              </View>
-            </View>
-          ))
-        )}
       </View>
 
       {/* (Old low stock section removed — replaced by the dedicated "État du stock" card above) */}

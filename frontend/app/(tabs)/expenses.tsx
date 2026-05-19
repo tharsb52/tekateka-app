@@ -83,8 +83,21 @@ export default function ExpensesScreen() {
   };
 
   const handleDelete = (id: string) => {
-    deleteExpense(id);
-    Alert.alert(i18n.t('success'), 'Charge supprimée');
+    Alert.alert(
+      'Supprimer la charge',
+      'Voulez-vous vraiment supprimer cette charge ?\n\nCette action est irréversible.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Supprimer',
+          style: 'destructive',
+          onPress: () => {
+            deleteExpense(id);
+            Alert.alert(i18n.t('success'), 'Charge supprimée');
+          },
+        },
+      ]
+    );
   };
 
   return (

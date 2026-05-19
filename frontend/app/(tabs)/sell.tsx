@@ -112,8 +112,21 @@ export default function SellScreen() {
   };
 
   const handleDeleteSale = (id: string) => {
-    deleteSale(id);
-    Alert.alert(i18n.t('success'), 'Vente supprimée');
+    Alert.alert(
+      'Supprimer la vente',
+      'Voulez-vous vraiment supprimer cette vente ?\n\nLe stock du produit sera réajusté. Cette action est irréversible.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Supprimer',
+          style: 'destructive',
+          onPress: () => {
+            deleteSale(id);
+            Alert.alert(i18n.t('success'), 'Vente supprimée');
+          },
+        },
+      ]
+    );
   };
 
   const totalAmount = selectedProduct ? getEffectivePrice(selectedProduct) * parseInt(quantity || '0') : 0;

@@ -224,6 +224,22 @@ function SettingsScreenInner() {
         {/* Subscription Section */}
         <Text style={styles.sectionLabel}>ABONNEMENT</Text>
 
+        {/* Bilan mensuel shortcut */}
+        <TouchableOpacity style={[styles.card, { marginBottom: 12 }]} onPress={() => router.push('/monthly-report')}>
+          <View style={styles.settingRow}>
+            <View style={styles.settingLeft}>
+              <View style={[styles.iconCircle, { backgroundColor: '#dbeafe' }]}>
+                <Ionicons name="bar-chart" size={22} color="#2563eb" />
+              </View>
+              <View>
+                <Text style={styles.settingTitle}>Bilan mensuel</Text>
+                <Text style={styles.settingSubtitle}>Achats, ventes et charges du mois</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={22} color="#94a3b8" />
+          </View>
+        </TouchableOpacity>
+
         {/* Notes shortcut */}
         <TouchableOpacity style={[styles.card, { marginBottom: 12 }]} onPress={() => router.push('/notes')}>
           <View style={styles.settingRow}>
@@ -248,10 +264,12 @@ function SettingsScreenInner() {
               </View>
               <View>
                 <Text style={styles.settingTitle}>
-                  {isSubActive ? `Plan ${user?.subscriptionPlan === 'monthly' ? 'Mensuel' : user?.subscriptionPlan === 'quarterly' ? 'Trimestriel' : 'Annuel'}` : 'Essai gratuit'}
+                  Mon Abonnement
                 </Text>
                 <Text style={styles.settingSubtitle}>
-                  {isSubActive ? `${subDaysLeft} jours restants` : 'Passer à un plan payant'}
+                  {isSubActive
+                    ? `Plan ${user?.subscriptionPlan === 'monthly' ? 'Mensuel' : user?.subscriptionPlan === 'quarterly' ? 'Trimestriel' : 'Annuel'} • ${subDaysLeft} jours restants`
+                    : 'Essai gratuit • Passer à un plan payant'}
                 </Text>
               </View>
             </View>
