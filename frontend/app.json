@@ -3,6 +3,14 @@
     "name": "TekaTeka",
     "slug": "frontend",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/ab6140a0-3dfb-4ce8-b47a-88f643de12cc",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "tekateka",
@@ -60,6 +68,11 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "ab6140a0-3dfb-4ce8-b47a-88f643de12cc"
+      }
     }
   }
 }
