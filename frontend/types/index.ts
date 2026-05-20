@@ -17,12 +17,18 @@ export interface User {
 
 export interface Product {
   id: string;
+  sku?: string;                  // Auto-generated PROD-000001 per user
   name: string;
   purchasePrice: number; // Prix d'achat par unité
   salePrice: number; // Prix de vente
   promotionPrice?: number; // Prix promo (optionnel)
   stock: number; // Quantité en stock
   category: string;
+  unit?: string;                 // pcs, kg, L, sac... or custom (when user picked "autre")
+  lowStockThreshold?: number;    // alert when stock <= this value (default 5)
+  // Recomputed by the backend on every read
+  outOfStock?: boolean;
+  lowStock?: boolean;
   userId: string;
   createdAt: string;
   updatedAt: string;

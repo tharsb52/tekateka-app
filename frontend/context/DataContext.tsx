@@ -24,12 +24,19 @@ function mapBackendSale(s: any): Sale {
 function mapBackendProduct(p: any): Product {
   return {
     id: p.id || '',
+    sku: p.sku || undefined,
     name: p.name || '',
     purchasePrice: p.purchasePrice ?? 0,
     salePrice: p.salePrice ?? p.price ?? 0,
     promotionPrice: p.promotionPrice,
     stock: p.stock ?? 0,
     category: p.category || 'food',
+    unit: p.unit || undefined,
+    lowStockThreshold: typeof p.lowStockThreshold === 'number' ? p.lowStockThreshold : 5,
+    outOfStock: typeof p.outOfStock === 'boolean' ? p.outOfStock : (p.stock ?? 0) <= 0,
+    lowStock: typeof p.lowStock === 'boolean'
+      ? p.lowStock
+      : ((p.stock ?? 0) > 0 && (p.stock ?? 0) <= (typeof p.lowStockThreshold === 'number' ? p.lowStockThreshold : 5)),
     userId: p.userId || '',
     createdAt: p.createdAt || new Date().toISOString(),
     updatedAt: p.updatedAt || p.createdAt || new Date().toISOString(),
@@ -43,9 +50,10 @@ interface DataContextType {
   debts: Debt[];
   purchases: Purchase[];
   loading: boolean;
-  addProduct: (p: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'userId'>) => Promise<void>;
+  addProduct: (p: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'userId'>) => Promise<{ duplicate: boolean; samePrice?: boolean; existing?: Product }>;
   updateProduct: (id: string, u: Partial<Product>) => Promise<void>;
   deleteProduct: (id: string) => Promise<void>;
+  restockProduct: (id: string, payload: { quantityAdded: number; newPurchasePrice?: number; currency?: string; note?: string }) => Promise<void>;
   addSale: (s: Omit<Sale, 'id' | 'createdAt' | 'userId'>) => Promise<void>;
   updateSale: (id: string, u: Partial<Sale>) => Promise<void>;
   deleteSale: (id: string) => Promise<void>;
@@ -126,7 +134,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // PRODUCTS
   const addProduct = async (data: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'userId'>) => {
-    if (!user) return;
+    if (!user) return { duplicate: false } as { duplicate: false };
     try {
       const result = await productsAPI.add({
         name: data.name,
@@ -135,8 +143,21 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         promotionPrice: data.promotionPrice,
         stock: data.stock,
         category: data.category,
+        unit: (data as any).unit,
+        customUnit: (data as any).customUnit,
+        lowStockThreshold: (data as any).lowStockThreshold,
       });
+      // Backend signals duplicate detection via { duplicate: true, existing, samePrice }
+      // — we surface that to the caller without inserting into local state.
+      if (result?.duplicate) {
+        return {
+          duplicate: true,
+          samePrice: !!result.samePrice,
+          existing: mapBackendProduct(result.existing),
+        };
+      }
       setProducts(prev => [...prev, mapBackendProduct(result)]);
+      return { duplicate: false };
     } catch (error) {
       console.error('Add product error:', error);
       throw error;
@@ -159,6 +180,22 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setProducts(prev => prev.filter(p => p.id !== id));
     } catch (error) {
       console.error('Delete product error:', error);
+      throw error;
+    }
+  };
+
+  const restockProduct = async (
+    id: string,
+    payload: { quantityAdded: number; newPurchasePrice?: number; currency?: string; note?: string },
+  ) => {
+    try {
+      const result = await productsAPI.restock(id, payload);
+      // Backend returns the freshly updated product with recomputed stock
+      // alert flags — splice it into the local list so dashboards/stats update
+      // instantly without waiting for the next 30s polling cycle.
+      setProducts(prev => prev.map(p => p.id === id ? mapBackendProduct(result) : p));
+    } catch (error) {
+      console.error('Restock product error:', error);
       throw error;
     }
   };
@@ -370,7 +407,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   return (
     <DataContext.Provider value={{
       products, sales, expenses, debts, purchases, loading,
-      addProduct, updateProduct, deleteProduct,
+      addProduct, updateProduct, deleteProduct, restockProduct,
       addSale, updateSale, deleteSale,
       addExpense, updateExpense, deleteExpense,
       addDebt, updateDebt, deleteDebt,

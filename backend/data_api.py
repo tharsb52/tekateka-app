@@ -95,6 +95,15 @@ class ProductModel(BaseModel):
     promotionPrice: Optional[float] = None
     stock: int = 0
     category: str = "food"
+    unit: Optional[str] = None          # one of UNIT_PRESETS or any custom string
+    customUnit: Optional[str] = None    # used when unit == "autre"; final stored unit becomes this
+    lowStockThreshold: int = 5          # per-product threshold; default 5
+
+class RestockRequest(BaseModel):
+    quantityAdded: int
+    newPurchasePrice: Optional[float] = None
+    currency: Optional[str] = None
+    note: Optional[str] = None
 
 class SaleModel(BaseModel):
     productId: str
@@ -293,34 +302,256 @@ async def update_profile_photo(request: Request, user_id: str = Depends(get_curr
 # ==========================================
 # Products CRUD
 # ==========================================
+
+# Pre-defined unit list for product sale units. The frontend renders a picker
+# from this list; choosing "autre" lets the user type a free-text unit. Both
+# preset and custom values end up stored in the same `unit` field.
+UNIT_PRESETS = [
+    "pcs", "kg", "g", "L", "mL", "sac", "carton", "bouteille",
+    "paquet", "caisse", "botte", "mètre", "boîte", "douzaine", "autre",
+]
+
+
+def _normalize_unit(unit: Optional[str], custom_unit: Optional[str]) -> Optional[str]:
+    """Return the canonical unit string actually stored on the product.
+
+    If the user picked "autre", we promote `customUnit` to be the stored unit.
+    Trimming + case-preservation keeps "kg" and "KG" identical for duplicate
+    detection (handled in _normalize_for_match below) without altering display.
+    """
+    if (unit or "").strip().lower() == "autre":
+        cu = (custom_unit or "").strip()
+        return cu or None
+    u = (unit or "").strip()
+    return u or None
+
+
+def _normalize_for_match(value: Optional[str]) -> str:
+    """Lower-cased, whitespace-collapsed key used to compare names/units."""
+    if not value:
+        return ""
+    return " ".join(value.strip().lower().split())
+
+
+async def _next_product_sku(user_id: str) -> str:
+    """Atomically increment a per-user counter and return a zero-padded SKU.
+
+    The first SKU for a user is "PROD-000001". The counter lives in
+    db.counters keyed by (userId, name). Using $inc + upsert guarantees
+    uniqueness even under concurrent inserts.
+    """
+    res = await db.counters.find_one_and_update(
+        {"userId": user_id, "name": "products"},
+        {"$inc": {"seq": 1}},
+        upsert=True,
+        return_document=True,  # returns the post-increment document
+    )
+    # Fall back to a fresh fetch if the driver returned None (very old motor)
+    if not res:
+        res = await db.counters.find_one({"userId": user_id, "name": "products"})
+    seq = int((res or {}).get("seq", 1))
+    return f"PROD-{seq:06d}"
+
+
+def _stock_alert_flags(stock: int, threshold: int) -> dict:
+    """Returns booleans the frontend uses to render stock badges.
+
+    * `outOfStock`  = stock is exhausted (0 or less)
+    * `lowStock`    = there's some stock left, but it's at or under the threshold
+    These flags are RECOMPUTED on every read/update so the dashboards always
+    reflect the latest stock value — they're never cached on the document.
+    """
+    stock = int(stock or 0)
+    threshold = max(0, int(threshold or 0))
+    return {
+        "outOfStock": stock <= 0,
+        "lowStock": 0 < stock <= threshold,
+    }
+
+
+def _serialize_product(doc: dict) -> dict:
+    """Standard product payload returned to the frontend. Adds derived flags."""
+    out = serialize_doc(doc)
+    out.update(_stock_alert_flags(doc.get("stock", 0), doc.get("lowStockThreshold", 5)))
+    return out
+
+
 @router.get("/data/products")
 async def get_products(user_id: str = Depends(get_current_user)):
     products = await db.products.find({"userId": user_id}).to_list(1000)
-    return [serialize_doc(p) for p in products]
+    return [_serialize_product(p) for p in products]
+
 
 @router.post("/data/products")
 async def add_product(product: ProductModel, user_id: str = Depends(get_current_user)):
+    """Create a new product OR detect a duplicate and ask the client to restock.
+
+    Duplicate criteria (per-user shop):
+      * normalized name matches (trim + lowercase + collapsed spaces)
+      * unit matches (both None == match; "kg" vs None == DIFFERENT)
+    A different unit means a different product (e.g. "Sucre" pcs vs "Sucre" kg).
+
+    Response shapes:
+      * Created normally  -> 200 { ...product, duplicate: false }
+      * Duplicate found   -> 200 { duplicate: true, samePrice: bool, existing: <product> }
+    The frontend then prompts the user to confirm a restock via the dedicated
+    /restock endpoint below — never creating a silent duplicate.
+    """
+    name_key = _normalize_for_match(product.name)
+    if not name_key:
+        raise HTTPException(status_code=400, detail="Nom du produit requis")
+
+    unit = _normalize_unit(product.unit, product.customUnit)
+    unit_key = _normalize_for_match(unit)
+
+    # Detect duplicate among this user's existing products
+    existing = None
+    candidates = await db.products.find({"userId": user_id}).to_list(2000)
+    for p in candidates:
+        if _normalize_for_match(p.get("name")) == name_key and \
+           _normalize_for_match(p.get("unit")) == unit_key:
+            existing = p
+            break
+
+    if existing:
+        same_price = float(existing.get("purchasePrice") or 0) == float(product.purchasePrice or 0)
+        return {
+            "duplicate": True,
+            "samePrice": same_price,
+            "existing": _serialize_product(existing),
+        }
+
+    # No duplicate -> create the product with an auto SKU
+    sku = await _next_product_sku(user_id)
     doc = product.dict()
+    doc["unit"] = unit
+    doc.pop("customUnit", None)  # not stored; merged into `unit` already
+    doc["sku"] = sku
     doc["userId"] = user_id
     doc["createdAt"] = utc_now_iso()
+    doc["lowStockThreshold"] = max(0, int(product.lowStockThreshold or 5))
+
     result = await db.products.insert_one(doc)
-    doc["id"] = str(result.inserted_id)
-    return serialize_doc(doc)
+    doc["_id"] = result.inserted_id
+    payload = _serialize_product(doc)
+    payload["duplicate"] = False
+    return payload
+
 
 @router.put("/data/products/{product_id}")
 async def update_product(product_id: str, updates: dict, user_id: str = Depends(get_current_user)):
     updates.pop("id", None)
     updates.pop("_id", None)
     updates.pop("userId", None)
+    updates.pop("sku", None)  # SKU is immutable once assigned
+    updates.pop("createdAt", None)
+
+    # Normalize unit if the client is editing it
+    if "unit" in updates or "customUnit" in updates:
+        updates["unit"] = _normalize_unit(updates.get("unit"), updates.get("customUnit"))
+        updates.pop("customUnit", None)
+
+    if "lowStockThreshold" in updates and updates["lowStockThreshold"] is not None:
+        updates["lowStockThreshold"] = max(0, int(updates["lowStockThreshold"]))
+
     updates["updatedAt"] = utc_now_iso()
     await db.products.update_one({"_id": ObjectId(product_id), "userId": user_id}, {"$set": updates})
     doc = await db.products.find_one({"_id": ObjectId(product_id)})
-    return serialize_doc(doc) if doc else {}
+    return _serialize_product(doc) if doc else {}
+
 
 @router.delete("/data/products/{product_id}")
 async def delete_product(product_id: str, user_id: str = Depends(get_current_user)):
     await db.products.delete_one({"_id": ObjectId(product_id), "userId": user_id})
     return {"success": True}
+
+
+@router.post("/data/products/{product_id}/restock")
+async def restock_product(
+    product_id: str,
+    body: RestockRequest,
+    user_id: str = Depends(get_current_user),
+):
+    """Increase the stock of an existing product. Optionally records a new
+    purchase price into the per-product price history.
+
+    Behavior (per user spec, choice "3A"):
+      * Stock is incremented by quantityAdded (must be >= 1).
+      * If newPurchasePrice is provided AND differs from the current
+        purchasePrice, we append a record to purchase_price_history AND
+        replace the current purchasePrice with the new value. The old price
+        is preserved in history forever for accounting.
+      * If newPurchasePrice is missing OR equal to the current price, no
+        history record is created.
+    """
+    try:
+        oid = ObjectId(product_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="ID produit invalide")
+
+    prod = await db.products.find_one({"_id": oid, "userId": user_id})
+    if not prod:
+        raise HTTPException(status_code=404, detail="Produit introuvable")
+
+    qty = int(body.quantityAdded or 0)
+    if qty <= 0:
+        raise HTTPException(status_code=400, detail="La quantité doit être supérieure à zéro")
+
+    now = utc_now_iso()
+    set_updates = {
+        "stock": int(prod.get("stock", 0)) + qty,
+        "updatedAt": now,
+    }
+
+    old_price = float(prod.get("purchasePrice") or 0)
+    new_price_in = body.newPurchasePrice
+    record_history = False
+    if new_price_in is not None:
+        new_price = float(new_price_in)
+        if new_price < 0:
+            raise HTTPException(status_code=400, detail="Prix d'achat invalide")
+        if abs(new_price - old_price) > 1e-9:
+            set_updates["purchasePrice"] = new_price
+            record_history = True
+
+    await db.products.update_one({"_id": oid}, {"$set": set_updates})
+
+    if record_history:
+        await db.purchase_price_history.insert_one({
+            "productId": str(oid),
+            "userId": user_id,
+            "sku": prod.get("sku"),
+            "name": prod.get("name"),
+            "oldPurchasePrice": old_price,
+            "newPurchasePrice": float(new_price_in),
+            "quantityAdded": qty,
+            "currency": body.currency or "EUR",
+            "note": body.note,
+            "date": now,
+            "source": "restock",
+        })
+
+    updated = await db.products.find_one({"_id": oid})
+    return _serialize_product(updated) if updated else {}
+
+
+@router.get("/data/products/{product_id}/price-history")
+async def get_price_history(product_id: str, user_id: str = Depends(get_current_user)):
+    """Return the chronological purchase-price history of a single product
+    (most recent first). Always scoped to the requesting user (IDOR-safe)."""
+    try:
+        oid = ObjectId(product_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="ID produit invalide")
+
+    prod = await db.products.find_one({"_id": oid, "userId": user_id})
+    if not prod:
+        raise HTTPException(status_code=404, detail="Produit introuvable")
+
+    history = await db.purchase_price_history.find(
+        {"productId": str(oid), "userId": user_id}
+    ).sort("date", -1).to_list(500)
+    return [serialize_doc(h) for h in history]
 
 # ==========================================
 # Sales CRUD
@@ -352,7 +583,12 @@ async def add_sale(sale: SaleModel, user_id: str = Depends(get_current_user)):
                     {"_id": ObjectId(sale.productId)},
                     {"$set": {"stock": new_stock, "updatedAt": utc_now_iso()}}
                 )
+                # Recompute alert flags against the product's own threshold so
+                # the dashboard / list refreshes immediately with the right
+                # badge (out-of-stock vs low-stock vs ok).
+                threshold = int(prod.get("lowStockThreshold", 5) or 5)
                 doc["stockAlert"] = new_stock <= 0
+                doc["lowStockAlert"] = 0 < new_stock <= threshold
                 doc["productNameAlert"] = prod.get("name", "")
         except Exception as e:
             logger.warning(f"Stock update error: {e}")

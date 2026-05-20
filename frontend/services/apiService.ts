@@ -217,6 +217,14 @@ export const productsAPI = {
   delete: (id: string) => apiFetch(`/data/products/${id}`, {
     method: 'DELETE',
   }),
+
+  restock: (id: string, payload: { quantityAdded: number; newPurchasePrice?: number; currency?: string; note?: string }) =>
+    apiFetch(`/data/products/${id}/restock`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  priceHistory: (id: string) => apiFetch(`/data/products/${id}/price-history`),
 };
 
 // ==========================================

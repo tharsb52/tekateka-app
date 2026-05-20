@@ -18,14 +18,34 @@ import { VoiceInputButton } from '../../components/VoiceInputButton';
 const BG = '#fef3e7';
 const CATEGORIES: CategoryType[] = ['food', 'drinks', 'clothes', 'cosmetics', 'electronics', 'other'];
 
+// Hybrid unit list per spec: predefined choices + "autre" -> custom free text.
+// Used for stock management, sales, search, stats AND duplicate detection.
+const UNIT_OPTIONS = [
+  'pcs', 'kg', 'g', 'L', 'mL', 'sac', 'carton', 'bouteille',
+  'paquet', 'caisse', 'botte', 'mètre', 'boîte', 'douzaine', 'autre',
+] as const;
+const DEFAULT_LOW_STOCK_THRESHOLD = 5;
+
 export default function ProductsScreen() {
-  const { products, addProduct, updateProduct, deleteProduct, loading } = useData();
+  const { products, addProduct, updateProduct, deleteProduct, restockProduct, loading } = useData();
   const { user } = useAuth();
   const [modalVisible, setModalVisible] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
   const [hasPromo, setHasPromo] = useState(false);
+  const [unitPickerVisible, setUnitPickerVisible] = useState(false);
+  const [restockModal, setRestockModal] = useState<null | {
+    product: any;
+    samePrice: boolean;
+    suggestedQty: string;
+    suggestedPrice: string;
+    pendingName: string;
+  }>(null);
   const [formData, setFormData] = useState({
-    name: '', purchasePrice: '', salePrice: '', promotionPrice: '', stock: '', category: 'food' as CategoryType,
+    name: '', purchasePrice: '', salePrice: '', promotionPrice: '', stock: '',
+    category: 'food' as CategoryType,
+    unit: '' as string,           // preset value OR custom if user chose "autre"
+    customUnit: '',               // shown when unit === 'autre'
+    lowStockThreshold: String(DEFAULT_LOW_STOCK_THRESHOLD),
   });
   const [formCurrency, setFormCurrency] = useState(user?.currency || 'USD');
 
@@ -35,7 +55,11 @@ export default function ProductsScreen() {
   const openAddModal = () => {
     setEditingProduct(null);
     setHasPromo(false);
-    setFormData({ name: '', purchasePrice: '', salePrice: '', promotionPrice: '', stock: '', category: 'food' });
+    setFormData({
+      name: '', purchasePrice: '', salePrice: '', promotionPrice: '', stock: '',
+      category: 'food', unit: '', customUnit: '',
+      lowStockThreshold: String(DEFAULT_LOW_STOCK_THRESHOLD),
+    });
     setFormCurrency(currency);
     setModalVisible(true);
   };
@@ -43,6 +67,10 @@ export default function ProductsScreen() {
   const openEditModal = (product: any) => {
     setEditingProduct(product);
     setHasPromo(!!product.promotionPrice);
+    // For editing, we pre-fill unit. If the stored unit matches a preset, the
+    // picker shows that preset; otherwise we show "autre" + the custom value.
+    const storedUnit: string = product.unit || '';
+    const isPreset = (UNIT_OPTIONS as readonly string[]).includes(storedUnit) && storedUnit !== 'autre';
     setFormData({
       name: product.name,
       purchasePrice: (product.purchasePrice || 0).toString(),
@@ -50,8 +78,48 @@ export default function ProductsScreen() {
       promotionPrice: (product.promotionPrice || '').toString(),
       stock: product.stock.toString(),
       category: product.category,
+      unit: isPreset ? storedUnit : (storedUnit ? 'autre' : ''),
+      customUnit: isPreset ? '' : storedUnit,
+      lowStockThreshold: String(product.lowStockThreshold ?? DEFAULT_LOW_STOCK_THRESHOLD),
     });
     setModalVisible(true);
+  };
+
+  /**
+   * Confirm and execute a restock of an existing product the user tried to
+   * recreate. If newPurchasePrice differs from the existing one, the backend
+   * automatically writes a purchase_price_history record so the old price
+   * stays available for accounting.
+   */
+  const confirmRestock = async () => {
+    if (!restockModal) return;
+    const qty = parseInt(restockModal.suggestedQty || '0', 10);
+    if (!qty || qty <= 0) {
+      Alert.alert(i18n.t('error'), 'Quantité à ajouter invalide');
+      return;
+    }
+    const newPriceNum = restockModal.suggestedPrice ? parseFloat(restockModal.suggestedPrice) : NaN;
+    const newPurchasePrice = !isNaN(newPriceNum) && newPriceNum >= 0 ? newPriceNum : undefined;
+    try {
+      await restockProduct(restockModal.product.id, {
+        quantityAdded: qty,
+        newPurchasePrice,
+        currency: formCurrency,
+        note: 'Réapprovisionnement depuis "Ajouter produit"',
+      });
+      const wasPriceChange =
+        newPurchasePrice !== undefined &&
+        Math.abs(newPurchasePrice - (restockModal.product.purchasePrice || 0)) > 1e-9;
+      Alert.alert(
+        i18n.t('success'),
+        `Stock de "${restockModal.product.name}" augmenté de ${qty}.` +
+        (wasPriceChange ? '\n📊 Nouveau prix d\'achat enregistré dans l\'historique.' : '')
+      );
+      setRestockModal(null);
+      setModalVisible(false);
+    } catch (e: any) {
+      Alert.alert(i18n.t('error'), e?.message || 'Échec du réapprovisionnement');
+    }
   };
 
   const handleSave = async () => {
@@ -63,25 +131,79 @@ export default function ProductsScreen() {
     const salePrice = parseFloat(formData.salePrice);
     const stock = parseInt(formData.stock);
     const promotionPrice = hasPromo && formData.promotionPrice ? parseFloat(formData.promotionPrice) : undefined;
+    const lowStockThreshold = Math.max(
+      0,
+      parseInt(formData.lowStockThreshold || String(DEFAULT_LOW_STOCK_THRESHOLD), 10) || DEFAULT_LOW_STOCK_THRESHOLD,
+    );
 
     if (isNaN(purchasePrice) || isNaN(salePrice) || isNaN(stock) || purchasePrice < 0 || salePrice <= 0 || stock < 0) {
       Alert.alert(i18n.t('error'), 'Valeurs invalides');
       return;
     }
 
+    // Resolve the unit: if user picked "autre", promote customUnit; else use preset.
+    const resolvedUnit = formData.unit === 'autre'
+      ? (formData.customUnit || '').trim() || undefined
+      : (formData.unit || undefined);
+
+    if (formData.unit === 'autre' && !resolvedUnit) {
+      Alert.alert(i18n.t('error'), 'Veuillez préciser l\'unité personnalisée');
+      return;
+    }
+
     try {
       if (editingProduct) {
         await updateProduct(editingProduct.id, {
-          name: formData.name, purchasePrice, salePrice, promotionPrice, stock, category: formData.category,
+          name: formData.name, purchasePrice, salePrice, promotionPrice, stock,
+          category: formData.category,
+          unit: resolvedUnit as any,
+          lowStockThreshold,
         });
-      } else {
-        await addProduct({
-          name: formData.name, purchasePrice, salePrice, promotionPrice, stock, category: formData.category,
-        });
+        setModalVisible(false);
+        return;
+      }
+
+      // CREATE path -> backend may detect a duplicate and ask us to restock instead.
+      const result = await addProduct({
+        name: formData.name, purchasePrice, salePrice, promotionPrice, stock,
+        category: formData.category,
+        unit: resolvedUnit as any,
+        customUnit: undefined as any,
+        lowStockThreshold,
+      } as any);
+
+      if (result?.duplicate && result.existing) {
+        // Ask the user whether to restock the existing product. The dialog
+        // also surfaces a price change so they don't accidentally overwrite
+        // their purchase price without realizing.
+        const existing = result.existing;
+        const samePrice = !!result.samePrice;
+        Alert.alert(
+          'Produit déjà existant',
+          `Ce produit existe déjà (${existing.sku || 'sans SKU'}, stock actuel: ${existing.stock} ${existing.unit || ''}).\n\n` +
+          'Voulez-vous augmenter le stock existant ?' +
+          (!samePrice ? '\n\n⚠️ Le prix d\'achat saisi est différent — l\'historique sera conservé.' : ''),
+          [
+            { text: 'Annuler', style: 'cancel' },
+            {
+              text: 'Augmenter le stock',
+              onPress: () => {
+                setRestockModal({
+                  product: existing,
+                  samePrice,
+                  suggestedQty: String(stock || 1),
+                  suggestedPrice: samePrice ? '' : String(purchasePrice),
+                  pendingName: formData.name,
+                });
+              },
+            },
+          ]
+        );
+        return; // keep the main modal open in background while restockModal shows
       }
       setModalVisible(false);
-    } catch (err) {
-      Alert.alert(i18n.t('error'), 'Echec de sauvegarde');
+    } catch (err: any) {
+      Alert.alert(i18n.t('error'), err?.message || 'Echec de sauvegarde');
     }
   };
 
@@ -159,14 +281,24 @@ export default function ProductsScreen() {
                 {/* Row 1: Table-like columns */}
                 <View style={styles.tableRow}>
                   <View style={{ flex: 2.5 }}>
-                    <Text style={styles.productName} numberOfLines={1}>{product.name}</Text>
-                    <Text style={styles.productCategory}>{i18n.t(product.category)}</Text>
+                    <Text style={styles.productName} numberOfLines={1}>
+                      {product.name}
+                      {product.unit ? <Text style={styles.unitInline}>  · {product.unit}</Text> : null}
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                      <Text style={styles.productCategory}>{i18n.t(product.category)}</Text>
+                      {product.sku ? (
+                        <View style={styles.skuBadge}>
+                          <Text style={styles.skuBadgeText}>{product.sku}</Text>
+                        </View>
+                      ) : null}
+                    </View>
                   </View>
                   <Text style={[styles.cellText, { flex: 1.5 }]}>{formatCurrency(product.purchasePrice || 0, currency)}</Text>
                   <Text style={[styles.cellText, { flex: 1, textAlign: 'center' }]}>{product.stock}</Text>
                   <Text style={[styles.cellTextBold, { flex: 1.5, textAlign: 'right' }]}>{formatCurrency(totalCost, currency)}</Text>
                 </View>
-                {/* Row 2: Prix vente + marge */}
+                {/* Row 2: Prix vente + marge + stock alert */}
                 <View style={styles.priceRow}>
                   <View style={styles.priceTag}>
                     <Ionicons name="pricetag" size={12} color="#2563eb" />
@@ -182,6 +314,20 @@ export default function ProductsScreen() {
                       <Text style={styles.marginText}>+{formatCurrency(margin, currency)}/u</Text>
                     </View>
                   ) : null}
+                  {/* Stock-state badge. Recomputed from live product fields so
+                      it disappears immediately after a restock and reappears
+                      automatically if the stock drops back at/below threshold. */}
+                  {(() => {
+                    const stock = product.stock ?? 0;
+                    const threshold = (product as any).lowStockThreshold ?? DEFAULT_LOW_STOCK_THRESHOLD;
+                    if (stock <= 0) {
+                      return <View style={styles.stockBadgeEmpty}><Text style={styles.stockBadgeEmptyText}>Rupture</Text></View>;
+                    }
+                    if (stock <= threshold) {
+                      return <View style={styles.stockBadgeLow}><Text style={styles.stockBadgeLowText}>Faible</Text></View>;
+                    }
+                    return null;
+                  })()}
                   <View style={{ flex: 1 }} />
                   <View style={styles.cardActions}>
                     <TouchableOpacity onPress={() => openEditModal(product)} hitSlop={{top:10,bottom:10,left:10,right:10}}>
@@ -247,6 +393,43 @@ export default function ProductsScreen() {
                 onChangeText={(t) => setFormData({ ...formData, stock: t })}
                 keyboardType="number-pad" placeholder="0" />
 
+              {/* Unit picker (predefined + 'autre' free text) */}
+              <Text style={styles.label}>Unité de vente</Text>
+              <TouchableOpacity
+                style={[styles.input, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
+                onPress={() => { Keyboard.dismiss(); setUnitPickerVisible(true); }}
+              >
+                <Text style={{ color: formData.unit ? '#0f172a' : '#94a3b8', fontSize: 16 }}>
+                  {formData.unit
+                    ? (formData.unit === 'autre'
+                        ? (formData.customUnit ? `autre: ${formData.customUnit}` : 'autre (à préciser)')
+                        : formData.unit)
+                    : '— Choisir une unité —'}
+                </Text>
+                <Ionicons name="chevron-down" size={20} color="#64748b" />
+              </TouchableOpacity>
+              {formData.unit === 'autre' && (
+                <TextInput
+                  style={styles.input}
+                  value={formData.customUnit}
+                  onChangeText={(t) => setFormData({ ...formData, customUnit: t })}
+                  placeholder="Unité personnalisée (ex: tasse, bidon...)"
+                />
+              )}
+
+              {/* Per-product low-stock threshold */}
+              <Text style={styles.label}>Seuil d'alerte stock faible</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.lowStockThreshold}
+                onChangeText={(t) => setFormData({ ...formData, lowStockThreshold: t.replace(/[^0-9]/g, '') })}
+                keyboardType="number-pad"
+                placeholder={String(DEFAULT_LOW_STOCK_THRESHOLD)}
+              />
+              <Text style={styles.helpText}>
+                Une alerte s'affiche dès que la quantité tombe à ce seuil ou en dessous.
+              </Text>
+
               {totalCostPreview > 0 && (
                 <View style={styles.totalPreview}>
                   <Text style={styles.totalPreviewLabel}>Montant total (achat)</Text>
@@ -303,6 +486,103 @@ export default function ProductsScreen() {
         </TouchableWithoutFeedback>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Unit picker modal: predefined list + 'autre' shows the customUnit input */}
+      <Modal visible={unitPickerVisible} transparent animationType="fade" onRequestClose={() => setUnitPickerVisible(false)}>
+        <TouchableWithoutFeedback onPress={() => setUnitPickerVisible(false)}>
+          <View style={styles.pickerBackdrop} />
+        </TouchableWithoutFeedback>
+        <View style={styles.pickerSheet}>
+          <View style={styles.pickerHandle} />
+          <Text style={styles.pickerTitle}>Choisir une unité</Text>
+          <ScrollView style={{ maxHeight: 380 }}>
+            {UNIT_OPTIONS.map((opt) => {
+              const selected = formData.unit === opt;
+              return (
+                <TouchableOpacity
+                  key={opt}
+                  style={[styles.pickerItem, selected && styles.pickerItemSelected]}
+                  onPress={() => {
+                    setFormData({ ...formData, unit: opt, customUnit: opt === 'autre' ? formData.customUnit : '' });
+                    setUnitPickerVisible(false);
+                  }}
+                >
+                  <Text style={[styles.pickerItemText, selected && styles.pickerItemTextSelected]}>{opt}</Text>
+                  {selected && <Ionicons name="checkmark" size={20} color="#2563eb" />}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* Restock confirmation modal — shown when backend detects a duplicate
+          and user agreed to augment the existing product's stock. */}
+      <Modal visible={!!restockModal} transparent animationType="slide" onRequestClose={() => setRestockModal(null)}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.modalOverlay}>
+              <View style={[styles.modalContent, { maxHeight: '80%' }]}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Augmenter le stock</Text>
+                  <TouchableOpacity onPress={() => setRestockModal(null)}>
+                    <Ionicons name="close" size={28} color="#64748b" />
+                  </TouchableOpacity>
+                </View>
+                {restockModal && (
+                  <ScrollView style={styles.modalForm} keyboardShouldPersistTaps="handled">
+                    <Text style={styles.restockInfo}>
+                      {restockModal.product.name} ({restockModal.product.sku || 'sans SKU'})
+                      {restockModal.product.unit ? `  ·  ${restockModal.product.unit}` : ''}
+                    </Text>
+                    <Text style={styles.restockInfoSub}>
+                      Stock actuel : <Text style={{ fontWeight: '700' }}>{restockModal.product.stock}</Text>
+                      {'   '}·   Prix d'achat actuel : {formatCurrency(restockModal.product.purchasePrice || 0, currency)}
+                    </Text>
+
+                    <Text style={styles.label}>Quantité à ajouter *</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={restockModal.suggestedQty}
+                      onChangeText={(t) => setRestockModal({ ...restockModal, suggestedQty: t.replace(/[^0-9]/g, '') })}
+                      keyboardType="number-pad"
+                      placeholder="1"
+                    />
+
+                    <Text style={styles.label}>
+                      Nouveau prix d'achat {restockModal.samePrice ? '(facultatif)' : ' '}
+                    </Text>
+                    <TextInput
+                      style={styles.input}
+                      value={restockModal.suggestedPrice}
+                      onChangeText={(t) => setRestockModal({ ...restockModal, suggestedPrice: t.replace(/[^0-9.,]/g, '').replace(',', '.') })}
+                      keyboardType="decimal-pad"
+                      placeholder={String(restockModal.product.purchasePrice || 0)}
+                    />
+                    {!restockModal.samePrice && (
+                      <Text style={styles.helpText}>
+                        💡 Le prix d'achat précédent ({formatCurrency(restockModal.product.purchasePrice || 0, currency)})
+                        sera conservé dans l'historique. Le nouveau prix s'appliquera aux futures ventes.
+                      </Text>
+                    )}
+                  </ScrollView>
+                )}
+                <View style={styles.modalActions}>
+                  <TouchableOpacity style={styles.cancelButton} onPress={() => setRestockModal(null)}>
+                    <Text style={styles.cancelButtonText}>{i18n.t('cancel')}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.saveButton} onPress={confirmRestock}>
+                    <Text style={styles.saveButtonText}>Augmenter le stock</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -357,4 +637,25 @@ const styles = StyleSheet.create({
   cancelButtonText: { fontSize: 16, fontWeight: '600', color: '#64748b' },
   saveButton: { flex: 1, padding: 16, borderRadius: 12, backgroundColor: '#2563eb', alignItems: 'center' },
   saveButtonText: { fontSize: 16, fontWeight: '600', color: '#fff' },
+  // Stock/SKU badges & helpers (new)
+  unitInline: { fontSize: 13, color: '#64748b', fontWeight: '500' },
+  skuBadge: { backgroundColor: '#e2e8f0', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  skuBadgeText: { fontSize: 10, color: '#475569', fontWeight: '700', letterSpacing: 0.3 },
+  stockBadgeEmpty: { backgroundColor: '#fee2e2', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  stockBadgeEmptyText: { fontSize: 11, color: '#991b1b', fontWeight: '700' },
+  stockBadgeLow: { backgroundColor: '#fef3c7', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  stockBadgeLowText: { fontSize: 11, color: '#92400e', fontWeight: '700' },
+  helpText: { fontSize: 12, color: '#64748b', marginTop: 4, fontStyle: 'italic' },
+  // Unit picker bottom sheet
+  pickerBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
+  pickerSheet: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 16, paddingBottom: 32 },
+  pickerHandle: { width: 36, height: 4, backgroundColor: '#cbd5e1', borderRadius: 2, alignSelf: 'center', marginBottom: 8 },
+  pickerTitle: { fontSize: 16, fontWeight: '700', color: '#1e293b', marginBottom: 8, textAlign: 'center' },
+  pickerItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, paddingHorizontal: 16, borderRadius: 10 },
+  pickerItemSelected: { backgroundColor: '#eff6ff' },
+  pickerItemText: { fontSize: 16, color: '#0f172a' },
+  pickerItemTextSelected: { color: '#2563eb', fontWeight: '700' },
+  // Restock modal extras
+  restockInfo: { fontSize: 16, fontWeight: '700', color: '#0f172a', marginBottom: 4 },
+  restockInfoSub: { fontSize: 13, color: '#475569', marginBottom: 12 },
 });

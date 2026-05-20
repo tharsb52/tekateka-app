@@ -683,15 +683,105 @@ frontend:
             * Webhook idempotency preserved (early-return on status='completed').
             * IDOR: GET /payments/stripe/session/{id} returns 404 unless the caller is the actual buyer (user OR ambassador as appropriate).
 
+  - task: "Product Management v2 - Auto SKU, duplicate detection, restock, price history, threshold-based alerts"
+    implemented: true
+    working: true
+    file: "backend/data_api.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: |
+            FULL E2E PASS — 35/35 CHECKS (2026-05-20). Ran /app/backend_test.py covering A1..F3 from the review request.
+
+            A) Auto SKU (5/5):
+              * A2 POST /data/products {name:'Riz',...} → 200, sku='PROD-000001', duplicate=false.
+              * A3 'Sucre' → sku='PROD-000002'. A4 'Huile' → sku='PROD-000003'.
+              * A5 Monotonic increments confirmed (1→2→3 no gaps).
+              * A6 GET /data/products returns exactly 3 products with skus PROD-000001..000003.
+
+            B) Duplicate detection (8/8):
+              * B1 POST {name:'riz', price=2} → 200 {duplicate:true, samePrice:true, existing.sku='PROD-000001'}. db.products count UNCHANGED.
+              * B2 POST {name:' Riz  '} (spaces) → duplicate detected (normalized name match works).
+              * B3 POST {name:'Riz', price=5} → duplicate detected, samePrice=false (price differs).
+              * B4 POST {name:'Riz', unit:'kg'} → 200, NEW product, sku='PROD-000004', unit='kg' (different unit = different product).
+              * B5 POST {name:'Riz', unit:'kg'} again → duplicate detected, existing.sku='PROD-000004'.
+              * B6 POST {name:'Tisane', unit:'autre', customUnit:'tasse'} → 200, stored unit='tasse', customUnit NOT in response, sku='PROD-000005'.
+              * B7 POST {name:'Tisane', unit:'tasse'} → duplicate of B6 (existing.sku='PROD-000005').
+              * B8 POST {name:''} → 400 'Nom du produit requis'.
+
+            C) Restock + price history (9/9):
+              * C1 restock {qty:5} on Sucre → stock 20→25, purchasePrice unchanged (1), ZERO history records.
+              * C2 restock {qty:10, newPurchasePrice:1} (SAME) → stock→35, no history.
+              * C3 restock {qty:3, newPurchasePrice:1.5, currency:'EUR', note:'Hausse fournisseur'} → stock→38, purchasePrice→1.5, 1 history record inserted with {oldPurchasePrice:1, newPurchasePrice:1.5, quantityAdded:3, currency:'EUR', note:'Hausse fournisseur', source:'restock', sku:'PROD-000002', userId, productId, name, date}.
+              * C4 restock {qty:2, newPurchasePrice:1.5} (SAME again) → no history.
+              * C5 restock {qty:1, newPurchasePrice:2.0} → 2nd history record (old=1.5, new=2.0). Total history = 2.
+              * C6 GET /data/products/{id}/price-history → 2 records, sorted date DESC (newPurchasePrice:2.0 first then 1.5). Each carries sku='PROD-000002', productId, oldPurchasePrice, newPurchasePrice, quantityAdded.
+              * C7 Invalid restocks → 400: qty=0, qty=-1, newPurchasePrice=-5.
+              * C8 Bad ObjectId 'not-an-objectid' → 400 'ID produit invalide'.
+              * C9 IDOR: user2 restock on user1's product → 404. user2 GET price-history of user1's product → 404. db.purchase_price_history UNCHANGED.
+
+            D) Stock alert flags recomputed on every read (6/6):
+              * D1 New product stock=2 thr=5 → outOfStock=false, lowStock=true.
+              * D2 PUT stock=0 → outOfStock=true, lowStock=false.
+              * D3 PUT stock=100 (thr 5) → outOfStock=false, lowStock=false.
+              * D4 PUT lowStockThreshold=50 (stock 100) → outOfStock=false, lowStock=false.
+              * D5 PUT stock=30 (thr 50) → outOfStock=false, lowStock=true.
+              * D6 GET /data/products: spot-checks of alert item (stock=30, lowStock=true) and Sucre (stock=41, both flags false) all consistent.
+
+            E) Sale -> stock decrement with alert recomputation (4/4):
+              * E1 Sale qty=4 on Cola (stock 10, thr 5) → new stock 6, response stockAlert=false, lowStockAlert=false.
+              * E2 Sale qty=2 → new stock 4 → stockAlert=false, lowStockAlert=true (0<4<=5).
+              * E3 Sale qty=4 → new stock 0 → stockAlert=true, lowStockAlert=false (out-of-stock precedence).
+              * E4 GET /data/products shows Cola stock=0, outOfStock=true, lowStock=false.
+
+            F) SKU immutability + sequence (3/3):
+              * F1 PUT {sku:'PROD-HACKER'} → response keeps original sku (PUT strips sku field).
+              * F2 Counter advanced from seq=7 to 8 across creates with no resets.
+              * F3 Deleting Tisane (PROD-000005) then creating new product → new sku='PROD-000008' (NEXT in sequence), NEVER reuses 'PROD-000005'.
+
+            SAMPLE MONGODB DOC SHAPES:
+              * PRODUCT (db.products): keys = [_id, category, createdAt, lowStockThreshold, name, promotionPrice, purchasePrice, salePrice, sku, stock, unit, updatedAt, userId]. Example: {sku:'PROD-000002', name:'Sucre', purchasePrice:2.0, salePrice:2.0, stock:41, lowStockThreshold:5, unit:None, category:'food', userId:'<uid>', createdAt:'...Z', updatedAt:'...Z'}.
+              * HISTORY (db.purchase_price_history): keys = [_id, currency, date, name, newPurchasePrice, note, oldPurchasePrice, productId, quantityAdded, sku, source, userId]. Example: {productId:'<oid>', userId:'<uid>', sku:'PROD-000002', name:'Sucre', oldPurchasePrice:1.0, newPurchasePrice:1.5, quantityAdded:3, currency:'EUR', note:'Hausse fournisseur', date:'2026-05-20T13:16:12Z', source:'restock'}.
+              * COUNTER (db.counters): {userId:'<uid>', name:'products', seq:8}.
+
+            CONCLUSION: All Product Management v2 features (auto SKU, duplicate detection with unit-aware match, restock with price-history audit trail, IDOR protection, threshold-based alert flags recomputed on every response, sku immutability) are fully working. No defects, no regressions. Production-ready.
+        - working: "NA"
+          agent: "main"
+          comment: |
+            Major product-management upgrade:
+            BACKEND (/app/backend/data_api.py):
+              * ProductModel extended with: sku (auto), unit, customUnit (transient), lowStockThreshold (default 5).
+              * New helper _next_product_sku(user_id) uses db.counters with $inc upsert to atomically allocate per-user SKUs (PROD-000001, PROD-000002, ...).
+              * New helper _normalize_for_match(s) (trim + lowercase + space-collapse) used to detect duplicates.
+              * Hybrid unit handling: _normalize_unit(unit, customUnit) -> when unit == 'autre', promotes customUnit to the stored unit. Predefined list mirrors frontend: pcs, kg, g, L, mL, sac, carton, bouteille, paquet, caisse, botte, mètre, boîte, douzaine, autre.
+              * POST /data/products: looks for an existing product with same userId + same normalized name + same unit (None and "" both match as "no unit"; different units = different products per spec). If found, returns { duplicate: true, samePrice, existing } (200) — NO insert. If not found, allocates SKU and inserts.
+              * NEW POST /data/products/{id}/restock: increases stock by quantityAdded; if newPurchasePrice provided AND different, writes a record into NEW collection db.purchase_price_history { productId, userId, sku, name, oldPurchasePrice, newPurchasePrice, quantityAdded, currency, note, date, source:'restock' } AND updates the product's purchasePrice; otherwise just bumps stock.
+              * NEW GET /data/products/{id}/price-history: returns history sorted by date desc, IDOR-scoped to user.
+              * _stock_alert_flags(stock, threshold) and _serialize_product(doc): every response carries fresh outOfStock + lowStock booleans derived from CURRENT stock so dashboards/alerts auto-refresh without caching.
+              * POST /data/sales: when stock is decremented after a sale, the response now also carries recomputed stockAlert + lowStockAlert against the product's own threshold.
+            FRONTEND:
+              * types/index.ts: Product now has sku, unit, lowStockThreshold, outOfStock, lowStock.
+              * services/apiService.ts: productsAPI gained restock() + priceHistory().
+              * context/DataContext.tsx: addProduct returns { duplicate, samePrice, existing }; mapBackendProduct propagates new fields with safe defaults; new restockProduct method.
+              * app/(tabs)/products.tsx: unit picker bottom-sheet (15 presets + "autre" -> free text), lowStockThreshold input, SKU badge + unit on cards, RUPTURE/FAIBLE badges recomputed from live stock+threshold, duplicate dialog ("Ce produit existe déjà. Voulez-vous augmenter le stock existant ?") + restock modal that pre-fills qty/price and warns about price changes.
+              * app/stock-alerts.tsx: now uses each product's own lowStockThreshold instead of the previous hardcoded === 1. Empty = stock <= 0. Low = 0 < stock <= threshold.
+            INVARIANTS PRESERVED:
+              * Stats/dashboards always use latest stock from products (DataContext is the single source of truth, returned products carry fresh flags).
+              * Restock invariant: never overwrites a different purchasePrice silently — always records history.
+              * Different units = different products.
+              * Idempotent: restock + history insert are sequential ops scoped to user via IDOR check (find_one + userId).
+
 metadata:
   created_by: "testing_agent"
   version: "1.0"
-  test_sequence: 4
+  test_sequence: 5
   run_ui: false
 
 test_plan:
-  current_focus:
-    - "Stripe Ambassador Buy-Codes - Ambassador JWT + activation_codes collection"
+  current_focus: []
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -776,4 +866,20 @@ agent_communication:
         
         Browser-automation budget note: The Stripe Checkout path requires popping out to checkout.stripe.com (Alert.alert + expo-web-browser) which is brittle in headless Playwright on react-native-web. The hybrid backend-driven E2E executed previously is the authoritative verification; running it again through the UI would re-test the same code paths at higher flake risk for zero new coverage.
         
-        FINAL STATUS: working=true, needs_retesting=false. Task remains GREEN. Ready for production pending STRIPE_WEBHOOK_SECRET in live env.
+        FINAL STATUS: working=true, needs_retesting=false. Task remains GREEN. Ready for production pending STRIPE_WEBHOOK_SECRET in live env.    - agent: "testing"
+      message: |
+        PRODUCT MANAGEMENT V2 — FULL E2E PASS, 35/35 CHECKS (2026-05-20). Backend tests in /app/backend_test.py executed against https://low-data-shop.preview.emergentagent.com.
+        
+        ✅ A) Auto SKU (5/5) — POST /data/products allocates PROD-000001, PROD-000002, PROD-000003 monotonically via db.counters $inc upsert. GET returns all 3 with right SKUs.
+        ✅ B) Duplicate detection (8/8) — Normalized match (trim+lowercase+collapsed spaces) for name AND unit. Lowercase/extra-spaces dupes detected with samePrice flag. Different unit = different product (B4 creates PROD-000004). customUnit='tasse' under unit='autre' is promoted to stored unit='tasse' (customUnit NOT stored). Empty name → 400 'Nom du produit requis'.
+        ✅ C) Restock + price history (9/9) — POST /products/{id}/restock bumps stock; only writes db.purchase_price_history when newPurchasePrice differs from current. Record schema: {productId, userId, sku, name, oldPurchasePrice, newPurchasePrice, quantityAdded, currency, note, date, source:'restock'}. GET /price-history returns 2 records sorted DESC. Invalid qty (0/-1) → 400; negative price → 400; bad ObjectId → 400 'ID produit invalide'. IDOR: user2 → 404 on both restock and price-history; db.purchase_price_history UNCHANGED.
+        ✅ D) Stock alert flags (6/6) — outOfStock + lowStock RECOMPUTED on every response (POST/PUT/GET) against current stock & lowStockThreshold. Threshold changes immediately re-tier the badges.
+        ✅ E) Sale -> stock decrement alert (4/4) — POST /data/sales returns both stockAlert (out-of-stock) and lowStockAlert (0<stock<=threshold). Out-of-stock takes precedence (E3). GET reflects same outOfStock=true after.
+        ✅ F) SKU immutability + sequence (3/3) — PUT cannot change sku. Counter advances across deletes (deleted PROD-000005 → next created sku is the next sequence number, never reused).
+        
+        SAMPLE DOC SHAPES:
+          * db.products: {_id, sku, name, purchasePrice, salePrice, promotionPrice, stock, lowStockThreshold, unit, category, userId, createdAt, updatedAt}.
+          * db.purchase_price_history: {_id, productId, userId, sku, name, oldPurchasePrice, newPurchasePrice, quantityAdded, currency, note, date, source:'restock'}.
+          * db.counters: {_id, userId, name:'products', seq:<int>}.
+        
+        No defects, no stuck tasks. Task is GREEN and production-ready.

@@ -16,9 +16,17 @@ export default function StockAlertsScreen() {
   const [tab, setTab] = useState<Tab>((params.type === 'empty' ? 'empty' : 'low'));
 
   const { low, empty } = useMemo(() => {
+    // Recomputed on every render from the live products list so alerts
+    // disappear automatically after a restock and reappear if stock drops
+    // back to or below the threshold. The threshold lives per product
+    // (default 5) — set when creating/editing the product.
     return {
-      empty: products.filter(p => (p.stock ?? 0) === 0),
-      low: products.filter(p => (p.stock ?? 0) === 1),
+      empty: products.filter(p => (p.stock ?? 0) <= 0),
+      low: products.filter(p => {
+        const stock = p.stock ?? 0;
+        const threshold = (p as any).lowStockThreshold ?? 5;
+        return stock > 0 && stock <= threshold;
+      }),
     };
   }, [products]);
 
