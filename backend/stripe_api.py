@@ -108,9 +108,17 @@ def get_current_user(request: Request) -> str:
     token = auth_header.split(" ", 1)[1]
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
-        return payload.get("sub") or payload.get("user_id")
+        user_id = payload.get("sub") or payload.get("user_id")
+        if not user_id:
+            # Token is signature-valid but belongs to a different identity
+            # type (e.g. an ambassador token). Reject explicitly with 401
+            # rather than letting None propagate and returning a confusing 404.
+            raise HTTPException(status_code=401, detail="Token invalide")
+        return user_id
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expiré")
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(status_code=401, detail="Token invalide")
 
