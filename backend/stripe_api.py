@@ -125,10 +125,26 @@ SUBSCRIPTION_PRICES_CENTS = {
 
 # Ambassador wholesale price for activation codes by plan
 # (sold via /payments/stripe/ambassador/checkout)
+#
+# These local prices are kept as a fallback / for display purposes only.
+# In production we use the pre-configured Stripe Price IDs below so that
+# pricing is managed from the Stripe Dashboard, not from code.
 AMBASSADOR_PLAN_PRICES_CENTS = {
     "monthly":    400,   # €4.00 per code
     "quarterly": 1200,   # €12.00 per code
     "yearly":    5000,   # €50.00 per code
+}
+
+# Pre-configured Stripe Price IDs for ambassador activation codes (one-time
+# payments). Configurable per-environment via env vars so test/live keys
+# can each point to their own Price objects:
+#   STRIPE_AMBASSADOR_PRICE_MONTHLY=price_xxx
+#   STRIPE_AMBASSADOR_PRICE_QUARTERLY=price_xxx
+#   STRIPE_AMBASSADOR_PRICE_YEARLY=price_xxx
+STRIPE_AMBASSADOR_PRICE_IDS = {
+    "monthly":   os.getenv("STRIPE_AMBASSADOR_PRICE_MONTHLY",   "price_1TZ7XB2Hpe19XBXi9wjvH4yI").strip(),
+    "quarterly": os.getenv("STRIPE_AMBASSADOR_PRICE_QUARTERLY", "price_1TZ7Zf2Hpe19XBXiUPtD9xT0").strip(),
+    "yearly":    os.getenv("STRIPE_AMBASSADOR_PRICE_YEARLY",    "price_1TZ7b02Hpe19XBXipYBofcoD").strip(),
 }
 
 SUBSCRIPTION_DURATION_DAYS = {
