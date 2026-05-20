@@ -115,6 +115,50 @@ def get_current_user(request: Request) -> str:
         raise HTTPException(status_code=401, detail="Token invalide")
 
 
+def get_buyer_identity(request: Request) -> dict:
+    """Resolve the current Bearer token to either an ambassador OR a regular user.
+
+    Used by endpoints that can legitimately be called by both identity types
+    (currently only the ambassador-codes checkout flow).
+
+    Returns:
+        {"kind": "ambassador", "id": "<ambassador _id as str>"}
+        or
+        {"kind": "user", "id": "<user _id as str>"}
+
+    Raises HTTPException 401 if the token is missing / invalid / expired.
+
+    Security notes:
+      * Both token types are signed with the SAME JWT_SECRET, so we trust the
+        `type` claim only AFTER verifying the signature.
+      * Ambassador tokens are issued by /api/ambassador/login and have shape
+        {ambassador_id, type:"ambassador", exp}.
+      * User tokens are issued by /api/auth/phone-login etc. and have shape
+        {sub:user_id, phone, exp} (no `type` field).
+    """
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Token requis")
+    token = auth_header.split(" ", 1)[1]
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expiré")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Token invalide")
+
+    # Ambassador token (preferred for ambassador-codes checkout)
+    if payload.get("type") == "ambassador" and payload.get("ambassador_id"):
+        return {"kind": "ambassador", "id": str(payload["ambassador_id"])}
+
+    # Regular user token (legacy support)
+    user_id = payload.get("sub") or payload.get("user_id")
+    if user_id:
+        return {"kind": "user", "id": str(user_id)}
+
+    raise HTTPException(status_code=401, detail="Token invalide")
+
+
 # --- Pricing (EUR cents) -------------------------------------------------
 # Direct user subscription (sold via /payments/stripe/subscription/checkout)
 SUBSCRIPTION_PRICES_CENTS = {
@@ -372,9 +416,12 @@ async def create_subscription_checkout(
 async def create_ambassador_checkout(
     payload: AmbassadorCheckoutRequest,
     request: Request,
-    user_id: str = Depends(get_current_user),
 ):
     """Create a Stripe Checkout session for an ambassador buying activation codes.
+
+    AUTH: accepts EITHER an ambassador JWT (issued by /api/ambassador/login)
+    OR a legacy regular-user JWT. The buyer kind is recorded on the payment
+    document so the webhook can fulfill correctly into the right collection.
 
     Each code is bound to a plan (monthly / quarterly / yearly) which determines
     the duration the client gets when they activate it.
@@ -387,11 +434,26 @@ async def create_ambassador_checkout(
         raise HTTPException(status_code=400, detail="Plan invalide")
 
     qty = max(1, min(int(payload.quantity or 1), 100))
-    user = await db.users.find_one({"_id": ObjectId(user_id)})
-    if not user:
-        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
 
-    idempotency_key = f"amb-{user_id}-{plan}-{qty}-{uuid.uuid4().hex[:8]}"
+    buyer = get_buyer_identity(request)
+
+    # Look up the buyer in the right collection so we can attach email to the
+    # Stripe receipt and verify the account actually exists.
+    customer_email: Optional[str] = None
+    if buyer["kind"] == "ambassador":
+        ambassador_doc = await db.ambassadors.find_one({"_id": ObjectId(buyer["id"])})
+        if not ambassador_doc:
+            raise HTTPException(status_code=404, detail="Ambassadeur introuvable")
+        if ambassador_doc.get("status") == "blocked":
+            raise HTTPException(status_code=403, detail="Compte ambassadeur bloqué")
+        customer_email = ambassador_doc.get("email") or None
+    else:  # legacy user-as-buyer path
+        user_doc = await db.users.find_one({"_id": ObjectId(buyer["id"])})
+        if not user_doc:
+            raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+        customer_email = user_doc.get("email") or None
+
+    idempotency_key = f"amb-{buyer['kind']}-{buyer['id']}-{plan}-{qty}-{uuid.uuid4().hex[:8]}"
 
     # Prefer pre-configured Stripe Price IDs (managed from Stripe Dashboard).
     # Fall back to dynamic price_data only if a Price ID is not defined
@@ -424,11 +486,16 @@ async def create_ambassador_checkout(
             mode="payment",  # one-time payment for activation codes
             payment_method_types=["card"],
             line_items=line_items,
-            customer_email=user.get("email") or None,
+            customer_email=customer_email,
             success_url=f"{_build_redirect_base(request)}/api/payments/stripe/success?session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{_build_redirect_base(request)}/api/payments/stripe/cancel",
             metadata={
-                "userId": user_id,
+                "buyerKind": buyer["kind"],
+                "buyerId": buyer["id"],
+                # Legacy: keep userId field populated when the buyer is a user
+                # for backwards compatibility with any external consumers.
+                "userId": buyer["id"] if buyer["kind"] == "user" else "",
+                "ambassadorId": buyer["id"] if buyer["kind"] == "ambassador" else "",
                 "type": "ambassador_codes",
                 "plan": plan,
                 "quantity": str(qty),
@@ -450,7 +517,12 @@ async def create_ambassador_checkout(
         amount_total_cents = AMBASSADOR_PLAN_PRICES_CENTS[plan] * qty
 
     await db.payments.insert_one({
-        "userId": user_id,
+        # Keep userId populated for back-compat with existing dashboards;
+        # use buyerId/buyerKind for the new ambassador-aware flow.
+        "userId": buyer["id"] if buyer["kind"] == "user" else None,
+        "buyerKind": buyer["kind"],
+        "buyerId": buyer["id"],
+        "ambassadorId": buyer["id"] if buyer["kind"] == "ambassador" else None,
         "type": "ambassador_codes",
         "plan": plan,
         "quantity": qty,
@@ -468,13 +540,38 @@ async def create_ambassador_checkout(
 
 
 @router.get("/payments/stripe/session/{session_id}")
-async def get_session_status(session_id: str, user_id: str = Depends(get_current_user)):
+async def get_session_status(session_id: str, request: Request):
     """Polled by the mobile app after returning from Checkout.
 
     Webhook is authoritative, but polling lets us refresh the UI quickly
     without waiting for the next data sync.
+
+    Authorized for the buyer of the session ONLY (IDOR protection):
+      * Regular user JWT  -> matches `payments.userId` or `payments.buyerId`
+      * Ambassador JWT    -> matches `payments.ambassadorId` or `payments.buyerId`
     """
-    payment = await db.payments.find_one({"stripeSessionId": session_id, "userId": user_id})
+    buyer = get_buyer_identity(request)
+
+    # Build a strict filter so a user cannot read another user's session
+    # (and an ambassador cannot read a user's session — and vice versa).
+    if buyer["kind"] == "ambassador":
+        owner_filter = {
+            "stripeSessionId": session_id,
+            "$or": [
+                {"ambassadorId": buyer["id"]},
+                {"buyerId": buyer["id"], "buyerKind": "ambassador"},
+            ],
+        }
+    else:
+        owner_filter = {
+            "stripeSessionId": session_id,
+            "$or": [
+                {"userId": buyer["id"]},
+                {"buyerId": buyer["id"], "buyerKind": "user"},
+            ],
+        }
+
+    payment = await db.payments.find_one(owner_filter)
     if not payment:
         raise HTTPException(status_code=404, detail="Paiement introuvable")
 
@@ -485,7 +582,7 @@ async def get_session_status(session_id: str, user_id: str = Depends(get_current
             session = stripe.checkout.Session.retrieve(session_id)
             if session.payment_status == "paid":
                 await _fulfill_payment(payment, session)
-                payment = await db.payments.find_one({"stripeSessionId": session_id})
+                payment = await db.payments.find_one(owner_filter)
         except stripe.error.StripeError as e:
             logger.warning(f"Could not retrieve session {session_id}: {e}")
 
@@ -607,17 +704,73 @@ async def _fulfill_payment(payment: dict, session: dict):
         qty = int(payment.get("quantity", 1))
         plan = payment.get("plan", "monthly")
         duration_days = SUBSCRIPTION_DURATION_DAYS.get(plan, 30)
+
+        buyer_kind = payment.get("buyerKind") or "user"
+        ambassador_id = payment.get("ambassadorId")
+
+        # Code freshness window — how long a generated code remains usable
+        # before it auto-expires (mirrors CODE_VALIDITY_DAYS in ambassador_api).
+        # Kept at 30 days unless overridden via env var.
+        try:
+            code_validity_days = int(os.getenv("AMBASSADOR_CODE_VALIDITY_DAYS", "30"))
+        except (TypeError, ValueError):
+            code_validity_days = 30
+        expires_at = now + timedelta(days=code_validity_days)
+
+        def _new_code() -> str:
+            """TK-XXXX-XXXX format, matching the canonical ambassador-codes schema."""
+            chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+            import secrets as _secrets
+            return "TK-" + "".join(_secrets.choice(chars) for _ in range(4)) + \
+                   "-" + "".join(_secrets.choice(chars) for _ in range(4))
+
         codes_created = []
-        for _ in range(qty):
-            code = f"TK-{uuid.uuid4().hex[:8].upper()}"
-            await db.ambassador_codes.insert_one({
-                "code": code,
-                "ambassadorUserId": user_id,
-                "plan": plan,
-                "durationDays": duration_days,
-                "status": "available",
-                "purchasePaymentId": str(payment["_id"]),
-                "createdAt": now.isoformat() + "Z",
-            })
-            codes_created.append(code)
-        logger.info(f"Created {qty} ambassador codes ({plan}) for user {user_id}: {codes_created}")
+
+        if buyer_kind == "ambassador" and ambassador_id:
+            # Canonical path: insert into `activation_codes` (the collection
+            # actually read by /api/ambassador/dashboard, /api/ambassador/codes
+            # and the activation flow).
+            for _ in range(qty):
+                code = _new_code()
+                # Ensure uniqueness (collision probability is negligible but
+                # we guard anyway because the index is unique on `code`).
+                while await db.activation_codes.find_one({"code": code}):
+                    code = _new_code()
+                await db.activation_codes.insert_one({
+                    "code": code,
+                    "plan": plan,
+                    "ambassadorId": ambassador_id,
+                    "status": "unused",
+                    "assignedAt": now,
+                    "expiresAt": expires_at,
+                    "usedAt": None,
+                    "usedByUserId": None,
+                    "source": "stripe_purchase",
+                    "stripePaymentId": str(payment["_id"]),
+                })
+                codes_created.append(code)
+            logger.info(
+                f"Created {qty} activation_codes (plan={plan}, "
+                f"ambassadorId={ambassador_id}) from Stripe payment {payment['_id']}"
+            )
+        else:
+            # Legacy path (kept for backwards compatibility with any older
+            # records that have buyerKind=user). These codes go into the
+            # `ambassador_codes` collection and are NOT visible in the
+            # ambassador dashboard — they require a manual migration.
+            for _ in range(qty):
+                code = f"TK-{uuid.uuid4().hex[:8].upper()}"
+                await db.ambassador_codes.insert_one({
+                    "code": code,
+                    "ambassadorUserId": payment.get("userId") or payment.get("buyerId"),
+                    "plan": plan,
+                    "durationDays": duration_days,
+                    "status": "available",
+                    "purchasePaymentId": str(payment["_id"]),
+                    "createdAt": now.isoformat() + "Z",
+                })
+                codes_created.append(code)
+            logger.warning(
+                f"Legacy fallback: created {qty} ambassador_codes (user buyer) "
+                f"for payment {payment['_id']} — not linked to an ambassador account"
+            )

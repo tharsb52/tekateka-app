@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   ActivityIndicator, Alert, TextInput, Platform,
@@ -6,8 +6,8 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { buyAmbassadorCodes } from '../../services/stripeCheckout';
-import { useAuth } from '../../context/AuthContext';
 import { convertCurrency, formatCurrency } from '../../utils/currencies';
 
 type Plan = 'monthly' | 'quarterly' | 'yearly';
@@ -24,11 +24,44 @@ const CARD = '#1e293b';
 
 export default function BuyAmbassadorCodesScreen() {
   const router = useRouter();
-  const { user } = useAuth();
-  const userCurrency = user?.currency || 'EUR';
+  const [authChecked, setAuthChecked] = useState(false);
+
+  // Display currency: ambassadors pay in EUR (Stripe Price IDs are EUR),
+  // but we still show their local-currency equivalent for clarity.
+  // We read the ambassador's currency from stored profile if available;
+  // otherwise default to EUR.
+  const [userCurrency, setUserCurrency] = useState<string>('EUR');
   const [selectedPlan, setSelectedPlan] = useState<Plan>('monthly');
   const [quantity, setQuantity] = useState('5');
   const [loading, setLoading] = useState(false);
+
+  // ---- Auth guard ----------------------------------------------------
+  // This screen requires an active ambassador session. Without it the
+  // backend would reject the checkout call with 401, and worse, an
+  // un-authed user could see (and try to interact with) the buy UI.
+  // We redirect immediately back to the ambassador login if there's no
+  // ambassador_token in AsyncStorage.
+  useEffect(() => {
+    (async () => {
+      try {
+        const token = await AsyncStorage.getItem('ambassador_token');
+        if (!token) {
+          router.replace('/ambassador');
+          return;
+        }
+        // Optional: read cached ambassador profile for currency preference
+        const raw = await AsyncStorage.getItem('ambassador_data');
+        if (raw) {
+          try {
+            const data = JSON.parse(raw);
+            if (data?.currency) setUserCurrency(data.currency);
+          } catch { /* ignore */ }
+        }
+      } finally {
+        setAuthChecked(true);
+      }
+    })();
+  }, [router]);
 
   const plan = PLANS.find(p => p.id === selectedPlan)!;
   const qty = Math.max(1, Math.min(parseInt(quantity || '1', 10) || 1, 100));
@@ -84,6 +117,13 @@ export default function BuyAmbassadorCodesScreen() {
     );
   };
 
+  if (!authChecked) {
+    return (
+      <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={ACCENT} />
+      </SafeAreaView>
+    );
+  }
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>

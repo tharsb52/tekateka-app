@@ -45,6 +45,34 @@ async function apiFetch(path: string, options: RequestInit = {}, retries = 3): P
     headers['Authorization'] = `Bearer ${token}`;
   }
 
+  return apiFetchWithHeaders(path, options, headers, retries);
+}
+
+/**
+ * Variant of apiFetch that uses the AMBASSADOR Bearer token instead of the
+ * regular-user JWT. Used by the ambassador-only flows (e.g. buying activation
+ * codes via Stripe Checkout) so they work without requiring a parallel
+ * regular-user login.
+ */
+async function apiFetchAsAmbassador(path: string, options: RequestInit = {}, retries = 3): Promise<any> {
+  const token = await AsyncStorage.getItem('ambassador_token');
+  if (!token) {
+    throw new Error('Session ambassadeur expirée. Reconnectez-vous.');
+  }
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options.headers as Record<string, string> || {}),
+    'Authorization': `Bearer ${token}`,
+  };
+  return apiFetchWithHeaders(path, options, headers, retries);
+}
+
+async function apiFetchWithHeaders(
+  path: string,
+  options: RequestInit,
+  headers: Record<string, string>,
+  retries: number,
+): Promise<any> {
   const url = `${BACKEND_URL}/api${path}`;
   let lastError: any = null;
 
@@ -337,6 +365,23 @@ export const paymentsAPI = {
       body: JSON.stringify({ plan, quantity }),
     }),
 
+  /**
+   * Same as stripeAmbassadorCheckout but uses the AMBASSADOR JWT (the one
+   * stored under AsyncStorage['ambassador_token']). This is the correct
+   * variant when the buyer is acting as an ambassador inside the dedicated
+   * /ambassador/* flow — codes will be linked to their ambassador account
+   * and appear in their ambassador dashboard.
+   */
+  stripeAmbassadorCheckoutAsAmbassador: (plan: 'monthly' | 'quarterly' | 'yearly', quantity: number) =>
+    apiFetchAsAmbassador('/payments/stripe/ambassador/checkout', {
+      method: 'POST',
+      body: JSON.stringify({ plan, quantity }),
+    }),
+
   stripeSessionStatus: (sessionId: string) =>
     apiFetch(`/payments/stripe/session/${encodeURIComponent(sessionId)}`),
+
+  /** Same as stripeSessionStatus but uses the ambassador JWT for ownership check. */
+  stripeSessionStatusAsAmbassador: (sessionId: string) =>
+    apiFetchAsAmbassador(`/payments/stripe/session/${encodeURIComponent(sessionId)}`),
 };

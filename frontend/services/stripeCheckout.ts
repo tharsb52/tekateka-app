@@ -24,10 +24,16 @@ export type CheckoutOutcome = {
 const POLL_INTERVAL_MS = 2000;
 const POLL_MAX_TRIES = 12; // 12 * 2s = 24s after the user returns
 
-async function pollSession(sessionId: string): Promise<CheckoutOutcome> {
+async function pollSession(
+  sessionId: string,
+  asAmbassador = false,
+): Promise<CheckoutOutcome> {
+  const fetcher = asAmbassador
+    ? paymentsAPI.stripeSessionStatusAsAmbassador
+    : paymentsAPI.stripeSessionStatus;
   for (let i = 0; i < POLL_MAX_TRIES; i++) {
     try {
-      const res = await paymentsAPI.stripeSessionStatus(sessionId);
+      const res = await fetcher(sessionId);
       if (res?.status && res.status !== 'pending') {
         return {
           status: res.status,
@@ -50,7 +56,8 @@ async function pollSession(sessionId: string): Promise<CheckoutOutcome> {
  */
 export async function openStripeCheckout(
   url: string,
-  sessionId: string
+  sessionId: string,
+  asAmbassador = false,
 ): Promise<CheckoutOutcome> {
   try {
     const result = await WebBrowser.openBrowserAsync(url, {
@@ -62,7 +69,7 @@ export async function openStripeCheckout(
 
     // result.type can be: "cancel" (user closed) or "dismiss" (after redirect)
     // Either way, payment status is authoritative on backend -> we poll.
-    const outcome = await pollSession(sessionId);
+    const outcome = await pollSession(sessionId, asAmbassador);
     if (outcome.status === 'pending') {
       // Couldn't confirm in time -> treat as cancelled from UX point of view.
       // The webhook will still complete it asynchronously; next data sync will pick it up.
@@ -88,16 +95,23 @@ export async function buySubscription(
   }
 }
 
+/**
+ * Purchase activation codes WHEN the buyer is authenticated as an ambassador
+ * (i.e. coming from the /ambassador/* flow). The Bearer token used is the
+ * ambassador JWT, NOT the regular-user JWT. Codes will be created in the
+ * `activation_codes` collection and become visible in the ambassador
+ * dashboard immediately after Stripe confirms the payment.
+ */
 export async function buyAmbassadorCodes(
   plan: 'monthly' | 'quarterly' | 'yearly',
   quantity: number
 ): Promise<CheckoutOutcome> {
   try {
-    const session = await paymentsAPI.stripeAmbassadorCheckout(plan, quantity);
+    const session = await paymentsAPI.stripeAmbassadorCheckoutAsAmbassador(plan, quantity);
     if (!session?.url || !session?.sessionId) {
       return { status: 'error', error: 'Session Stripe invalide' };
     }
-    return await openStripeCheckout(session.url, session.sessionId);
+    return await openStripeCheckout(session.url, session.sessionId, /* asAmbassador */ true);
   } catch (e: any) {
     return { status: 'error', error: e?.message || 'Erreur de paiement' };
   }
