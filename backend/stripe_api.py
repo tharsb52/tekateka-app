@@ -136,15 +136,41 @@ AMBASSADOR_PLAN_PRICES_CENTS = {
 }
 
 # Pre-configured Stripe Price IDs for ambassador activation codes (one-time
-# payments). Configurable per-environment via env vars so test/live keys
-# can each point to their own Price objects:
+# payments). The default values are the LIVE-mode Price IDs created in the
+# Stripe Dashboard for production. In test/sandbox mode (sk_test_) we ignore
+# these (Stripe would reject them) and fall back to dynamic price_data —
+# unless test-specific Price IDs are explicitly provided via env vars:
 #   STRIPE_AMBASSADOR_PRICE_MONTHLY=price_xxx
 #   STRIPE_AMBASSADOR_PRICE_QUARTERLY=price_xxx
 #   STRIPE_AMBASSADOR_PRICE_YEARLY=price_xxx
+_AMBASSADOR_PRICE_DEFAULTS_LIVE = {
+    "monthly":   "price_1TZ7XB2Hpe19XBXi9wjvH4yI",
+    "quarterly": "price_1TZ7Zf2Hpe19XBXiUPtD9xT0",
+    "yearly":    "price_1TZ7b02Hpe19XBXipYBofcoD",
+}
+
+def _resolve_ambassador_price_id(plan: str) -> str:
+    """Return the Stripe Price ID to use for the given plan, or "" to
+    indicate a fallback to dynamic price_data is required.
+
+    Logic:
+      * If STRIPE_AMBASSADOR_PRICE_<PLAN> env var is set -> use it (whatever
+        the mode). Lets ops swap Price IDs without code changes.
+      * Else, if we're in LIVE mode -> use the hardcoded production default.
+      * Else (TEST/sandbox mode) -> return "" -> caller falls back to
+        price_data so dev/preview environments still work.
+    """
+    env_key = f"STRIPE_AMBASSADOR_PRICE_{plan.upper()}"
+    explicit = os.getenv(env_key, "").strip()
+    if explicit:
+        return explicit
+    if STRIPE_LIVE_MODE:
+        return _AMBASSADOR_PRICE_DEFAULTS_LIVE.get(plan, "")
+    return ""  # test/sandbox -> fallback to price_data
+
 STRIPE_AMBASSADOR_PRICE_IDS = {
-    "monthly":   os.getenv("STRIPE_AMBASSADOR_PRICE_MONTHLY",   "price_1TZ7XB2Hpe19XBXi9wjvH4yI").strip(),
-    "quarterly": os.getenv("STRIPE_AMBASSADOR_PRICE_QUARTERLY", "price_1TZ7Zf2Hpe19XBXiUPtD9xT0").strip(),
-    "yearly":    os.getenv("STRIPE_AMBASSADOR_PRICE_YEARLY",    "price_1TZ7b02Hpe19XBXipYBofcoD").strip(),
+    plan: _resolve_ambassador_price_id(plan)
+    for plan in ("monthly", "quarterly", "yearly")
 }
 
 SUBSCRIPTION_DURATION_DAYS = {
@@ -365,24 +391,39 @@ async def create_ambassador_checkout(
     if not user:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
 
-    unit_amount = AMBASSADOR_PLAN_PRICES_CENTS[plan]
     idempotency_key = f"amb-{user_id}-{plan}-{qty}-{uuid.uuid4().hex[:8]}"
+
+    # Prefer pre-configured Stripe Price IDs (managed from Stripe Dashboard).
+    # Fall back to dynamic price_data only if a Price ID is not defined
+    # (useful for local dev / test environments without seeded products).
+    stripe_price_id = STRIPE_AMBASSADOR_PRICE_IDS.get(plan, "").strip()
+    use_price_id = bool(stripe_price_id) and stripe_price_id.startswith("price_")
+
+    if use_price_id:
+        line_items = [{
+            "price": stripe_price_id,
+            "quantity": qty,
+        }]
+    else:
+        # Fallback (dev/test): build the line item dynamically
+        unit_amount = AMBASSADOR_PLAN_PRICES_CENTS[plan]
+        line_items = [{
+            "quantity": qty,
+            "price_data": {
+                "currency": PAYMENT_CURRENCY,
+                "unit_amount": unit_amount,
+                "product_data": {
+                    "name": f"TekaTeka - Code d'activation {plan}",
+                    "description": f"Code d'activation client ({SUBSCRIPTION_DURATION_DAYS[plan]} jours)",
+                },
+            },
+        }]
 
     try:
         session = stripe.checkout.Session.create(
-            mode="payment",
+            mode="payment",  # one-time payment for activation codes
             payment_method_types=["card"],
-            line_items=[{
-                "quantity": qty,
-                "price_data": {
-                    "currency": PAYMENT_CURRENCY,
-                    "unit_amount": unit_amount,
-                    "product_data": {
-                        "name": f"TekaTeka - Code d'activation {plan}",
-                        "description": f"Code d'activation client ({SUBSCRIPTION_DURATION_DAYS[plan]} jours)",
-                    },
-                },
-            }],
+            line_items=line_items,
             customer_email=user.get("email") or None,
             success_url=f"{_build_redirect_base(request)}/api/payments/stripe/success?session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{_build_redirect_base(request)}/api/payments/stripe/cancel",
@@ -398,14 +439,25 @@ async def create_ambassador_checkout(
         logger.error(f"Stripe error creating ambassador session: {e}")
         raise HTTPException(status_code=502, detail=str(e))
 
+    # Compute amount for our internal tracking.
+    # When using a Stripe Price ID, the authoritative amount comes from the
+    # session itself (Stripe Dashboard pricing). We store the best estimate
+    # now and refresh it in _fulfill_payment when the webhook arrives.
+    amount_total_cents = getattr(session, "amount_total", None)
+    if amount_total_cents is None:
+        # Stripe sometimes returns None until checkout completes — fallback to
+        # local mirror (kept up-to-date with the Stripe Dashboard).
+        amount_total_cents = AMBASSADOR_PLAN_PRICES_CENTS[plan] * qty
+
     await db.payments.insert_one({
         "userId": user_id,
         "type": "ambassador_codes",
         "plan": plan,
         "quantity": qty,
-        "amount": (unit_amount * qty) / 100.0,
-        "currency": PAYMENT_CURRENCY.upper(),
+        "amount": amount_total_cents / 100.0,
+        "currency": (getattr(session, "currency", None) or PAYMENT_CURRENCY).upper(),
         "provider": "stripe",
+        "stripePriceId": stripe_price_id if use_price_id else None,
         "stripeSessionId": session.id,
         "status": "pending",
         "idempotencyKey": idempotency_key,

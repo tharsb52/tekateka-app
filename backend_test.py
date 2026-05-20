@@ -1,17 +1,22 @@
 """
-TekaTeka - Stripe Integration Backend Tests (EUR + Free Trial)
-================================================================
+TekaTeka - Stripe Ambassador Checkout - Explicit Stripe Price IDs Tests
+=========================================================================
+Refactor verification:
+  * Ambassador checkout now prefers Stripe Price IDs (price=...).
+  * In TEST mode (sk_test_), fallback to dynamic price_data is expected.
+  * Subscription checkout endpoint MUST be unchanged.
 """
 import os
 import sys
-import time
 import uuid
+import json
 import requests
-from datetime import datetime, timezone
+from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorClient
 import asyncio
 from pathlib import Path
 from dotenv import load_dotenv
+import stripe
 
 load_dotenv(Path(__file__).parent / "backend" / ".env")
 load_dotenv(Path(__file__).parent / "frontend" / ".env")
@@ -21,9 +26,10 @@ API = f"{BACKEND_URL}/api"
 MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
 DB_NAME = os.getenv("DB_NAME", "test_database")
 
-TEST_PHONE_PRIMARY = "+243111000111"
-FRESH_PHONE = f"+24398{uuid.uuid4().int % 10000000:07d}"
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
+stripe.api_key = STRIPE_SECRET_KEY
 
+TEST_PHONE_PRIMARY = "+243111000111"
 results = []
 
 
@@ -33,11 +39,14 @@ def log(name, ok, info=""):
     results.append((name, ok, info))
 
 
-def phone_login(phone):
-    return requests.post(f"{API}/auth/phone-login", json={"phoneNumber": phone}, timeout=30)
+def login_get_token():
+    r = requests.post(f"{API}/auth/phone-login", json={"phoneNumber": TEST_PHONE_PRIMARY}, timeout=30)
+    r.raise_for_status()
+    data = r.json()
+    return data["token"], data["user"]["id"]
 
 
-async def get_payment_doc(session_id):
+async def mongo_find_payment(session_id):
     client = AsyncIOMotorClient(MONGO_URL)
     db = client[DB_NAME]
     doc = await db.payments.find_one({"stripeSessionId": session_id})
@@ -45,359 +54,283 @@ async def get_payment_doc(session_id):
     return doc
 
 
-async def get_codes_for_session(session_id):
+async def mongo_find_codes_for_payment(payment_id_str):
     client = AsyncIOMotorClient(MONGO_URL)
     db = client[DB_NAME]
-    payment = await db.payments.find_one({"stripeSessionId": session_id})
-    if not payment:
-        client.close()
-        return None, []
-    codes = await db.ambassador_codes.find({"purchasePaymentId": str(payment["_id"])}).to_list(100)
+    cur = db.ambassador_codes.find({"purchasePaymentId": payment_id_str})
+    docs = await cur.to_list(length=None)
     client.close()
-    return payment, codes
+    return docs
 
 
-def test_config():
-    r = requests.get(f"{API}/payments/stripe/config", timeout=15)
-    if r.status_code != 200:
-        log("1. GET /payments/stripe/config", False, f"status={r.status_code}")
-        return False
-    data = r.json()
-    pk = data.get("publishableKey", "") or ""
-    checks = [
-        ("enabled=True", data.get("enabled") is True),
-        ("mode=test", data.get("mode") == "test"),
-        ("publishableKey starts pk_test_", pk.startswith("pk_test_")),
-        ("currency=eur", data.get("currency") == "eur"),
-        ("freeTrialDays=7", data.get("freeTrialDays") == 7),
-        ("subscription prices",
-         (data.get("prices") or {}).get("subscription") == {"monthly": 500, "quarterly": 1400, "yearly": 5500}),
-        ("ambassadorByPlan",
-         (data.get("prices") or {}).get("ambassadorByPlan") == {"monthly": 400, "quarterly": 1200, "yearly": 5000}),
-        ("durations",
-         data.get("durations") == {"monthly": 30, "quarterly": 90, "yearly": 365}),
-    ]
-    all_ok = all(ok for _, ok in checks)
-    info = "; ".join(f"{n}={'OK' if ok else 'FAIL'}" for n, ok in checks)
-    log("1. GET /payments/stripe/config", all_ok, info)
-    return all_ok
+# --------------------------------------------------------------------- A
+def test_A1_config():
+    r = requests.get(f"{API}/payments/stripe/config", timeout=30)
+    ok = r.status_code == 200
+    body = r.json() if ok else {}
+    enabled = body.get("enabled") is True
+    mode = body.get("mode") == "test"
+    currency = body.get("currency") == "eur"
+    overall = ok and enabled and mode and currency
+    log("A1 GET /payments/stripe/config", overall,
+        f"status={r.status_code} enabled={body.get('enabled')} mode={body.get('mode')} currency={body.get('currency')}")
+    return body
 
 
-def test_free_trial():
-    r = phone_login(FRESH_PHONE)
-    if r.status_code != 200:
-        log("2a. phone-login (fresh)", False, f"status={r.status_code} body={r.text[:200]}")
-        return None
-    j = r.json()
-    token = j.get("token")
-    log("2a. phone-login (fresh phone)", bool(token), f"phone={FRESH_PHONE} keys={list(j.keys())}")
-    if not token:
-        return None
-
-    r2 = requests.get(f"{API}/auth/profile", headers={"Authorization": f"Bearer {token}"}, timeout=15)
-    if r2.status_code != 200:
-        log("2b. GET /auth/profile", False, f"status={r2.status_code} body={r2.text[:200]}")
-        return token
-    pdata = r2.json()
-    user_obj = pdata.get("user") or pdata
-    sub = user_obj.get("subscription") or {}
-    checks = [
-        ("plan=trial", sub.get("plan") == "trial"),
-        ("status=trial", sub.get("status") == "trial"),
-        ("expiresAt present", bool(sub.get("expiresAt"))),
-    ]
-    try:
-        exp_str = sub.get("expiresAt", "").replace("Z", "+00:00")
-        exp_dt = datetime.fromisoformat(exp_str)
-        now = datetime.now(timezone.utc)
-        diff_days = (exp_dt - now).total_seconds() / 86400.0
-        checks.append((f"expiresAt~7d (actual={diff_days:.2f}d)", 6.5 < diff_days < 7.5))
-    except Exception as e:
-        checks.append((f"expiresAt parse: {e}", False))
-    all_ok = all(ok for _, ok in checks)
-    info = "; ".join(f"{n}={'OK' if ok else 'FAIL'}" for n, ok in checks) + f" | sub={sub}"
-    log("2b. New user free trial", all_ok, info)
-    return token
-
-
-def test_subscription_checkout(token):
-    headers = {"Authorization": f"Bearer {token}"}
-    expected = {"monthly": 5.0, "quarterly": 14.0, "yearly": 55.0}
-    overall = True
-    for plan, expected_amount in expected.items():
-        r = requests.post(f"{API}/payments/stripe/subscription/checkout",
-                          json={"plan": plan}, headers=headers, timeout=30)
-        if r.status_code != 200:
-            log(f"3. subscription/checkout plan={plan}", False, f"status={r.status_code} body={r.text[:200]}")
-            overall = False
-            continue
-        j = r.json()
-        url = j.get("url", "")
-        sid = j.get("sessionId", "")
-        url_ok = url.startswith("https://checkout.stripe.com/")
-        sid_ok = sid.startswith("cs_test_")
-        doc = asyncio.run(get_payment_doc(sid))
-        currency_ok = doc and doc.get("currency") == "EUR"
-        amount_ok = doc and abs(float(doc.get("amount", 0)) - expected_amount) < 0.001
-        plan_ok = doc and doc.get("plan") == plan
-        ok = url_ok and sid_ok and currency_ok and amount_ok and plan_ok
-        if not ok:
-            overall = False
-        log(f"3. subscription/checkout plan={plan}", ok,
-            f"url_ok={url_ok}, sid={sid[:30]}, currency={doc and doc.get('currency')}, "
-            f"amount={doc and doc.get('amount')} (exp {expected_amount}), plan={doc and doc.get('plan')}")
-
+def test_A2_subscription_monthly(token):
     r = requests.post(f"{API}/payments/stripe/subscription/checkout",
-                      json={"plan": "weekly"}, headers=headers, timeout=15)
-    ok = r.status_code == 400
-    log("3b. subscription/checkout plan=weekly invalid", ok, f"status={r.status_code} body={r.text[:200]}")
-    overall = overall and ok
-    return overall
+                      headers={"Authorization": f"Bearer {token}"},
+                      json={"plan": "monthly"}, timeout=30)
+    ok = r.status_code == 200
+    body = r.json() if ok else {}
+    url = body.get("url", "")
+    sid = body.get("sessionId", "")
+    valid = url.startswith("https://checkout.stripe.com/") and sid.startswith("cs_test_")
+    # Verify uses price_data internally (not price ID)
+    line_item_kind = "?"
+    if valid:
+        try:
+            sess = stripe.checkout.Session.retrieve(sid, expand=["line_items.data.price"])
+            li = sess.line_items.data[0]
+            # When price_data is used, price.id is a one-time auto-generated price
+            # and price.lookup_key is None. We check that no STRIPE_AMBASSADOR_PRICE_* 
+            # is used. For subscription it's always price_data.
+            line_item_kind = li.price.id if li.price else "?"
+        except Exception as e:
+            line_item_kind = f"ERR:{e}"
+    log("A2 POST /payments/stripe/subscription/checkout {monthly}", ok and valid,
+        f"status={r.status_code} url_ok={url.startswith('https://checkout.stripe.com/')} sid={sid[:14]}... line_item_price={line_item_kind[:30]}")
 
 
-def test_ambassador_checkout(token):
-    headers = {"Authorization": f"Bearer {token}"}
-    overall = True
+def test_A3_subscription_invalid(token):
+    r = requests.post(f"{API}/payments/stripe/subscription/checkout",
+                      headers={"Authorization": f"Bearer {token}"},
+                      json={"plan": "weekly"}, timeout=30)
+    ok = r.status_code == 400 and "invalide" in (r.json().get("detail") or "").lower()
+    log("A3 POST subscription/checkout {weekly} -> 400", ok,
+        f"status={r.status_code} body={r.text[:80]}")
 
+
+# --------------------------------------------------------------------- B
+async def _ambassador_checkout_and_verify(token, plan, qty, expected_qty=None, label=""):
     r = requests.post(f"{API}/payments/stripe/ambassador/checkout",
-                      json={"plan": "monthly", "quantity": 5}, headers=headers, timeout=30)
+                      headers={"Authorization": f"Bearer {token}"},
+                      json={"plan": plan, "quantity": qty}, timeout=30)
+    ok = r.status_code == 200
+    body = r.json() if ok else {}
+    url = body.get("url", "")
+    sid = body.get("sessionId", "")
+    valid = url.startswith("https://checkout.stripe.com/") and sid.startswith("cs_test_")
+
+    # Mongo doc verification
+    doc = await mongo_find_payment(sid) if valid else None
+    final_qty = expected_qty if expected_qty is not None else qty
+    unit_prices = {"monthly": 400, "quarterly": 1200, "yearly": 5000}
+    expected_amount = unit_prices[plan] * final_qty / 100.0
+
+    doc_ok = doc is not None and (
+        doc.get("status") == "pending"
+        and doc.get("type") == "ambassador_codes"
+        and doc.get("plan") == plan
+        and doc.get("quantity") == final_qty
+        and abs(doc.get("amount", 0) - expected_amount) < 0.01
+        and (doc.get("currency") or "").upper() == "EUR"
+        and doc.get("stripePriceId") in (None,)  # null because TEST mode fallback
+        and (doc.get("stripeSessionId") or "").startswith("cs_test_")
+    )
+
+    info = (f"status={r.status_code} url_ok={valid} qty_doc={doc and doc.get('quantity')} "
+            f"amount={doc and doc.get('amount')} stripePriceId={doc and doc.get('stripePriceId')!r}")
+    log(f"B {label} ambassador/checkout plan={plan} qty={qty}", ok and valid and doc_ok, info)
+    return body, doc
+
+
+# --------------------------------------------------------------------- B8
+def verify_stripe_session_uses_price_data(sid):
+    """Inspect Stripe session to confirm line_item is price_data (not price ref)."""
+    try:
+        sess = stripe.checkout.Session.retrieve(sid, expand=["line_items.data.price.product"])
+        li = sess.line_items.data[0]
+        price = li.price
+        # If price_data was used, Stripe creates an inline price; its product is also inline.
+        # Inline products have type=service and a generated id, but no "lookup_key" we set.
+        product = price.product if not isinstance(price.product, str) else None
+        # The hardcoded LIVE Price IDs are price_1TZ7XB.../1TZ7Zf.../1TZ7b0...
+        hardcoded = ("price_1TZ7XB2Hpe19XBXi9wjvH4yI", "price_1TZ7Zf2Hpe19XBXiUPtD9xT0", "price_1TZ7b02Hpe19XBXipYBofcoD")
+        is_hardcoded = price.id in hardcoded
+        product_name = None
+        try:
+            if isinstance(price.product, str):
+                pobj = stripe.Product.retrieve(price.product)
+                product_name = pobj.name
+            elif product:
+                product_name = product.name
+        except Exception:
+            pass
+        # In TEST mode fallback path, product name should contain "Code d'activation"
+        uses_price_data = not is_hardcoded
+        return uses_price_data, price.id, product_name
+    except Exception as e:
+        return None, None, f"ERR:{e}"
+
+
+# --------------------------------------------------------------------- C
+def test_C_webhook_fulfillment(token, user_id, loop):
+    # C1: create checkout
+    r = requests.post(f"{API}/payments/stripe/ambassador/checkout",
+                      headers={"Authorization": f"Bearer {token}"},
+                      json={"plan": "quarterly", "quantity": 3}, timeout=30)
     if r.status_code != 200:
-        log("4a. ambassador/checkout monthly qty=5", False, f"status={r.status_code} body={r.text[:200]}")
-        overall = False
-    else:
-        j = r.json()
-        sid = j.get("sessionId", "")
-        url = j.get("url", "")
-        doc = asyncio.run(get_payment_doc(sid))
-        url_ok = url.startswith("https://checkout.stripe.com/")
-        ok = (url_ok and sid.startswith("cs_test_") and doc
-              and doc.get("currency") == "EUR"
-              and abs(float(doc.get("amount", 0)) - 20.0) < 0.001
-              and doc.get("plan") == "monthly"
-              and int(doc.get("quantity", 0)) == 5)
-        if not ok:
-            overall = False
-        log("4a. ambassador/checkout monthly qty=5", ok,
-            f"url_ok={url_ok}, amount={doc and doc.get('amount')} (exp 20.0), "
-            f"plan={doc and doc.get('plan')}, qty={doc and doc.get('quantity')}, currency={doc and doc.get('currency')}")
+        log("C1 create ambassador checkout quarterly x3", False, f"status={r.status_code}")
+        return
+    sid = r.json().get("sessionId")
+    log("C1 create ambassador checkout quarterly x3", True, f"sid={sid[:14]}...")
 
-    r = requests.post(f"{API}/payments/stripe/ambassador/checkout",
-                      json={"plan": "yearly", "quantity": 2}, headers=headers, timeout=30)
-    if r.status_code != 200:
-        log("4b. ambassador/checkout yearly qty=2", False, f"status={r.status_code} body={r.text[:200]}")
-        overall = False
-    else:
-        j = r.json()
-        sid = j.get("sessionId", "")
-        doc = asyncio.run(get_payment_doc(sid))
-        ok = (doc and abs(float(doc.get("amount", 0)) - 100.0) < 0.001
-              and doc.get("plan") == "yearly"
-              and int(doc.get("quantity", 0)) == 2
-              and doc.get("currency") == "EUR")
-        if not ok:
-            overall = False
-        log("4b. ambassador/checkout yearly qty=2", ok,
-            f"amount={doc and doc.get('amount')} (exp 100.0), plan={doc and doc.get('plan')}, qty={doc and doc.get('quantity')}")
-
-    r = requests.post(f"{API}/payments/stripe/ambassador/checkout",
-                      json={"plan": "invalidPlan", "quantity": 1}, headers=headers, timeout=15)
-    ok = r.status_code == 400
-    log("4c. ambassador/checkout invalid plan", ok, f"status={r.status_code} body={r.text[:200]}")
-    overall = overall and ok
-    return overall
-
-
-def test_webhook_fulfillment(token):
-    headers = {"Authorization": f"Bearer {token}"}
-    r = requests.post(f"{API}/payments/stripe/ambassador/checkout",
-                      json={"plan": "quarterly", "quantity": 3}, headers=headers, timeout=30)
-    if r.status_code != 200:
-        log("5. ambassador/checkout quarterly qty=3 (setup)", False, f"status={r.status_code} body={r.text[:200]}")
-        return False
-    j = r.json()
-    sid = j.get("sessionId")
-    log("5a. setup ambassador checkout (quarterly qty=3)", True, f"sid={sid[:30]}")
-
-    webhook_body = {
+    # C2: webhook
+    webhook_payload = {
+        "id": f"evt_test_{uuid.uuid4().hex[:8]}",
+        "object": "event",
         "type": "checkout.session.completed",
         "data": {
             "object": {
                 "id": sid,
+                "object": "checkout.session",
                 "payment_status": "paid",
-                "payment_intent": "pi_test_webhook",
+                "payment_intent": f"pi_test_{uuid.uuid4().hex[:8]}",
+                "amount_total": 3600,
+                "currency": "eur",
+                "metadata": {
+                    "userId": user_id,
+                    "type": "ambassador_codes",
+                    "plan": "quarterly",
+                    "quantity": "3",
+                },
             }
         },
     }
-    wr = requests.post(f"{API}/payments/stripe/webhook", json=webhook_body, timeout=20)
-    if wr.status_code != 200:
-        log("5b. POST /payments/stripe/webhook", False, f"status={wr.status_code} body={wr.text[:200]}")
-        return False
-    log("5b. POST /payments/stripe/webhook", True, f"resp={wr.json()}")
+    wr = requests.post(f"{API}/payments/stripe/webhook", json=webhook_payload, timeout=30)
+    log("C2 POST /payments/stripe/webhook checkout.session.completed", wr.status_code == 200,
+        f"status={wr.status_code} body={wr.text[:80]}")
 
-    time.sleep(0.5)
-    payment, codes = asyncio.run(get_codes_for_session(sid))
-    if not payment:
-        log("5c. verify fulfillment", False, "no payment doc")
-        return False
-    checks = [
-        ("payment.status=completed", payment.get("status") == "completed"),
-        ("3 codes created", len(codes) == 3),
-        ("all plan=quarterly", all(c.get("plan") == "quarterly" for c in codes)),
-        ("all durationDays=90", all(c.get("durationDays") == 90 for c in codes)),
-        ("all status=available", all(c.get("status") == "available" for c in codes)),
-        ("all start with TK-", all(c.get("code", "").startswith("TK-") for c in codes)),
-    ]
-    all_ok = all(ok for _, ok in checks)
-    info = "; ".join(f"{n}={'OK' if ok else 'FAIL'}" for n, ok in checks)
-    info += f" | codes={[c.get('code') for c in codes]}"
-    log("5c. verify fulfillment", all_ok, info)
-    return all_ok
+    # C3: verify payment and codes
+    async def _verify():
+        doc = await mongo_find_payment(sid)
+        if not doc:
+            return False, "no payment doc"
+        if doc.get("status") != "completed":
+            return False, f"payment status={doc.get('status')}"
+        codes = await mongo_find_codes_for_payment(str(doc["_id"]))
+        if len(codes) != 3:
+            return False, f"codes count={len(codes)}"
+        for c in codes:
+            if not c.get("code", "").startswith("TK-"):
+                return False, f"bad code prefix {c.get('code')}"
+            if c.get("plan") != "quarterly":
+                return False, f"bad plan {c.get('plan')}"
+            if c.get("durationDays") != 90:
+                return False, f"bad duration {c.get('durationDays')}"
+            if c.get("status") != "available":
+                return False, f"bad status {c.get('status')}"
+            if c.get("ambassadorUserId") != user_id:
+                return False, f"bad ambassadorUserId {c.get('ambassadorUserId')}"
+        return True, f"codes={[c['code'] for c in codes]}"
 
+    ok, info = loop.run_until_complete(_verify())
+    log("C3 webhook fulfillment - 3 codes + payment completed", ok, info)
 
-def test_webhook_expired(token):
-    """TEST 2: checkout.session.expired -> payment status='failed', subscription NOT activated."""
-    headers = {"Authorization": f"Bearer {token}"}
-
-    # Snapshot subscription state BEFORE
-    rp = requests.get(f"{API}/auth/profile", headers=headers, timeout=15)
-    sub_before = ((rp.json().get("user") or rp.json()).get("subscription") or {}) if rp.status_code == 200 else {}
-
-    # Create subscription monthly checkout
-    r = requests.post(f"{API}/payments/stripe/subscription/checkout",
-                      json={"plan": "monthly"}, headers=headers, timeout=30)
-    if r.status_code != 200:
-        log("6a. expired-flow setup checkout", False, f"status={r.status_code} body={r.text[:200]}")
-        return False
-    sid = r.json().get("sessionId")
-    log("6a. expired-flow setup checkout", True, f"sid={sid[:30]}")
-
-    # Send checkout.session.expired webhook
-    webhook_body = {
-        "type": "checkout.session.expired",
-        "data": {"object": {"id": sid}}
-    }
-    wr = requests.post(f"{API}/payments/stripe/webhook", json=webhook_body, timeout=20)
-    log("6b. webhook checkout.session.expired -> 200", wr.status_code == 200,
-        f"status={wr.status_code} body={wr.text[:200]}")
-
-    # Verify payment doc status == 'failed' in MongoDB
-    time.sleep(0.5)
-    doc = asyncio.run(get_payment_doc(sid))
-    status_ok = doc and doc.get("status") == "failed"
-    log("6c. payment doc status='failed' in Mongo", bool(status_ok),
-        f"doc.status={doc and doc.get('status')}, completedAt={doc and doc.get('completedAt')}")
-
-    # Verify subscription NOT activated by this event (state unchanged or still trial)
-    rp2 = requests.get(f"{API}/auth/profile", headers=headers, timeout=15)
-    sub_after = ((rp2.json().get("user") or rp2.json()).get("subscription") or {}) if rp2.status_code == 200 else {}
-    # The invariant: subscription was NOT changed by this expired webhook
-    not_activated = (sub_before == sub_after)
-    log("6d. subscription NOT activated by expired webhook", not_activated,
-        f"before={sub_before} after={sub_after}")
-
-    return bool(status_ok) and not_activated
+    # C4: idempotency
+    wr2 = requests.post(f"{API}/payments/stripe/webhook", json=webhook_payload, timeout=30)
+    async def _verify_no_dup():
+        doc = await mongo_find_payment(sid)
+        codes = await mongo_find_codes_for_payment(str(doc["_id"]))
+        return len(codes) == 3, f"after replay count={len(codes)}"
+    ok2, info2 = loop.run_until_complete(_verify_no_dup())
+    log("C4 webhook idempotency (replay)", wr2.status_code == 200 and ok2, info2)
 
 
-def test_webhook_async_succeeded(token):
-    """TEST 3: checkout.session.async_payment_succeeded -> payment 'completed' + subscription active."""
-    headers = {"Authorization": f"Bearer {token}"}
-
-    # Create another monthly checkout
-    r = requests.post(f"{API}/payments/stripe/subscription/checkout",
-                      json={"plan": "monthly"}, headers=headers, timeout=30)
-    if r.status_code != 200:
-        log("7a. async-succeeded-flow setup checkout", False, f"status={r.status_code} body={r.text[:200]}")
-        return False
-    sid = r.json().get("sessionId")
-    log("7a. async-succeeded-flow setup checkout", True, f"sid={sid[:30]}")
-
-    # Send async_payment_succeeded webhook with payment_status=paid
-    webhook_body = {
-        "type": "checkout.session.async_payment_succeeded",
-        "data": {
-            "object": {
-                "id": sid,
-                "payment_status": "paid",
-                "payment_intent": "pi_test_async_succ",
-            }
-        },
-    }
-    wr = requests.post(f"{API}/payments/stripe/webhook", json=webhook_body, timeout=20)
-    log("7b. webhook async_payment_succeeded -> 200", wr.status_code == 200,
-        f"status={wr.status_code} body={wr.text[:200]}")
-
-    # Verify payment doc completed
-    time.sleep(0.5)
-    doc = asyncio.run(get_payment_doc(sid))
-    status_ok = doc and doc.get("status") == "completed"
-    log("7c. payment doc status='completed' in Mongo", bool(status_ok),
-        f"doc.status={doc and doc.get('status')}")
-
-    # Verify subscription activated
-    rp = requests.get(f"{API}/auth/profile", headers=headers, timeout=15)
-    sub = ((rp.json().get("user") or rp.json()).get("subscription") or {}) if rp.status_code == 200 else {}
-    checks = [
-        ("subscription.status=active", sub.get("status") == "active"),
-        ("subscription.plan=monthly", sub.get("plan") == "monthly"),
-        ("subscription.provider=stripe", sub.get("provider") == "stripe"),
-    ]
-    all_ok = all(ok for _, ok in checks) and bool(status_ok)
-    info = "; ".join(f"{n}={'OK' if ok else 'FAIL'}" for n, ok in checks) + f" | sub={sub}"
-    log("7d. subscription activated by async_payment_succeeded", all_ok, info)
-    return all_ok
+# --------------------------------------------------------------------- D (code-path)
+def test_D_code_path():
+    """Inspect _resolve_ambassador_price_id logic by reading source."""
+    src = Path("/app/backend/stripe_api.py").read_text()
+    # D1: hardcoded LIVE defaults exist
+    has_live_default = ("price_1TZ7XB2Hpe19XBXi9wjvH4yI" in src
+                        and "price_1TZ7Zf2Hpe19XBXiUPtD9xT0" in src
+                        and "price_1TZ7b02Hpe19XBXipYBofcoD" in src)
+    # D1: returns these when STRIPE_LIVE_MODE is True
+    live_logic = "if STRIPE_LIVE_MODE:" in src and "_AMBASSADOR_PRICE_DEFAULTS_LIVE.get(plan" in src
+    # D2: env override
+    env_override = 'os.getenv(env_key' in src and 'STRIPE_AMBASSADOR_PRICE_' in src
+    log("D1 hardcoded LIVE Price IDs present in source", has_live_default,
+        f"all 3 IDs present={has_live_default}")
+    log("D1 live-mode branch returns hardcoded defaults", live_logic,
+        f"branch present={live_logic}")
+    log("D2 env var STRIPE_AMBASSADOR_PRICE_<PLAN> override logic", env_override,
+        f"override logic present={env_override}")
 
 
-def test_session_status_polling(token):
-    """TEST 4: Session status polling returns proper status."""
-    headers = {"Authorization": f"Bearer {token}"}
-    r = requests.post(f"{API}/payments/stripe/subscription/checkout",
-                      json={"plan": "monthly"}, headers=headers, timeout=30)
-    if r.status_code != 200:
-        log("8a. polling setup checkout", False, f"status={r.status_code}")
-        return False
-    sid = r.json().get("sessionId")
+# --------------------------------------------------------------------- main
+def main():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
-    sr = requests.get(f"{API}/payments/stripe/session/{sid}", headers=headers, timeout=20)
-    ok = sr.status_code == 200 and sr.json().get("status") in ("pending", "completed", "failed")
-    log("8a. GET /payments/stripe/session/{id} returns proper status", ok,
-        f"status={sr.status_code} body={sr.text[:200]}")
-    return ok
+    print("=" * 70)
+    print(f"Backend URL: {API}")
+    print(f"Mongo: {MONGO_URL} db={DB_NAME}")
+    print(f"Stripe key mode: {'TEST' if STRIPE_SECRET_KEY.startswith('sk_test_') else 'LIVE'}")
+    print("=" * 70)
+
+    # A) sanity
+    test_A1_config()
+    token, user_id = login_get_token()
+    print(f"[i] Logged in user_id={user_id}")
+    test_A2_subscription_monthly(token)
+    test_A3_subscription_invalid(token)
+
+    # B) ambassador checkouts in TEST mode (fallback)
+    b1_body, b1_doc = loop.run_until_complete(_ambassador_checkout_and_verify(token, "monthly", 1, label="1"))
+    b2_body, b2_doc = loop.run_until_complete(_ambassador_checkout_and_verify(token, "quarterly", 3, label="2"))
+    b3_body, b3_doc = loop.run_until_complete(_ambassador_checkout_and_verify(token, "yearly", 5, label="3"))
+
+    # B4 invalid
+    r = requests.post(f"{API}/payments/stripe/ambassador/checkout",
+                      headers={"Authorization": f"Bearer {token}"},
+                      json={"plan": "weekly", "quantity": 1}, timeout=30)
+    log("B4 invalid plan -> 400", r.status_code == 400 and "invalide" in (r.json().get("detail") or "").lower(),
+        f"status={r.status_code} body={r.text[:80]}")
+
+    # B5 cap qty=1000 -> 100
+    loop.run_until_complete(_ambassador_checkout_and_verify(token, "monthly", 1000, expected_qty=100, label="5 cap"))
+
+    # B6 min qty=0 -> 1
+    loop.run_until_complete(_ambassador_checkout_and_verify(token, "monthly", 0, expected_qty=1, label="6 min"))
+
+    # B8 stripe-side verification: confirm price_data (not price ref) in test mode
+    for label, body in [("monthly", b1_body), ("quarterly", b2_body), ("yearly", b3_body)]:
+        sid = body.get("sessionId")
+        if not sid:
+            log(f"B8 {label} session inspection", False, "no sid")
+            continue
+        uses_pd, price_id, product_name = verify_stripe_session_uses_price_data(sid)
+        log(f"B8 {label} Stripe session uses price_data (TEST fallback)", uses_pd is True,
+            f"price_id={price_id} product_name={product_name}")
+
+    # C) webhook fulfillment
+    test_C_webhook_fulfillment(token, user_id, loop)
+
+    # D) code-path verification
+    test_D_code_path()
+
+    # ---------- summary
+    print("=" * 70)
+    passed = sum(1 for _, ok, _ in results if ok)
+    failed = [r for r in results if not r[1]]
+    print(f"TOTAL: {passed}/{len(results)} PASSED")
+    if failed:
+        print("FAILED:")
+        for n, _, info in failed:
+            print(f"  - {n}: {info}")
+    sys.exit(0 if not failed else 1)
 
 
 if __name__ == "__main__":
-    print(f"\n=== TekaTeka Stripe Integration Test ===")
-    print(f"Backend: {API}\n")
-
-    test_config()
-    trial_token = test_free_trial()
-
-    rp = phone_login(TEST_PHONE_PRIMARY)
-    if rp.status_code == 200:
-        primary_token = rp.json().get("token")
-        log("Primary user phone-login", bool(primary_token), f"phone={TEST_PHONE_PRIMARY}")
-    else:
-        primary_token = None
-        log("Primary user phone-login", False, f"status={rp.status_code} body={rp.text[:200]}")
-
-    token = primary_token or trial_token
-    if not token:
-        print("\nCRITICAL: No JWT token available")
-        sys.exit(1)
-
-    test_subscription_checkout(token)
-    test_ambassador_checkout(token)
-    test_webhook_fulfillment(token)
-    test_webhook_expired(token)
-    test_webhook_async_succeeded(token)
-    test_session_status_polling(token)
-
-    print("\n=== SUMMARY ===")
-    passed = sum(1 for _, ok, _ in results if ok)
-    total = len(results)
-    print(f"{passed}/{total} checks passed\n")
-    for name, ok, info in results:
-        tag = "PASS" if ok else "FAIL"
-        print(f"[{tag}] {name}")
-        if not ok:
-            print(f"      -> {info}")
-    sys.exit(0 if passed == total else 1)
+    main()

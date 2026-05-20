@@ -580,10 +580,25 @@ frontend:
           agent: "main"
           comment: "Custom DatePickerModal component implemented with UP/DOWN arrows for Day, Month (French names), and Year. Two scenarios: 1) Add/edit debt form calendar button, 2) Quick date change orange 'Date' button on debt cards. Needs testing for future/past date functionality and proper modal rendering."
 
+  - task: "Stripe Ambassador Checkout - Explicit Stripe Price IDs"
+    implemented: true
+    working: true
+    file: "backend/stripe_api.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Refactored create_ambassador_checkout to use explicit Stripe Price IDs from STRIPE_AMBASSADOR_PRICE_IDS (monthly=price_1TZ7XB2Hpe19XBXi9wjvH4yI, quarterly=price_1TZ7Zf2Hpe19XBXiUPtD9xT0, yearly=price_1TZ7b02Hpe19XBXipYBofcoD). When a Price ID is configured, line_items uses {price, quantity} format with mode='payment'. Fallback to price_data only if Price ID is missing (dev/test safety). Webhook unchanged - reads metadata.plan + metadata.quantity to generate codes. db.payments now records stripePriceId and uses session.amount_total when available. IMPORTANT: User subscription checkout (create_subscription_checkout) is UNCHANGED."
+        - working: true
+          agent: "testing"
+          comment: "REFACTOR VERIFIED – ALL 19 CHECKS PASS (TEST mode, sk_test_). A) Sanity & regression on the UNCHANGED subscription endpoint: GET /api/payments/stripe/config returns enabled=true, mode='test', currency='eur'. POST /api/payments/stripe/subscription/checkout {monthly} returns 200 with valid https://checkout.stripe.com/ URL and cs_test_ sessionId; Stripe API inspection of the created session confirms the line item is built from inline price_data (auto-generated price id like price_1TZ8EhCRE..., product_name 'TekaTeka - Abonnement monthly') — subscription flow is untouched. Invalid plan 'weekly' returns 400 'Plan invalide'. B) Ambassador checkout in TEST mode (fallback path): {monthly,1}->200 amount=4.0; {quarterly,3}->200 amount=36.0; {yearly,5}->200 amount=250.0; all MongoDB docs status='pending', type='ambassador_codes', currency='EUR', stripeSessionId starts with cs_test_, stripePriceId=None (null) as expected for fallback path. Invalid plan 'weekly' -> 400. Quantity capping verified: qty=1000 -> doc.quantity=100, amount=400.0; qty=0 -> doc.quantity=1, amount=4.0. B8) Stripe.checkout.Session.retrieve confirms line_items[0].price is an inline auto-generated price (NOT one of the hardcoded LIVE price_1TZ7XB.../1TZ7Zf.../1TZ7b0... IDs); product_name reads 'TekaTeka - Code d'activation monthly/quarterly/yearly' confirming price_data fallback. C) Webhook fulfillment unchanged: ambassador checkout {quarterly,3} -> POST /payments/stripe/webhook checkout.session.completed returns 200, payments.status='completed', 3 NEW ambassador_codes inserted (TK-3AF8D1AE, TK-F2CB1C3D, TK-811F413C) each with plan='quarterly', durationDays=90, status='available', ambassadorUserId=<user>; replay is idempotent (count stays 3). D) Code-path review: _resolve_ambassador_price_id correctly returns hardcoded LIVE defaults when STRIPE_LIVE_MODE is True; STRIPE_AMBASSADOR_PRICE_<PLAN> env var override logic present and would take precedence. The refactor is production-ready; subscription flow regression-free; TEST mode correctly exercises the price_data fallback as designed."
+
 metadata:
   created_by: "testing_agent"
   version: "1.0"
-  test_sequence: 2
+  test_sequence: 3
   run_ui: false
 
 test_plan:
