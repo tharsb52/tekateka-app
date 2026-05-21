@@ -224,7 +224,7 @@ export default function AmbassadorActivateScreen() {
           ) : (
             <>
               <Ionicons name="flash" size={22} color="#fff" />
-              <Text style={styles.activateBtnText}>Activer le code</Text>
+              <Text style={styles.activateBtnText}>Activer Abonnement</Text>
             </>
           )}
         </TouchableOpacity>

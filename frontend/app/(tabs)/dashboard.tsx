@@ -442,7 +442,56 @@ export default function DashboardScreen() {
         </TouchableOpacity>
       )}
 
-      {/* Main Stats Cards */}
+      {/* ============ STOCK ALERT (re-ordered to top per spec) ============ */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Alerte Stock</Text>
+        <View style={{ flexDirection: 'row', gap: 12 }}>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => router.push({ pathname: '/stock-alerts', params: { type: 'low' } })}
+            style={[styles.stockCard, { backgroundColor: '#fff7ed', borderColor: '#fed7aa' }]}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Ionicons name="warning" size={22} color="#f97316" />
+              <Text style={{ color: '#9a3412', fontWeight: '700', fontSize: 13 }}>Stock faible</Text>
+            </View>
+            <Text style={[styles.stockCardValue, { color: '#f97316' }]}>{stockStats.low.length}</Text>
+            <Text style={styles.stockCardHint}>produit(s) sous seuil</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => router.push({ pathname: '/stock-alerts', params: { type: 'empty' } })}
+            style={[styles.stockCard, { backgroundColor: '#fef2f2', borderColor: '#fecaca' }]}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Ionicons name="close-circle" size={22} color="#dc2626" />
+              <Text style={{ color: '#991b1b', fontWeight: '700', fontSize: 13 }}>Stock nul</Text>
+            </View>
+            <Text style={[styles.stockCardValue, { color: '#dc2626' }]}>{stockStats.empty.length}</Text>
+            <Text style={styles.stockCardHint}>produit(s) épuisé(s)</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* ============ Meilleures ventes (re-ordered to top per spec) ============ */}
+      <View style={styles.section}>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => router.push('/best-sellers')}
+          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fef3c7', padding: 14, borderRadius: 12, borderWidth: 1.5, borderColor: '#fde68a' }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Ionicons name="trophy" size={20} color="#d97706" />
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#1e293b' }}>Meilleures ventes</Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Text style={{ fontSize: 12, color: '#d97706', fontWeight: '600' }}>Voir la liste</Text>
+            <Ionicons name="arrow-forward" size={18} color="#d97706" />
+          </View>
+        </TouchableOpacity>
+      </View>
+
+      {/* Main Stats Cards (Total ventes / Total Charges / Total Dettes / Bénéfices) */}
       <View style={styles.statsContainer}>
         {/* Sales Card */}
         <View style={[styles.statCard, styles.salesCard]}>
@@ -494,7 +543,7 @@ export default function DashboardScreen() {
             />
             <View style={{ flex: 1 }}>
               <Text style={styles.profitLabel}>
-                {isProfit ? i18n.t('realProfit') || i18n.t('profit') : i18n.t('loss')}
+                {isProfit ? 'Bénéfices' : i18n.t('loss')}
               </Text>
               <Text style={styles.profitValue}>
                 {formatCurrency(Math.abs(stats.realProfit), user?.currency || 'USD')}
@@ -558,55 +607,7 @@ export default function DashboardScreen() {
         </ScrollView>
       </View>
 
-      {/* ============ STOCK ALERT (clickable cards -> /stock-alerts) ============ */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Alerte Stock</Text>
-        <View style={{ flexDirection: 'row', gap: 12 }}>
-          <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={() => router.push({ pathname: '/stock-alerts', params: { type: 'low' } })}
-            style={[styles.stockCard, { backgroundColor: '#fff7ed', borderColor: '#fed7aa' }]}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Ionicons name="warning" size={22} color="#f97316" />
-              <Text style={{ color: '#9a3412', fontWeight: '700', fontSize: 13 }}>Stock faible</Text>
-            </View>
-            <Text style={[styles.stockCardValue, { color: '#f97316' }]}>{stockStats.low.length}</Text>
-            <Text style={styles.stockCardHint}>produit(s) avec 1 unité</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={() => router.push({ pathname: '/stock-alerts', params: { type: 'empty' } })}
-            style={[styles.stockCard, { backgroundColor: '#fef2f2', borderColor: '#fecaca' }]}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Ionicons name="close-circle" size={22} color="#dc2626" />
-              <Text style={{ color: '#991b1b', fontWeight: '700', fontSize: 13 }}>Stock nul</Text>
-            </View>
-            <Text style={[styles.stockCardValue, { color: '#dc2626' }]}>{stockStats.empty.length}</Text>
-            <Text style={styles.stockCardHint}>produit(s) épuisé(s)</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* (Bilan mensuel moved to "Plus" page -> /monthly-report) */}
-      {/* Top Products - Meilleures ventes (button -> /best-sellers) */}
-      <View style={styles.section}>
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={() => router.push('/best-sellers')}
-          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fef3c7', padding: 14, borderRadius: 12, borderWidth: 1.5, borderColor: '#fde68a' }}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Ionicons name="trophy" size={20} color="#d97706" />
-            <Text style={{ fontSize: 16, fontWeight: '700', color: '#1e293b' }}>Meilleures ventes</Text>
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <Text style={{ fontSize: 12, color: '#d97706', fontWeight: '600' }}>Voir la liste</Text>
-            <Ionicons name="arrow-forward" size={18} color="#d97706" />
-          </View>
-        </TouchableOpacity>
-      </View>
+      {/* (Stock Alert + Meilleures ventes ré-ordonnés tout en haut — sections originales supprimées ici) */}
 
       {/* (Old low stock section removed — replaced by the dedicated "État du stock" card above) */}
 

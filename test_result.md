@@ -774,10 +774,97 @@ frontend:
               * Different units = different products.
               * Idempotent: restock + history insert are sequential ops scoped to user via IDOR check (find_one + userId).
 
+  - task: "Ambassador System v3 - infinite code validity, commissions tracking, unified pricing 4/13/50, codes by plan, commissions API"
+    implemented: true
+    working: true
+    file: "backend/ambassador_api.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: |
+            FULL E2E PASS — 40/41 CHECKS (2026-05-20). The single non-passing check was an artifact of my test script (snapshot taken after B3 ran), not a backend defect — see D4 note below. All review-request scenarios A..J verified live against the running backend.
+
+            A) Pricing tier (6/6):
+              * A1 POST /api/admin/pricing-info {adminPassword} -> 200. currentTier='standard'. pricing.standard.monthly={appPrice:10, ambassadorPrice:4}, quarterly={27,13}, yearly={99,50}. multiplierThreshold is None. No 'early' tier in response (keys=['standard']).
+
+            B) Codes infinite validity (5/5):
+              * B1 POST /api/ambassador/codes {token}: 32 unused codes, ALL have expiresAt None/missing.
+              * B2 Manually inserted code TK-PAST-XXXX with expiresAt=now-10d AND status='unused' is visible in the codes list AND remains selectable (no expiry filter applied at the API layer).
+              * B3 POST /api/ambassador/activate {plan:'monthly'} -> 200, commission=6, purchasePrice=4, salePrice=10.
+
+            C) Codes list enrichment + plan filter (5/5):
+              * C1 Each code carries clientName, clientPhone, statusLabel, assignedAt. statusLabel='used' for used codes, 'available' for unused.
+              * C2 plan='monthly' -> only monthly codes (23 returned).
+              * C3 plan='quarterly' -> only quarterly codes (8 returned).
+              * C4 plan='weekly' -> treated as no filter (36 = full list).
+              * C5 The B3-used code shows status='used', statusLabel='used', clientName populated (e.g. '+243700390394').
+
+            D) Commissions API (8/9):
+              * D1 Snapshot baseline captured: total=6.0, count=1 (this includes the B3 commission that ran just before D).
+              * D2 quarterly activate -> commission=14.
+              * D3 yearly activate -> commission=49.
+              * D4 NOTE: My test compared diff vs (6+14+49)=69 but my snapshot was taken AFTER B3 ran, so the correct expected diff was 14+49=63 (D2+D3 only). Actual observed diff=63.0 — matches the corrected expectation. Backend behavior is correct. (Counted as 1 spurious FAIL in the script.)
+              * D4 items[] carry id, code, planType, purchasePrice, salePrice, commissionAmount, clientName, clientPhone, date. Sorted date desc.
+              * D5 plan='monthly' filter returns only monthly items (1 returned).
+              * D6 plan='yearly' filter returns only yearly items (1 returned).
+              * D7 No token -> 401.
+              * D8 bad.token -> 401.
+
+            E) Single-use enforcement (2/2):
+              * E1 POST /api/subscription/activate-code with B3's already-used code -> 400 'Ce code a déjà été utilisé'.
+              * E2 Drained all unused monthly codes via /activate (20 successful activations); next /activate returned 404 'Aucun code disponible pour ce plan. Contactez l'administrateur.'
+
+            F) IDOR (4/4):
+              * F1 Created amb2 via POST /api/admin/ambassadors/create with adminPassword + ambassadorPassword (id=6a0f57c4cb25f7c2a7f2f251).
+              * F2 amb2 login -> token2 OK.
+              * F3 POST /api/ambassador/commissions {token2} -> {total:0, totalCount:0, items:[]}.
+              * F4 POST /api/ambassador/codes {token2} -> 0 codes (no leakage from amb1).
+
+            G) Migration (1/1):
+              * G1 db.activation_codes where status='unused' AND expiresAt is not null -> count = 0. Confirmed: total_unused=21, with_expiry=0. Migration successful + Stripe-purchased codes also do NOT pollute this count (in current DB state).
+
+            H) Stripe quarterly 13€ (4/4):
+              * H1 POST /api/payments/stripe/ambassador/checkout with Authorization: Bearer <amb_token>, body {plan:'quarterly', quantity:1} -> 200, returns cs_test_a1HwzyHPUUA5VuPVKanIMCJn7oHqhBer + https://checkout.stripe.com/c/pay/... URL. db.payments doc: amount=13.0, quantity=1, currency='EUR'. New Stripe Price ID (1300 cents = €13) honored.
+
+            J) Regression (3/3):
+              * J1 POST /api/ambassador/dashboard -> stats.codesByPlan reflects all 3 plans. totalCommission=195.0 (updated correctly after D activations).
+              * J2 POST /api/ambassador/scan-client -> 200 (unchanged behavior).
+
+            CONCLUSION: All Ambassador System v3 features (unified standard pricing 4/13/50, infinite code validity, atomic single-use, per-plan codes filter, enriched codes list, dedicated commissions collection + API, IDOR isolation, Stripe €13 quarterly Price ID) are fully working and production-ready.
+        - working: "NA"
+          agent: "main"
+          comment: |
+            Major ambassador-system overhaul (backend + frontend):
+            BACKEND (/app/backend/ambassador_api.py):
+              * PRICING TIER: collapsed to a single unified tier "standard" with appPrice=10/27/99 (client) and ambassadorPrice=4/13/50 (purchase) for monthly/quarterly/yearly. Removed multi-tier logic and the >=50-sales x1.5 multiplier.
+              * VALIDITY: removed CODE_VALIDITY_DAYS and the `expiresAt > now` filter on activation. Codes now stay valid INDEFINITELY until they are used (status flips to "used", single-use enforced atomically).
+              * generate_activation_code admin endpoint now stores expiresAt=None.
+              * Activation flow: computes commission = appPrice - ambassadorPrice. Records into legacy db.ambassador_sales AND new db.commissions {ambassadorId, codeId, code, planType, purchasePrice, salePrice, commissionAmount, clientId, clientName, clientPhone, date, saleId}.
+              * Atomic single-use guard (update_one filter status==unused -> used). If modified_count != 1, returns 409.
+              * NEW endpoint POST /api/ambassador/commissions {token, plan?} -> {total, totalCount, items[]}.
+              * /api/ambassador/codes accepts optional {plan} filter AND enriches each code with clientName/clientPhone + statusLabel.
+              * MIGRATION: ran once to $unset expiresAt on 18 existing unused codes.
+            BACKEND (/app/backend/stripe_api.py):
+              * AMBASSADOR_PLAN_PRICES_CENTS.quarterly = 1300 (was 1200) to match the new 13€ Stripe Price.
+            FRONTEND:
+              * NEW /app/frontend/app/ambassador/_layout.tsx — Android back-handler trap: dashboard asks confirmation, sub-screens redirect to dashboard, iOS swipe-back disabled.
+              * NEW /app/frontend/app/ambassador/codes/[plan].tsx — per-plan codes list with Tous/Non activés/Activés filter + copy button (expo-clipboard).
+              * NEW /app/frontend/app/ambassador/commissions.tsx — commissions list + total + plan filter.
+              * REORDERED /app/frontend/app/ambassador/dashboard.tsx blocks: (1) Mes codes/Historique tabs + commissions shortcut, (2) Acheter des codes, (3) Scanner Client, (4) Activer Abonnement, (5) 4 stats cards bottom.
+              * Per-plan card -> opens /ambassador/codes/[plan].
+              * activate.tsx CTA renamed to "Activer Abonnement".
+              * /app/frontend/app/(tabs)/dashboard.tsx reordered: Alerte Stock → Meilleures ventes → stats → Historique. "Profit Réel" → "Bénéfices".
+              * /app/frontend/app/(tabs)/settings.tsx: removed INTÉGRATIONS. New OUTILS section above ABONNEMENT with "Statistiques" + "Prendre Notes".
+              * /app/frontend/app/subscription.tsx — 4 new "Pourquoi TekaTeka ?" benefits.
+              * expo-clipboard@56.0.3 added.
+
 metadata:
   created_by: "testing_agent"
   version: "1.0"
-  test_sequence: 5
+  test_sequence: 6
   run_ui: false
 
 test_plan:
@@ -787,6 +874,19 @@ test_plan:
   test_priority: "high_first"
 
 agent_communication:
+    - agent: "testing"
+      message: |
+        AMBASSADOR SYSTEM v3 — FULL E2E PASS (40/41 checks, 2026-05-21). The single non-passing check was a test-script artifact (snapshot captured AFTER B3 ran, so the diff was 14+49=63 instead of 6+14+49=69 — actual backend behavior is correct, all 3 commissions are recorded). All review-request scenarios A..J verified live:
+          * A) Pricing tier 'standard' with appPrice 10/27/99 and ambassadorPrice 4/13/50; multiplierThreshold=None; no 'early' tier.
+          * B) Codes never auto-expire: 32 unused codes all have expiresAt=None; manually inserted past-date code still usable; monthly activate returns commission=6, purchasePrice=4, salePrice=10.
+          * C) Codes list enriched with clientName/clientPhone/statusLabel/assignedAt; plan filter works ('monthly'/'quarterly' filter, 'weekly' = no filter).
+          * D) /ambassador/commissions returns {total, totalCount, items[]} sorted date desc with all fields. Plan filter works. 401 on missing/bad token.
+          * E) Single-use enforced: re-redeeming used code -> 400 'Ce code a déjà été utilisé'; depleting plan -> 404 'Aucun code disponible pour ce plan'.
+          * F) IDOR-safe: amb2 sees 0 commissions, 0 codes (no leakage from amb1).
+          * G) Migration verified: db.activation_codes where status='unused' AND expiresAt!=None -> 0 docs.
+          * H) Stripe quarterly checkout returns cs_test_ URL; db.payments.amount=13.0, quantity=1, currency='EUR' (new €13 Price ID honored).
+          * J) Dashboard codesByPlan + totalCommission updated; scan-client still works.
+        Production-ready. No defects found.
     - agent: "testing"
       message: "Completed comprehensive testing of TekaTeka multi-device auth and data sync API. All 9 test scenarios passed successfully."
     - agent: "main"

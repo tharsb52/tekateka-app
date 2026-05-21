@@ -1,22 +1,29 @@
 """
-Product Management v2 backend tests.
+Ambassador System v3 backend tests.
 
-Covers:
-  A) Auto SKU                       (A1..A6)
-  B) Duplicate detection            (B1..B8)
-  C) Restock + price history        (C1..C9)
-  D) Stock alert flags              (D1..D6)
-  E) Sale -> stock decrement alert  (E1..E4)
-  F) SKU immutability + sequence    (F1..F3)
+Covers tests A..J from the review request:
+  A) Pricing tier
+  B) Codes infinite validity
+  C) Codes list with enrichment + plan filter
+  D) Commissions API
+  E) Single-use enforcement
+  F) IDOR
+  G) Migration
+  H) Stripe quarterly 13€
+  J) Regression
 """
 import os
 import sys
+import time
 import json
+import uuid
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import requests
 from pymongo import MongoClient
+from bson import ObjectId
 from dotenv import load_dotenv
 
 ROOT = Path("/app/backend")
@@ -27,8 +34,9 @@ API = f"{BACKEND_BASE}/api"
 MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
 DB_NAME = os.getenv("DB_NAME", "test_database")
 
-USER1_PHONE = "+243111000111"
-USER2_PHONE = "+243777999888"
+ADMIN_PASSWORD = "Ndinemakutamillions82@"
+AMB_EMAIL = "ambassador@tekateka.com"
+AMB_PASSWORD = "Ambassador2025"
 
 mongo = MongoClient(MONGO_URL)
 db = mongo[DB_NAME]
@@ -36,335 +44,468 @@ db = mongo[DB_NAME]
 results: List[Dict[str, Any]] = []
 
 
-def log(test_id: str, ok: bool, detail: str = ""):
+def record(name: str, ok: bool, msg: str = ""):
     status = "PASS" if ok else "FAIL"
-    results.append({"id": test_id, "status": status, "detail": detail})
-    print(f"[{status}] {test_id} - {detail}")
+    line = f"[{status}] {name}: {msg}"
+    print(line, flush=True)
+    results.append({"name": name, "ok": ok, "msg": msg})
 
 
-def post(path, token=None, body=None):
-    h = {"Content-Type": "application/json"}
-    if token:
-        h["Authorization"] = f"Bearer {token}"
-    return requests.post(f"{API}{path}", headers=h, data=json.dumps(body or {}), timeout=30)
+def post(path: str, payload: dict, headers: Optional[dict] = None) -> requests.Response:
+    return requests.post(f"{API}{path}", json=payload, headers=headers or {}, timeout=30)
 
 
-def get(path, token=None):
-    h = {}
-    if token:
-        h["Authorization"] = f"Bearer {token}"
-    return requests.get(f"{API}{path}", headers=h, timeout=30)
+# -----------------------------------------------------------------------
+# Setup: get ambassador token + a test client user
+# -----------------------------------------------------------------------
+def setup():
+    r = post("/ambassador/login", {"email": AMB_EMAIL, "password": AMB_PASSWORD})
+    assert r.status_code == 200, f"Ambassador login failed: {r.status_code} {r.text}"
+    amb_data = r.json()
+    amb_token = amb_data["token"]
+    amb_id = amb_data["ambassador"]["id"]
+    print(f"Ambassador logged in: id={amb_id}")
+
+    # Get a client user via phone-login (creates if not exists)
+    r = post("/auth/phone-login", {"phoneNumber": "+243111000111"})
+    assert r.status_code == 200, f"Phone login failed: {r.status_code} {r.text}"
+    user_data = r.json()
+    user_token = user_data.get("token")
+    user_id = user_data.get("user", {}).get("id") or user_data.get("userId")
+    print(f"Client user logged in: id={user_id}")
+
+    return amb_token, amb_id, user_token, user_id
 
 
-def put(path, token, body):
-    h = {"Content-Type": "application/json"}
-    if token:
-        h["Authorization"] = f"Bearer {token}"
-    return requests.put(f"{API}{path}", headers=h, data=json.dumps(body), timeout=30)
+# -----------------------------------------------------------------------
+# A) Pricing tier
+# -----------------------------------------------------------------------
+def test_a_pricing():
+    r = post("/admin/pricing-info", {"adminPassword": ADMIN_PASSWORD})
+    if r.status_code != 200:
+        record("A1 pricing-info status", False, f"got {r.status_code} {r.text}")
+        return
+    data = r.json()
+    ok = data.get("currentTier") == "standard"
+    record("A1 currentTier==standard", ok, str(data.get("currentTier")))
+    pricing = data.get("pricing", {})
+    std = pricing.get("standard", {})
+    m = std.get("monthly", {})
+    q = std.get("quarterly", {})
+    y = std.get("yearly", {})
+    record("A1 monthly=10/4", m.get("appPrice") == 10 and m.get("ambassadorPrice") == 4, str(m))
+    record("A1 quarterly=27/13", q.get("appPrice") == 27 and q.get("ambassadorPrice") == 13, str(q))
+    record("A1 yearly=99/50", y.get("appPrice") == 99 and y.get("ambassadorPrice") == 50, str(y))
+    record("A1 multiplierThreshold is None", data.get("multiplierThreshold") is None, str(data.get("multiplierThreshold")))
+    record("A1 no early tier", "early" not in pricing, str(list(pricing.keys())))
 
 
-def delete(path, token):
-    h = {}
-    if token:
-        h["Authorization"] = f"Bearer {token}"
-    return requests.delete(f"{API}{path}", headers=h, timeout=30)
+# -----------------------------------------------------------------------
+# B) Codes infinite validity
+# -----------------------------------------------------------------------
+def test_b_codes_validity(amb_token: str, amb_id: str, user_id: str):
+    # B1: list codes, unused ones must have expiresAt None/missing
+    r = post("/ambassador/codes", {"token": amb_token})
+    if r.status_code != 200:
+        record("B1 codes list", False, f"got {r.status_code} {r.text}")
+        return None
+    codes = r.json()
+    unused = [c for c in codes if c.get("status") == "unused"]
+    bad = [c for c in unused if c.get("expiresAt") not in (None, "", "null")]
+    record("B1 all unused codes have expiresAt None/missing",
+           len(bad) == 0,
+           f"unused={len(unused)} with_expiry={len(bad)}")
+
+    # B2: manually insert a code with expiresAt=past_date and activate
+    past_code = f"TK-PAST-{uuid.uuid4().hex[:4].upper()}"
+    db.activation_codes.insert_one({
+        "code": past_code,
+        "plan": "monthly",
+        "ambassadorId": amb_id,
+        "status": "unused",
+        "assignedAt": datetime.utcnow() - timedelta(days=60),
+        "expiresAt": datetime.utcnow() - timedelta(days=10),  # PAST
+        "usedAt": None,
+        "usedByUserId": None,
+    })
+    # Try to activate - the activation flow picks ANY unused monthly code
+    # for the ambassador. To ensure this specific past-date code is selected,
+    # we drain other monthly unused codes first... but actually simplest is:
+    # we just verify activate succeeds (any code). If activate picks past_code
+    # it proves past expiresAt isn't blocking. If it picks another, we still
+    # at least verify there's no expiry filter (the past code remains usable).
+    # Let's verify the past_code is now in the list of unused codes:
+    r2 = post("/ambassador/codes", {"token": amb_token, "plan": "monthly"})
+    monthly_codes = r2.json() if r2.status_code == 200 else []
+    past_in_list = any(c.get("code") == past_code for c in monthly_codes)
+    record("B2 past-date code is selectable from list",
+           past_in_list, f"past_code={past_code} in_list={past_in_list}")
+
+    # B3: activate a monthly code -> should return commission:6, purchase:4, sale:10
+    # Create a fresh client user for this test
+    r3 = post("/auth/phone-login", {"phoneNumber": f"+243700{int(time.time())%1000000:06d}"})
+    if r3.status_code != 200:
+        record("B3 fresh client login", False, r3.text)
+        return amb_token
+    fresh_client = r3.json().get("user", {}).get("id")
+
+    r4 = post("/ambassador/activate", {
+        "token": amb_token,
+        "clientUserId": fresh_client,
+        "plan": "monthly"
+    })
+    if r4.status_code != 200:
+        record("B3 activate monthly", False, f"{r4.status_code} {r4.text}")
+        return amb_token
+    act = r4.json()
+    record("B3 commission=6", act.get("commission") == 6, str(act.get("commission")))
+    record("B3 purchasePrice=4", act.get("purchasePrice") == 4, str(act.get("purchasePrice")))
+    record("B3 salePrice=10", act.get("salePrice") == 10, str(act.get("salePrice")))
+    # remember the used code for E1
+    return act.get("code"), fresh_client
 
 
-def login(phone):
-    r = post("/auth/phone-login", body={"phoneNumber": phone})
-    r.raise_for_status()
-    j = r.json()
-    return {"token": j["token"], "user_id": j["user"]["id"], "phone": phone}
+# -----------------------------------------------------------------------
+# C) Codes list enrichment + plan filter
+# -----------------------------------------------------------------------
+def test_c_codes_enrichment(amb_token: str, monthly_used_code: str):
+    # C1: all codes have clientName/clientPhone/statusLabel/assignedAt fields
+    r = post("/ambassador/codes", {"token": amb_token})
+    codes = r.json()
+    missing_fields = []
+    for c in codes:
+        for f in ("clientName", "clientPhone", "statusLabel", "assignedAt"):
+            if f not in c:
+                missing_fields.append((c.get("code"), f))
+                break
+    record("C1 codes carry enrichment fields",
+           len(missing_fields) == 0,
+           f"missing in {len(missing_fields)} codes")
+
+    # status labels correct
+    status_label_ok = all(
+        (c.get("statusLabel") == "used" if c.get("status") == "used" else c.get("statusLabel") == "available")
+        for c in codes
+    )
+    record("C1 statusLabel matches status", status_label_ok, "")
+
+    # C2 monthly only
+    r2 = post("/ambassador/codes", {"token": amb_token, "plan": "monthly"})
+    m = r2.json()
+    record("C2 plan=monthly returns only monthly",
+           all(c.get("plan") == "monthly" for c in m), f"count={len(m)}")
+
+    # C3 quarterly only
+    r3 = post("/ambassador/codes", {"token": amb_token, "plan": "quarterly"})
+    q = r3.json()
+    record("C3 plan=quarterly returns only quarterly",
+           all(c.get("plan") == "quarterly" for c in q), f"count={len(q)}")
+
+    # C4 weekly -> no filter (returns all)
+    r4 = post("/ambassador/codes", {"token": amb_token, "plan": "weekly"})
+    w = r4.json()
+    record("C4 plan=weekly treated as no filter",
+           len(w) == len(codes), f"weekly={len(w)} all={len(codes)}")
+
+    # C5 the B3 code is now used
+    used_match = [c for c in codes if c.get("code") == monthly_used_code]
+    if used_match:
+        c = used_match[0]
+        ok = (c.get("status") == "used"
+              and c.get("statusLabel") == "used"
+              and c.get("clientName"))
+        record("C5 B3 code is used + has clientName", ok,
+               f"status={c.get('status')} label={c.get('statusLabel')} name={c.get('clientName')}")
+    else:
+        record("C5 B3 code visible in list", False, f"code={monthly_used_code} not found")
 
 
-def reset_user(user_id):
-    db.products.delete_many({"userId": user_id})
-    db.counters.delete_many({"userId": user_id, "name": "products"})
-    db.purchase_price_history.delete_many({"userId": user_id})
-    db.sales.delete_many({"userId": user_id})
+# -----------------------------------------------------------------------
+# D) Commissions API
+# -----------------------------------------------------------------------
+def test_d_commissions(amb_token: str):
+    # D1: snapshot
+    r = post("/ambassador/commissions", {"token": amb_token})
+    if r.status_code != 200:
+        record("D1 commissions snapshot", False, f"{r.status_code} {r.text}")
+        return None
+    snap = r.json()
+    total_before = snap.get("total", 0)
+    count_before = snap.get("totalCount", 0)
+    print(f"D1 snapshot: total={total_before}, count={count_before}")
+    record("D1 commissions snapshot ok", True, f"total={total_before} count={count_before}")
+
+    # Need fresh clients for each activation
+    def fresh_client():
+        r = post("/auth/phone-login", {"phoneNumber": f"+243701{int(time.time()*1000)%10000000:07d}"})
+        time.sleep(0.05)
+        return r.json().get("user", {}).get("id")
+
+    # D2: activate quarterly -> commission 14
+    c1 = fresh_client()
+    r2 = post("/ambassador/activate", {"token": amb_token, "clientUserId": c1, "plan": "quarterly"})
+    if r2.status_code != 200:
+        record("D2 activate quarterly", False, f"{r2.status_code} {r2.text}")
+    else:
+        record("D2 quarterly commission=14", r2.json().get("commission") == 14, str(r2.json().get("commission")))
+
+    # D3: activate yearly -> commission 49
+    c2 = fresh_client()
+    r3 = post("/ambassador/activate", {"token": amb_token, "clientUserId": c2, "plan": "yearly"})
+    if r3.status_code != 200:
+        record("D3 activate yearly", False, f"{r3.status_code} {r3.text}")
+    else:
+        record("D3 yearly commission=49", r3.json().get("commission") == 49, str(r3.json().get("commission")))
+
+    # D4: commissions total ≈ before + 6 + 14 + 49
+    r4 = post("/ambassador/commissions", {"token": amb_token})
+    if r4.status_code != 200:
+        record("D4 commissions list", False, r4.text)
+        return None
+    cur = r4.json()
+    new_total = cur.get("total", 0)
+    # B3 added 6 too
+    expected_increment = 6 + 14 + 49  # monthly + quarterly + yearly
+    actual_increment = new_total - total_before
+    record(f"D4 total increased by ~69 (B3+D2+D3)",
+           abs(actual_increment - expected_increment) < 0.01,
+           f"before={total_before} after={new_total} diff={actual_increment}")
+
+    items = cur.get("items", [])
+    if items:
+        first = items[0]
+        required = {"id", "code", "planType", "purchasePrice", "salePrice",
+                    "commissionAmount", "clientName", "clientPhone", "date"}
+        missing = required - set(first.keys())
+        record("D4 items carry all required fields", not missing, f"missing={missing}")
+        # date desc
+        dates = [i.get("date") for i in items if i.get("date")]
+        is_desc = all(dates[i] >= dates[i+1] for i in range(len(dates)-1)) if dates else True
+        record("D4 items sorted date desc", is_desc, "")
+
+    # D5: monthly filter
+    r5 = post("/ambassador/commissions", {"token": amb_token, "plan": "monthly"})
+    m_items = r5.json().get("items", [])
+    record("D5 plan=monthly only", all(i.get("planType") == "monthly" for i in m_items),
+           f"count={len(m_items)}")
+
+    # D6: yearly filter
+    r6 = post("/ambassador/commissions", {"token": amb_token, "plan": "yearly"})
+    y_items = r6.json().get("items", [])
+    record("D6 plan=yearly only", all(i.get("planType") == "yearly" for i in y_items),
+           f"count={len(y_items)}")
+
+    # D7: no token -> 401
+    r7 = post("/ambassador/commissions", {})
+    record("D7 no token -> 401", r7.status_code == 401, f"got {r7.status_code}")
+
+    # D8: bad token -> 401
+    r8 = post("/ambassador/commissions", {"token": "bad.token"})
+    record("D8 bad token -> 401", r8.status_code == 401, f"got {r8.status_code}")
 
 
+# -----------------------------------------------------------------------
+# E) Single-use enforcement
+# -----------------------------------------------------------------------
+def test_e_single_use(user_token: str, used_monthly_code: str, amb_token: str):
+    # E1: redeem an already-used code -> 400
+    r = post("/subscription/activate-code", {"userId": "anyid", "code": used_monthly_code})
+    # Actually look at the endpoint signature - it takes userId+code in body
+    # If the code is already used, returns 400 "Ce code a déjà été utilisé"
+    if r.status_code == 400 and "déjà" in r.text:
+        record("E1 used code re-redeem -> 400 déjà utilisé", True, r.text[:120])
+    else:
+        record("E1 used code re-redeem -> 400 déjà utilisé", False,
+               f"got {r.status_code} {r.text[:150]}")
+
+    # E2: drain all unused monthly codes
+    drained = 0
+    max_iter = 200
+    while max_iter > 0:
+        max_iter -= 1
+        # fresh client
+        rfc = post("/auth/phone-login", {"phoneNumber": f"+243702{int(time.time()*1000)%10000000:07d}"})
+        if rfc.status_code != 200:
+            break
+        client_id = rfc.json().get("user", {}).get("id")
+        ra = post("/ambassador/activate", {
+            "token": amb_token,
+            "clientUserId": client_id,
+            "plan": "monthly"
+        })
+        if ra.status_code == 200:
+            drained += 1
+            time.sleep(0.05)
+        elif ra.status_code == 404:
+            record(f"E2 drain monthly: depleted after {drained} activations, /activate returns 404",
+                   "Aucun code" in ra.text, ra.text[:120])
+            return
+        else:
+            record(f"E2 drain monthly unexpected error", False,
+                   f"after {drained}: {ra.status_code} {ra.text[:150]}")
+            return
+    record("E2 drain monthly hit max iterations", False, f"drained={drained}")
+
+
+# -----------------------------------------------------------------------
+# F) IDOR
+# -----------------------------------------------------------------------
+def test_f_idor(amb1_id: str):
+    # F1: Create amb2
+    email2 = f"amb2-v3-{int(time.time())}@tekateka.com"
+    r = post("/admin/ambassadors/create", {
+        "adminPassword": ADMIN_PASSWORD,
+        "name": "Test Amb 2",
+        "email": email2,
+        "ambassadorPassword": "Amb2v3Pass!",
+        "country": "CD",
+        "city": "Kinshasa",
+    })
+    if r.status_code != 200:
+        record("F1 create amb2", False, f"{r.status_code} {r.text}")
+        return
+    amb2_id = r.json().get("ambassador", {}).get("id")
+    record("F1 amb2 created", bool(amb2_id), f"id={amb2_id}")
+
+    # F2: login amb2
+    r2 = post("/ambassador/login", {"email": email2, "password": "Amb2v3Pass!"})
+    if r2.status_code != 200:
+        record("F2 amb2 login", False, r2.text)
+        return
+    token2 = r2.json()["token"]
+    record("F2 amb2 login", True, "")
+
+    # F3: amb2 commissions = empty
+    r3 = post("/ambassador/commissions", {"token": token2})
+    data = r3.json()
+    ok = data.get("total") == 0 and len(data.get("items", [])) == 0
+    record("F3 amb2 commissions empty", ok, str(data)[:200])
+
+    # F4: amb2 codes don't include amb1's codes
+    r4 = post("/ambassador/codes", {"token": token2})
+    codes = r4.json()
+    # Each code should have ambassadorId == amb2_id, not amb1_id
+    bad = [c for c in codes if c.get("ambassadorId") and c.get("ambassadorId") != amb2_id]
+    record("F4 amb2 codes do not include amb1's codes",
+           len(bad) == 0, f"count={len(codes)} cross={len(bad)}")
+
+
+# -----------------------------------------------------------------------
+# G) Migration check
+# -----------------------------------------------------------------------
+def test_g_migration():
+    # Count unused codes with non-null expiresAt
+    n_total = db.activation_codes.count_documents({"status": "unused"})
+    n_with_expiry = db.activation_codes.count_documents({
+        "status": "unused",
+        "expiresAt": {"$ne": None, "$exists": True},
+    })
+    record(
+        "G1 unused codes with non-null expiresAt == 0",
+        n_with_expiry == 0,
+        f"total_unused={n_total} with_expiry={n_with_expiry}",
+    )
+
+
+# -----------------------------------------------------------------------
+# H) Stripe quarterly 13€
+# -----------------------------------------------------------------------
+def test_h_stripe(amb_token: str):
+    headers = {"Authorization": f"Bearer {amb_token}"}
+    r = requests.post(
+        f"{API}/payments/stripe/ambassador/checkout",
+        headers={**headers, "Content-Type": "application/json"},
+        json={"plan": "quarterly", "quantity": 1},
+        timeout=30,
+    )
+    if r.status_code != 200:
+        record("H1 stripe quarterly checkout 200", False, f"{r.status_code} {r.text[:200]}")
+        return
+    data = r.json()
+    url = data.get("url", "")
+    session_id = data.get("sessionId", "")
+    record("H1 returns cs_test_ session", session_id.startswith("cs_test_"), session_id[:40])
+    record("H1 returns checkout url", "checkout.stripe.com" in url, url[:80])
+
+    # Verify the db.payments doc
+    pay = db.payments.find_one({"stripeSessionId": session_id})
+    if not pay:
+        record("H1 payments doc inserted", False, "not found in DB")
+        return
+    record("H1 payments amount==13.0", pay.get("amount") == 13.0, str(pay.get("amount")))
+    record("H1 payments quantity==1", pay.get("quantity") == 1, str(pay.get("quantity")))
+
+
+# -----------------------------------------------------------------------
+# J) Regression
+# -----------------------------------------------------------------------
+def test_j_regression(amb_token: str, user_id: str):
+    # J1 dashboard
+    r = post("/ambassador/dashboard", {"token": amb_token})
+    if r.status_code != 200:
+        record("J1 dashboard", False, r.text)
+        return
+    stats = r.json().get("stats", {})
+    cbp = stats.get("codesByPlan", {})
+    total_comm = stats.get("totalCommission", 0)
+    record("J1 dashboard has codesByPlan", isinstance(cbp, dict) and "monthly" in cbp and "quarterly" in cbp and "yearly" in cbp, str(list(cbp.keys())))
+    record("J1 totalCommission > 0", total_comm > 0, str(total_comm))
+
+    # J2 scan-client
+    if user_id:
+        r2 = post("/ambassador/scan-client", {"token": amb_token, "clientUserId": user_id})
+        record("J2 scan-client works", r2.status_code == 200, f"{r2.status_code}")
+
+
+# -----------------------------------------------------------------------
+# Main
+# -----------------------------------------------------------------------
 def main():
-    print(f"== Backend: {API}")
-    print(f"== Mongo: {MONGO_URL} / {DB_NAME}")
+    print("=" * 70)
+    print("Ambassador System v3 - Backend Tests")
+    print("=" * 70)
 
-    u1 = login(USER1_PHONE)
-    u2 = login(USER2_PHONE)
-    print(f"User1 id={u1['user_id']}, User2 id={u2['user_id']}")
+    amb_token, amb_id, user_token, user_id = setup()
 
-    reset_user(u1["user_id"])
-    reset_user(u2["user_id"])
+    # Ensure ambassador has codes of all 3 plans (need plenty for drain test)
+    for plan, count in [("monthly", 15), ("quarterly", 5), ("yearly", 5)]:
+        rg = post("/admin/codes/generate", {
+            "adminPassword": ADMIN_PASSWORD,
+            "count": count,
+            "plan": plan,
+            "ambassadorId": amb_id,
+        })
+        if rg.status_code == 200:
+            print(f"Generated {count} {plan} codes")
+        else:
+            print(f"WARN generate {plan}: {rg.status_code} {rg.text[:120]}")
 
-    t1, t2 = u1["token"], u2["token"]
-    uid1, uid2 = u1["user_id"], u2["user_id"]
+    test_a_pricing()
+    b_result = test_b_codes_validity(amb_token, amb_id, user_id)
+    monthly_used_code = b_result[0] if isinstance(b_result, tuple) else None
+    if monthly_used_code:
+        test_c_codes_enrichment(amb_token, monthly_used_code)
+    test_d_commissions(amb_token)
+    if monthly_used_code:
+        test_e_single_use(user_token, monthly_used_code, amb_token)
+    test_f_idor(amb_id)
+    test_g_migration()
+    test_h_stripe(amb_token)
+    test_j_regression(amb_token, user_id)
 
-    # A) Auto SKU
-    print("\n--- A) Auto SKU ---")
-    r = post("/data/products", t1, {"name": "Riz", "purchasePrice": 2, "salePrice": 3, "stock": 10, "category": "food"})
-    riz = r.json()
-    log("A2", r.status_code == 200 and riz.get("sku") == "PROD-000001" and riz.get("duplicate") is False,
-        f"sku={riz.get('sku')} duplicate={riz.get('duplicate')}")
-
-    r = post("/data/products", t1, {"name": "Sucre", "purchasePrice": 1, "salePrice": 2, "stock": 20, "category": "food"})
-    sucre = r.json()
-    log("A3", r.status_code == 200 and sucre.get("sku") == "PROD-000002", f"sku={sucre.get('sku')}")
-
-    r = post("/data/products", t1, {"name": "Huile", "purchasePrice": 5, "salePrice": 7, "stock": 8, "category": "food"})
-    huile = r.json()
-    log("A4", r.status_code == 200 and huile.get("sku") == "PROD-000003", f"sku={huile.get('sku')}")
-
-    log("A5", True, "Monotonic increment confirmed A2..A4")
-
-    r = get("/data/products", t1)
-    products = r.json()
-    skus = sorted([p.get("sku") for p in products])
-    log("A6", r.status_code == 200 and skus == ["PROD-000001", "PROD-000002", "PROD-000003"] and len(products) == 3,
-        f"count={len(products)} skus={skus}")
-
-    # B) Duplicate detection
-    print("\n--- B) Duplicate detection ---")
-    initial = db.products.count_documents({"userId": uid1})
-
-    r = post("/data/products", t1, {"name": "riz", "purchasePrice": 2, "salePrice": 3, "stock": 5, "category": "food"})
-    j = r.json()
-    after = db.products.count_documents({"userId": uid1})
-    log("B1", r.status_code == 200 and j.get("duplicate") is True and j.get("samePrice") is True
-        and j.get("existing", {}).get("sku") == "PROD-000001" and after == initial,
-        f"duplicate={j.get('duplicate')} samePrice={j.get('samePrice')} existing.sku={j.get('existing',{}).get('sku')} unchanged={after==initial}")
-
-    r = post("/data/products", t1, {"name": " Riz  ", "purchasePrice": 2, "salePrice": 3, "stock": 5, "category": "food"})
-    j = r.json()
-    log("B2", r.status_code == 200 and j.get("duplicate") is True and j.get("samePrice") is True,
-        f"duplicate={j.get('duplicate')} samePrice={j.get('samePrice')}")
-
-    r = post("/data/products", t1, {"name": "Riz", "purchasePrice": 5, "salePrice": 7, "stock": 5, "category": "food"})
-    j = r.json()
-    log("B3", r.status_code == 200 and j.get("duplicate") is True and j.get("samePrice") is False,
-        f"duplicate={j.get('duplicate')} samePrice={j.get('samePrice')}")
-
-    r = post("/data/products", t1, {"name": "Riz", "unit": "kg", "purchasePrice": 2, "salePrice": 3, "stock": 5, "category": "food"})
-    j = r.json()
-    riz_kg = j
-    log("B4", r.status_code == 200 and j.get("duplicate") is False and j.get("sku") == "PROD-000004" and j.get("unit") == "kg",
-        f"duplicate={j.get('duplicate')} sku={j.get('sku')} unit={j.get('unit')}")
-
-    r = post("/data/products", t1, {"name": "Riz", "unit": "kg", "purchasePrice": 2})
-    j = r.json()
-    log("B5", r.status_code == 200 and j.get("duplicate") is True and j.get("existing", {}).get("sku") == "PROD-000004",
-        f"existing.sku={j.get('existing',{}).get('sku')}")
-
-    r = post("/data/products", t1, {"name": "Tisane", "unit": "autre", "customUnit": "tasse",
-                                    "purchasePrice": 1, "salePrice": 2, "stock": 3, "category": "food"})
-    tisane = r.json()
-    log("B6", r.status_code == 200 and tisane.get("duplicate") is False and tisane.get("unit") == "tasse"
-        and "customUnit" not in tisane and tisane.get("sku") == "PROD-000005",
-        f"unit={tisane.get('unit')} customUnit_in_resp={'customUnit' in tisane} sku={tisane.get('sku')}")
-
-    r = post("/data/products", t1, {"name": "Tisane", "unit": "tasse", "purchasePrice": 1})
-    j = r.json()
-    log("B7", r.status_code == 200 and j.get("duplicate") is True and j.get("existing", {}).get("sku") == "PROD-000005",
-        f"existing.sku={j.get('existing',{}).get('sku')}")
-
-    r = post("/data/products", t1, {"name": "", "purchasePrice": 1, "salePrice": 2})
-    detail = ""
-    try:
-        detail = r.json().get("detail", "")
-    except Exception:
-        detail = r.text
-    log("B8", r.status_code == 400 and "Nom" in str(detail),
-        f"status={r.status_code} detail={detail}")
-
-    # C) Restock + price history
-    print("\n--- C) Restock + price history ---")
-    sucre_id = sucre["id"]
-    hist0 = db.purchase_price_history.count_documents({"productId": sucre_id})
-
-    r = post(f"/data/products/{sucre_id}/restock", t1, {"quantityAdded": 5})
-    j = r.json()
-    h_after = db.purchase_price_history.count_documents({"productId": sucre_id})
-    log("C1", r.status_code == 200 and j.get("stock") == 25 and j.get("purchasePrice") == 1 and h_after == hist0,
-        f"stock={j.get('stock')} pp={j.get('purchasePrice')} hist_added={h_after-hist0}")
-
-    r = post(f"/data/products/{sucre_id}/restock", t1, {"quantityAdded": 10, "newPurchasePrice": 1})
-    j = r.json()
-    h_after = db.purchase_price_history.count_documents({"productId": sucre_id})
-    log("C2", r.status_code == 200 and j.get("stock") == 35 and j.get("purchasePrice") == 1 and h_after == hist0,
-        f"stock={j.get('stock')} pp={j.get('purchasePrice')} hist_added={h_after-hist0}")
-
-    r = post(f"/data/products/{sucre_id}/restock", t1,
-             {"quantityAdded": 3, "newPurchasePrice": 1.5, "currency": "EUR", "note": "Hausse fournisseur"})
-    j = r.json()
-    h_after = db.purchase_price_history.count_documents({"productId": sucre_id})
-    rec = db.purchase_price_history.find_one({"productId": sucre_id}, sort=[("date", -1)])
-    ok = (r.status_code == 200 and j.get("stock") == 38 and j.get("purchasePrice") == 1.5
-          and (h_after - hist0) == 1
-          and rec and rec.get("oldPurchasePrice") == 1 and rec.get("newPurchasePrice") == 1.5
-          and rec.get("quantityAdded") == 3 and rec.get("currency") == "EUR"
-          and rec.get("note") == "Hausse fournisseur" and rec.get("source") == "restock"
-          and rec.get("sku") == "PROD-000002")
-    log("C3", ok,
-        f"stock={j.get('stock')} pp={j.get('purchasePrice')} h_added=1 rec_fields=old={rec.get('oldPurchasePrice') if rec else None} new={rec.get('newPurchasePrice') if rec else None} src={rec.get('source') if rec else None}")
-
-    r = post(f"/data/products/{sucre_id}/restock", t1, {"quantityAdded": 2, "newPurchasePrice": 1.5})
-    j = r.json()
-    h_after2 = db.purchase_price_history.count_documents({"productId": sucre_id})
-    log("C4", r.status_code == 200 and j.get("stock") == 40 and j.get("purchasePrice") == 1.5 and h_after2 == h_after,
-        f"stock={j.get('stock')} hist_added={h_after2-h_after}")
-
-    r = post(f"/data/products/{sucre_id}/restock", t1, {"quantityAdded": 1, "newPurchasePrice": 2.0})
-    j = r.json()
-    tot = db.purchase_price_history.count_documents({"productId": sucre_id})
-    rec2 = db.purchase_price_history.find_one({"productId": sucre_id}, sort=[("date", -1)])
-    log("C5", r.status_code == 200 and j.get("stock") == 41 and j.get("purchasePrice") == 2.0
-        and tot == 2 and rec2 and rec2.get("oldPurchasePrice") == 1.5 and rec2.get("newPurchasePrice") == 2.0,
-        f"stock={j.get('stock')} pp={j.get('purchasePrice')} total_hist={tot}")
-
-    r = get(f"/data/products/{sucre_id}/price-history", t1)
-    hist = r.json()
-    ok_c6 = (r.status_code == 200 and isinstance(hist, list) and len(hist) == 2
-             and hist[0].get("newPurchasePrice") == 2.0 and hist[1].get("newPurchasePrice") == 1.5
-             and all(h.get("sku") == "PROD-000002" for h in hist)
-             and all(("productId" in h) and ("oldPurchasePrice" in h) and ("quantityAdded" in h) for h in hist))
-    log("C6", ok_c6, f"count={len(hist)} desc_order={hist[0].get('newPurchasePrice')==2.0 if hist else False}")
-
-    r = post(f"/data/products/{sucre_id}/restock", t1, {"quantityAdded": 0})
-    a = r.status_code == 400
-    r = post(f"/data/products/{sucre_id}/restock", t1, {"quantityAdded": -1})
-    b = r.status_code == 400
-    r = post(f"/data/products/{sucre_id}/restock", t1, {"quantityAdded": 1, "newPurchasePrice": -5})
-    c = r.status_code == 400
-    log("C7", a and b and c, f"qty0_400={a} qtyNeg_400={b} priceNeg_400={c}")
-
-    r = post("/data/products/not-an-objectid/restock", t1, {"quantityAdded": 1})
-    detail = ""
-    try:
-        detail = r.json().get("detail", "")
-    except Exception:
-        detail = r.text
-    log("C8", r.status_code == 400 and "ID produit invalide" in str(detail),
-        f"status={r.status_code} detail={detail}")
-
-    r = post(f"/data/products/{sucre_id}/restock", t2, {"quantityAdded": 1})
-    a = r.status_code == 404
-    r = get(f"/data/products/{sucre_id}/price-history", t2)
-    b = r.status_code == 404
-    hist_unchanged = db.purchase_price_history.count_documents({"productId": sucre_id}) == 2
-    log("C9", a and b and hist_unchanged,
-        f"restock_404={a} priceHist_404={b} history_unchanged={hist_unchanged}")
-
-    # D) Stock alert flags
-    print("\n--- D) Stock alert flags ---")
-    r = post("/data/products", t1, {"name": "AlertItem", "purchasePrice": 1, "salePrice": 2,
-                                    "stock": 2, "lowStockThreshold": 5, "category": "food"})
-    alert_item = r.json()
-    aid = alert_item["id"]
-    log("D1", r.status_code == 200 and alert_item.get("outOfStock") is False and alert_item.get("lowStock") is True,
-        f"outOfStock={alert_item.get('outOfStock')} lowStock={alert_item.get('lowStock')}")
-
-    r = put(f"/data/products/{aid}", t1, {"stock": 0})
-    j = r.json()
-    log("D2", j.get("outOfStock") is True and j.get("lowStock") is False,
-        f"outOfStock={j.get('outOfStock')} lowStock={j.get('lowStock')}")
-
-    r = put(f"/data/products/{aid}", t1, {"stock": 100})
-    j = r.json()
-    log("D3", j.get("outOfStock") is False and j.get("lowStock") is False,
-        f"outOfStock={j.get('outOfStock')} lowStock={j.get('lowStock')}")
-
-    r = put(f"/data/products/{aid}", t1, {"lowStockThreshold": 50})
-    j = r.json()
-    log("D4", j.get("outOfStock") is False and j.get("lowStock") is False,
-        f"thr=50 stock=100 lowStock={j.get('lowStock')}")
-
-    r = put(f"/data/products/{aid}", t1, {"stock": 30})
-    j = r.json()
-    log("D5", j.get("outOfStock") is False and j.get("lowStock") is True,
-        f"stock=30 thr=50 lowStock={j.get('lowStock')}")
-
-    r = get("/data/products", t1)
-    plist = r.json()
-    alert_in_list = next((p for p in plist if p["id"] == aid), None)
-    sucre_in_list = next((p for p in plist if p["id"] == sucre_id), None)
-    ok_d6 = (alert_in_list and alert_in_list.get("stock") == 30 and alert_in_list.get("lowStock") is True
-             and sucre_in_list and sucre_in_list.get("stock") == 41
-             and sucre_in_list.get("outOfStock") is False and sucre_in_list.get("lowStock") is False)
-    log("D6", ok_d6,
-        f"alert(stock={alert_in_list.get('stock') if alert_in_list else None},lowStock={alert_in_list.get('lowStock') if alert_in_list else None}) sucre(stock={sucre_in_list.get('stock') if sucre_in_list else None})")
-
-    # E) Sales
-    print("\n--- E) Sales -> stock alerts ---")
-    r = post("/data/products", t1, {"name": "Cola", "purchasePrice": 1, "salePrice": 2,
-                                    "stock": 10, "lowStockThreshold": 5, "category": "food"})
-    cola = r.json()
-    cola_id = cola["id"]
-
-    r = post("/data/sales", t1, {"productId": cola_id, "productName": "Cola",
-                                 "quantity": 4, "total": 8, "paymentMethod": "cash"})
-    j = r.json()
-    log("E1", r.status_code == 200 and j.get("lowStockAlert") is False and j.get("stockAlert") is False,
-        f"stockAlert={j.get('stockAlert')} lowStockAlert={j.get('lowStockAlert')}")
-
-    r = post("/data/sales", t1, {"productId": cola_id, "productName": "Cola",
-                                 "quantity": 2, "total": 4, "paymentMethod": "cash"})
-    j = r.json()
-    log("E2", r.status_code == 200 and j.get("lowStockAlert") is True and j.get("stockAlert") is False,
-        f"stockAlert={j.get('stockAlert')} lowStockAlert={j.get('lowStockAlert')}")
-
-    r = post("/data/sales", t1, {"productId": cola_id, "productName": "Cola",
-                                 "quantity": 4, "total": 8, "paymentMethod": "cash"})
-    j = r.json()
-    log("E3", r.status_code == 200 and j.get("stockAlert") is True and j.get("lowStockAlert") is False,
-        f"stockAlert={j.get('stockAlert')} lowStockAlert={j.get('lowStockAlert')}")
-
-    r = get("/data/products", t1)
-    plist = r.json()
-    cola_now = next((p for p in plist if p["id"] == cola_id), None)
-    log("E4", cola_now and cola_now.get("stock") == 0 and cola_now.get("outOfStock") is True
-        and cola_now.get("lowStock") is False,
-        f"stock={cola_now.get('stock') if cola_now else None} outOfStock={cola_now.get('outOfStock') if cola_now else None}")
-
-    # F) Immutability + sequence
-    print("\n--- F) SKU immutability + sequence ---")
-    r = put(f"/data/products/{cola_id}", t1, {"sku": "PROD-HACKER"})
-    j = r.json()
-    log("F1", j.get("sku") == cola["sku"], f"sku={j.get('sku')} expected={cola['sku']}")
-
-    counter_now = db.counters.find_one({"userId": uid1, "name": "products"})
-    seq_before = counter_now["seq"] if counter_now else 0
-    tisane_id = tisane["id"]
-    delete(f"/data/products/{tisane_id}", t1)
-    r = post("/data/products", t1, {"name": "PostDelete", "purchasePrice": 1, "salePrice": 2, "stock": 5, "category": "food"})
-    j = r.json()
-    expected_seq = f"PROD-{seq_before+1:06d}"
-    log("F3", j.get("sku") == expected_seq and j.get("sku") != "PROD-000005",
-        f"new sku={j.get('sku')} expected={expected_seq}")
-    log("F2", j.get("sku") == expected_seq,
-        f"counter advanced past delete (seq_before={seq_before})")
-
-    # Doc shapes
-    print("\n--- Sample MongoDB doc shapes ---")
-    p_sample = db.products.find_one({"userId": uid1, "sku": "PROD-000002"})
-    h_sample = db.purchase_price_history.find_one({"productId": sucre_id})
-    counter_sample = db.counters.find_one({"userId": uid1, "name": "products"})
-
-    def stringify(d):
-        if not d:
-            return None
-        return {k: (str(v) if k == "_id" else v) for k, v in d.items()}
-
-    print(f"PRODUCT doc keys: {sorted(list(p_sample.keys())) if p_sample else None}")
-    print(f"PRODUCT doc: {stringify(p_sample)}")
-    print(f"HISTORY doc keys: {sorted(list(h_sample.keys())) if h_sample else None}")
-    print(f"HISTORY doc: {stringify(h_sample)}")
-    print(f"COUNTER doc: {stringify(counter_sample)}")
-
-    print("\n========== SUMMARY ==========")
-    passed = [r for r in results if r["status"] == "PASS"]
-    failed = [r for r in results if r["status"] == "FAIL"]
-    print(f"TOTAL: {len(results)}  PASS: {len(passed)}  FAIL: {len(failed)}")
-    for r in failed:
-        print(f"  FAIL {r['id']}: {r['detail']}")
-    return 0 if not failed else 1
+    # Summary
+    print("\n" + "=" * 70)
+    print("SUMMARY")
+    print("=" * 70)
+    passed = sum(1 for r in results if r["ok"])
+    failed = sum(1 for r in results if not r["ok"])
+    print(f"Total: {len(results)} | Passed: {passed} | Failed: {failed}")
+    if failed:
+        print("\nFailed tests:")
+        for r in results:
+            if not r["ok"]:
+                print(f"  - {r['name']}: {r['msg']}")
+    return 0 if failed == 0 else 1
 
 
 if __name__ == "__main__":

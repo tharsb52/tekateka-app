@@ -437,10 +437,10 @@ export default function SubscriptionScreen() {
         <View style={styles.whySection}>
           <Text style={styles.whyTitle}>Pourquoi TekaTeka ?</Text>
           {[
-            { icon: 'phone-portrait', text: 'Fonctionne hors ligne', color: '#2563eb' },
-            { icon: 'shield-checkmark', text: 'Données sécurisées', color: '#10b981' },
-            { icon: 'trending-up', text: '+30% de bénéfices en moyenne', color: '#8b5cf6' },
-            { icon: 'time', text: '2h gagnées par jour', color: '#f59e0b' },
+            { icon: 'cart', text: 'Gestion simplifiée des ventes', color: '#2563eb' },
+            { icon: 'cube', text: 'Contrôle du stock en temps réel', color: '#10b981' },
+            { icon: 'trending-up', text: 'Suivi automatique des bénéfices', color: '#f59e0b' },
+            { icon: 'shield-checkmark', text: 'Données sécurisées', color: '#8b5cf6' },
           ].map((item, index) => (
             <View key={index} style={styles.whyItem}>
               <Ionicons name={item.icon as any} size={22} color={item.color} />

@@ -39,22 +39,30 @@ router = APIRouter()
 # ==========================================
 # Pricing Configuration
 # ==========================================
+# Unified ambassador pricing (the prices each ambassador pays to TekaTeka to
+# acquire activation codes). These map to the Stripe Price IDs configured in
+# stripe_api.py — keep them in sync with the Stripe Dashboard catalog (4€/13€/50€).
+# `appPrice` is the price the END CLIENT pays for the subscription (used to
+# compute the ambassador's commission = appPrice - ambassadorPrice).
 PRICING_TIERS = {
-    "early": {  # First 500 clients (promo)
-        "monthly": {"appPrice": 10, "ambassadorPrice": 8, "commission": 2},
-        "quarterly": {"appPrice": 25, "ambassadorPrice": 20, "commission": 3},
-        "yearly": {"appPrice": 60, "ambassadorPrice": 50, "commission": 5},
-    },
-    "standard": {  # After 500 clients
-        "monthly": {"appPrice": 15, "ambassadorPrice": 12, "commission": 2},
-        "quarterly": {"appPrice": 30, "ambassadorPrice": 28, "commission": 3},
-        "yearly": {"appPrice": 65, "ambassadorPrice": 60, "commission": 5},
+    "standard": {
+        "monthly":   {"appPrice": 10, "ambassadorPrice":  4},
+        "quarterly": {"appPrice": 27, "ambassadorPrice": 13},
+        "yearly":    {"appPrice": 99, "ambassadorPrice": 50},
     },
 }
-EARLY_CLIENT_THRESHOLD = 500
-COMMISSION_MULTIPLIER_THRESHOLD = 50  # Sales count for 1.5x multiplier
-COMMISSION_MULTIPLIER = 1.5
-CODE_VALIDITY_DAYS = 30
+DEFAULT_TIER = "standard"
+
+
+def _commission_for(plan: str) -> float:
+    """Commission per activation = client app price - ambassador purchase price."""
+    cfg = PRICING_TIERS[DEFAULT_TIER].get(plan)
+    if not cfg:
+        return 0.0
+    return float(cfg["appPrice"] - cfg["ambassadorPrice"])
+# NOTE: activation codes no longer expire on their own (per product spec).
+# They remain valid INDEFINITELY until the first activation, after which the
+# status flips to "used" and the code cannot be reused.
 
 # ==========================================
 # Models
@@ -100,22 +108,17 @@ def generate_activation_code():
     return "TK-" + "".join(secrets.choice(chars) for _ in range(4)) + "-" + "".join(secrets.choice(chars) for _ in range(4))
 
 async def get_current_pricing_tier():
-    """Determine pricing tier based on total active subscriptions"""
-    active_subs = await db.users.count_documents({
-        "subscription.status": "active"
-    })
-    return "early" if active_subs < EARLY_CLIENT_THRESHOLD else "standard"
+    """Single-tier pricing — returns the canonical tier name."""
+    return DEFAULT_TIER
 
 async def get_ambassador_commission(ambassador_id: str, plan: str):
-    """Calculate commission with multiplier if applicable"""
-    tier = await get_current_pricing_tier()
-    base_commission = PRICING_TIERS[tier][plan]["commission"]
-    
-    # Check if ambassador qualifies for multiplier (50+ sales = x1.5)
-    total_sales = await db.ambassador_sales.count_documents({"ambassadorId": ambassador_id})
-    if total_sales >= COMMISSION_MULTIPLIER_THRESHOLD:
-        return base_commission * COMMISSION_MULTIPLIER
-    return base_commission
+    """Per spec: commission = appPrice (what the end client pays) minus
+    ambassadorPrice (what the ambassador paid to acquire the code).
+    No more multipliers or early/standard tiers.
+    `ambassador_id` is kept in the signature for backwards compatibility.
+    """
+    _ = ambassador_id  # currently unused, kept for ABI stability
+    return _commission_for(plan)
 
 async def get_ambassador_from_token(authorization: str = None):
     """Extract ambassador from JWT token"""
@@ -212,13 +215,13 @@ async def ambassador_dashboard(body: dict):
         plan_used = await db.activation_codes.count_documents({"ambassadorId": amb_id, "plan": plan, "status": "used"})
         plan_remaining = await db.activation_codes.count_documents({"ambassadorId": amb_id, "plan": plan, "status": "unused"})
         codes_by_plan[plan] = {"total": plan_total, "used": plan_used, "remaining": plan_remaining}
-    
-    # Has multiplier?
-    has_multiplier = total_sales >= COMMISSION_MULTIPLIER_THRESHOLD
-    
-    # Current pricing tier
+
+    # No more multipliers since the unified pricing rolls out
+    has_multiplier = False
+
+    # Current pricing tier (single tier now, but kept for backward compat)
     tier = await get_current_pricing_tier()
-    
+
     return {
         "ambassador": {
             "id": amb_id,
@@ -234,7 +237,7 @@ async def ambassador_dashboard(body: dict):
             "usedCodes": used_codes,
             "remainingCodes": remaining_codes,
             "hasMultiplier": has_multiplier,
-            "multiplier": COMMISSION_MULTIPLIER if has_multiplier else 1,
+            "multiplier": 1,
             "codesByPlan": codes_by_plan,
         },
         "pricingTier": tier,
@@ -258,12 +261,64 @@ async def ambassador_sales(body: dict):
 # ==========================================
 @router.post("/ambassador/codes")
 async def ambassador_codes(body: dict):
+    """List this ambassador's activation codes, enriched with the client's
+    display name and phone when the code has been used. The frontend uses
+    this for the per-plan codes list with the Tous/Activés/Non activés filter.
+
+    Per spec: codes do NOT expire on their own. They stay valid until used.
+    Old codes that previously had an `expiresAt` are returned as-is (the
+    field is informational and no longer enforced).
+    """
     token = body.get("token", "")
     ambassador = await get_ambassador_from_token(f"Bearer {token}")
     amb_id = str(ambassador["_id"])
-    
-    codes = await db.activation_codes.find({"ambassadorId": amb_id}).sort("assignedAt", -1).to_list(500)
-    return [serialize_doc(c) for c in codes]
+
+    # Optional plan filter so the frontend can request a single plan view
+    plan_filter = body.get("plan")  # 'monthly' | 'quarterly' | 'yearly' | None
+
+    query = {"ambassadorId": amb_id}
+    if plan_filter in ("monthly", "quarterly", "yearly"):
+        query["plan"] = plan_filter
+
+    codes = await db.activation_codes.find(query).sort("assignedAt", -1).to_list(1000)
+
+    # Collect distinct usedByUserIds in a single round-trip to MongoDB
+    user_ids: set[str] = set()
+    for c in codes:
+        uid = c.get("usedByUserId")
+        if uid:
+            user_ids.add(str(uid))
+
+    user_map: dict = {}
+    if user_ids:
+        try:
+            obj_ids = [ObjectId(u) for u in user_ids if ObjectId.is_valid(u)]
+            users = await db.users.find(
+                {"_id": {"$in": obj_ids}},
+                {"username": 1, "phoneNumber": 1, "name": 1},
+            ).to_list(len(obj_ids))
+            for u in users:
+                display = u.get("username") or u.get("name") or u.get("phoneNumber") or "Client"
+                user_map[str(u["_id"])] = {
+                    "name": display,
+                    "phone": u.get("phoneNumber"),
+                }
+        except Exception as e:
+            logger.warning(f"User name resolution failed: {e}")
+
+    result = []
+    for c in codes:
+        doc = serialize_doc(c)
+        uid = c.get("usedByUserId")
+        info = user_map.get(str(uid)) if uid else None
+        doc["clientName"] = info["name"] if info else None
+        doc["clientPhone"] = info["phone"] if info else None
+        # Normalize status label for the frontend filter:
+        #   "unused" -> "available" (Non activé)
+        #   "used"   -> "used"      (Activé)
+        doc["statusLabel"] = "used" if c.get("status") == "used" else "available"
+        result.append(doc)
+    return result
 
 # ==========================================
 # Scan Client QR
@@ -308,36 +363,37 @@ async def activate_code(body: dict):
     token = body.get("token", "")
     ambassador = await get_ambassador_from_token(f"Bearer {token}")
     amb_id = str(ambassador["_id"])
-    
+
     client_user_id = body.get("clientUserId", "")
     plan = body.get("plan", "")
-    
+
     if not client_user_id or not plan:
         raise HTTPException(status_code=400, detail="ID client et plan requis")
-    
+
     if plan not in ["monthly", "quarterly", "yearly"]:
         raise HTTPException(status_code=400, detail="Plan invalide")
-    
-    # Find an unused code for this ambassador
+
+    # Per spec: codes no longer auto-expire. Find ANY unused code for the
+    # ambassador + plan, regardless of `expiresAt`. Once used, status flips
+    # to "used" so it can never be activated twice.
     code_doc = await db.activation_codes.find_one({
         "ambassadorId": amb_id,
         "status": "unused",
         "plan": plan,
-        "expiresAt": {"$gt": datetime.utcnow()}  # Not expired
     })
-    
+
     if not code_doc:
         raise HTTPException(status_code=404, detail="Aucun code disponible pour ce plan. Contactez l'administrateur.")
-    
+
     # Verify client exists
     try:
         user = await db.users.find_one({"_id": ObjectId(client_user_id)})
     except Exception:
         raise HTTPException(status_code=400, detail="ID client invalide")
-    
+
     if not user:
         raise HTTPException(status_code=404, detail="Client introuvable")
-    
+
     # Calculate expiry based on plan
     now = datetime.utcnow()
     if plan == "monthly":
@@ -346,22 +402,26 @@ async def activate_code(body: dict):
         expiry = now + timedelta(days=90)
     else:  # yearly
         expiry = now + timedelta(days=365)
-    
-    # Calculate commission
-    commission = await get_ambassador_commission(amb_id, plan)
-    tier = await get_current_pricing_tier()
-    price = PRICING_TIERS[tier][plan]["ambassadorPrice"]
-    
-    # Mark code as used
-    await db.activation_codes.update_one(
-        {"_id": code_doc["_id"]},
+
+    # Pricing + commission for this activation
+    pricing_cfg = PRICING_TIERS[DEFAULT_TIER][plan]
+    sale_price = float(pricing_cfg["appPrice"])         # what the client pays
+    purchase_price = float(pricing_cfg["ambassadorPrice"])  # what the ambassador paid
+    commission = sale_price - purchase_price
+
+    # Mark code as used (single-use enforcement: status flip is atomic)
+    upd = await db.activation_codes.update_one(
+        {"_id": code_doc["_id"], "status": "unused"},
         {"$set": {
             "status": "used",
             "usedAt": now,
             "usedByUserId": client_user_id,
         }}
     )
-    
+    if upd.modified_count != 1:
+        # Race condition: another request grabbed this code first.
+        raise HTTPException(status_code=409, detail="Code déjà utilisé, veuillez réessayer")
+
     # Update user subscription
     await db.users.update_one(
         {"_id": ObjectId(client_user_id)},
@@ -377,32 +437,88 @@ async def activate_code(body: dict):
             }
         }}
     )
-    
-    # Record sale
+
+    client_display_name = user.get("username") or user.get("name") or user.get("phoneNumber", "Client")
+
+    # Record sale (legacy collection — kept for backwards compatibility with
+    # the admin panel and existing dashboards)
     sale_doc = {
         "ambassadorId": amb_id,
         "ambassadorName": ambassador["name"],
         "clientUserId": client_user_id,
-        "clientName": user.get("username", user.get("phoneNumber", "N/A")),
+        "clientName": client_display_name,
         "clientPhone": user.get("phoneNumber", "N/A"),
         "plan": plan,
-        "price": price,
+        "price": purchase_price,
+        "salePrice": sale_price,
         "commission": commission,
         "activationCode": code_doc["code"],
-        "pricingTier": tier,
+        "pricingTier": DEFAULT_TIER,
         "createdAt": now,
     }
-    await db.ambassador_sales.insert_one(sale_doc)
-    
+    sale_res = await db.ambassador_sales.insert_one(sale_doc)
+
+    # NEW: dedicated commissions collection (per spec) — easier to query for
+    # the ambassador's "Commissions" view + filters.
+    commission_doc = {
+        "ambassadorId": amb_id,
+        "codeId": str(code_doc["_id"]),
+        "code": code_doc["code"],
+        "planType": plan,
+        "purchasePrice": purchase_price,
+        "salePrice": sale_price,
+        "commissionAmount": commission,
+        "clientId": client_user_id,
+        "clientName": client_display_name,
+        "clientPhone": user.get("phoneNumber"),
+        "date": now,
+        "saleId": str(sale_res.inserted_id),
+    }
+    await db.commissions.insert_one(commission_doc)
+
     return {
         "success": True,
-        "message": f"Abonnement {plan} activé pour {user.get('username', user.get('phoneNumber', 'le client'))}",
+        "message": f"Abonnement {plan} activé pour {client_display_name}",
         "subscription": {
             "plan": plan,
             "expiryDate": expiry.isoformat(),
         },
         "commission": commission,
+        "purchasePrice": purchase_price,
+        "salePrice": sale_price,
         "code": code_doc["code"],
+    }
+
+# ==========================================
+# Commissions list (per spec)
+# ==========================================
+@router.post("/ambassador/commissions")
+async def ambassador_commissions(body: dict):
+    """List the ambassador's commissions with optional plan filter.
+
+    Returns:
+        {
+            "total": <sum of commissionAmount across the filtered set>,
+            "totalCount": <number of records>,
+            "items": [ ... commission docs sorted by date desc ... ]
+        }
+    """
+    token = body.get("token", "")
+    ambassador = await get_ambassador_from_token(f"Bearer {token}")
+    amb_id = str(ambassador["_id"])
+
+    plan_filter = body.get("plan")  # 'monthly' | 'quarterly' | 'yearly' | None
+    query = {"ambassadorId": amb_id}
+    if plan_filter in ("monthly", "quarterly", "yearly"):
+        query["planType"] = plan_filter
+
+    items = await db.commissions.find(query).sort("date", -1).to_list(1000)
+    total = sum(float(i.get("commissionAmount") or 0) for i in items)
+
+    return {
+        "total": total,
+        "totalCount": len(items),
+        "items": [serialize_doc(i) for i in items],
     }
 
 # ==========================================
@@ -417,21 +533,17 @@ async def client_activate_code(body: dict):
     if not user_id or not code_str:
         raise HTTPException(status_code=400, detail="ID utilisateur et code requis")
     
-    # Find the code
+    # Find the code (no expiry enforcement — codes are valid until used)
     code_doc = await db.activation_codes.find_one({
         "code": code_str,
         "status": "unused",
-        "expiresAt": {"$gt": datetime.utcnow()}
     })
-    
+
     if not code_doc:
         # Check if code exists but is used
         used_code = await db.activation_codes.find_one({"code": code_str, "status": "used"})
         if used_code:
             raise HTTPException(status_code=400, detail="Ce code a déjà été utilisé")
-        expired_code = await db.activation_codes.find_one({"code": code_str})
-        if expired_code:
-            raise HTTPException(status_code=400, detail="Ce code est expiré")
         raise HTTPException(status_code=404, detail="Code invalide. Vérifiez le code et réessayez.")
     
     # Verify user exists
@@ -647,8 +759,9 @@ async def admin_generate_codes(body: dict):
         raise HTTPException(status_code=404, detail="Ambassadeur introuvable")
     
     now = datetime.utcnow()
-    expires_at = now + timedelta(days=CODE_VALIDITY_DAYS)
-    
+    # Codes no longer auto-expire — they remain valid until used.
+    # `expiresAt` is intentionally null on new codes.
+
     generated_codes = []
     for _ in range(count):
         code = generate_activation_code()
@@ -662,7 +775,7 @@ async def admin_generate_codes(body: dict):
             "ambassadorId": ambassador_id,
             "status": "unused",
             "assignedAt": now,
-            "expiresAt": expires_at,
+            "expiresAt": None,
             "usedAt": None,
             "usedByUserId": None,
         }
@@ -675,7 +788,7 @@ async def admin_generate_codes(body: dict):
         "count": len(generated_codes),
         "plan": plan,
         "ambassador": amb["name"],
-        "expiresAt": expires_at.isoformat(),
+        "expiresAt": None,
     }
 
 # ==========================================
@@ -759,8 +872,8 @@ async def admin_pricing_info(body: dict):
     return {
         "currentTier": tier,
         "activeSubscriptions": active_subs,
-        "threshold": EARLY_CLIENT_THRESHOLD,
+        "threshold": None,  # legacy field, no longer used (unified pricing)
         "pricing": PRICING_TIERS,
-        "commissionMultiplier": COMMISSION_MULTIPLIER,
-        "multiplierThreshold": COMMISSION_MULTIPLIER_THRESHOLD,
+        "commissionMultiplier": 1,
+        "multiplierThreshold": None,
     }

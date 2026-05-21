@@ -221,10 +221,10 @@ function SettingsScreenInner() {
           </View>
         </View>
 
-        {/* Subscription Section */}
-        <Text style={styles.sectionLabel}>ABONNEMENT</Text>
+        {/* OUTILS Section (Statistiques + Notes — sorties de la section Abonnement) */}
+        <Text style={styles.sectionLabel}>OUTILS</Text>
 
-        {/* Bilan mensuel shortcut */}
+        {/* Statistiques (anciennement "Bilan mensuel") */}
         <TouchableOpacity style={[styles.card, { marginBottom: 12 }]} onPress={() => router.push('/monthly-report')}>
           <View style={styles.settingRow}>
             <View style={styles.settingLeft}>
@@ -232,7 +232,7 @@ function SettingsScreenInner() {
                 <Ionicons name="bar-chart" size={22} color="#2563eb" />
               </View>
               <View>
-                <Text style={styles.settingTitle}>Bilan mensuel</Text>
+                <Text style={styles.settingTitle}>Statistiques</Text>
                 <Text style={styles.settingSubtitle}>Achats, ventes et charges du mois</Text>
               </View>
             </View>
@@ -240,7 +240,7 @@ function SettingsScreenInner() {
           </View>
         </TouchableOpacity>
 
-        {/* Notes shortcut */}
+        {/* Prendre Notes (anciennement "Mes Notes") */}
         <TouchableOpacity style={[styles.card, { marginBottom: 12 }]} onPress={() => router.push('/notes')}>
           <View style={styles.settingRow}>
             <View style={styles.settingLeft}>
@@ -248,13 +248,16 @@ function SettingsScreenInner() {
                 <Ionicons name="document-text" size={22} color="#f59e0b" />
               </View>
               <View>
-                <Text style={styles.settingTitle}>Mes Notes</Text>
+                <Text style={styles.settingTitle}>Prendre Notes</Text>
                 <Text style={styles.settingSubtitle}>Prenez des notes rapidement</Text>
               </View>
             </View>
             <Ionicons name="chevron-forward" size={22} color="#94a3b8" />
           </View>
         </TouchableOpacity>
+
+        {/* Subscription Section */}
+        <Text style={styles.sectionLabel}>ABONNEMENT</Text>
 
         <TouchableOpacity style={styles.card} onPress={() => router.push('/subscription')}>
           <View style={styles.settingRow}>
@@ -413,45 +416,7 @@ function SettingsScreenInner() {
           )}
         </View>
 
-        {/* Integration Info */}
-        <Text style={styles.sectionLabel}>INTÉGRATIONS</Text>
-        <View style={styles.card}>
-          <View style={styles.settingRow}>
-            <View style={styles.settingLeft}>
-              <View style={[styles.iconCircle, { backgroundColor: '#fef3c7' }]}>
-                <Ionicons name="chatbox" size={22} color="#f59e0b" />
-              </View>
-              <View>
-                <Text style={styles.settingTitle}>SMS / OTP</Text>
-                <Text style={styles.settingSubtitle}>{otpInfo.name}{otpInfo.isMock ? ' (mode test)' : ''}</Text>
-              </View>
-            </View>
-            <View style={[styles.statusBadge, otpInfo.isMock ? styles.statusMock : styles.statusActive]}>
-              <Text style={[styles.statusText, otpInfo.isMock ? styles.statusMockText : styles.statusActiveText]}>
-                {otpInfo.isMock ? 'TEST' : 'ACTIF'}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.settingRow}>
-            <View style={styles.settingLeft}>
-              <View style={[styles.iconCircle, { backgroundColor: '#f3e8ff' }]}>
-                <Ionicons name="phone-portrait" size={22} color="#7c3aed" />
-              </View>
-              <View>
-                <Text style={styles.settingTitle}>Paiement Mobile</Text>
-                <Text style={styles.settingSubtitle}>{paymentInfo.name}{paymentInfo.isMock ? ' (mode test)' : ''}</Text>
-              </View>
-            </View>
-            <View style={[styles.statusBadge, paymentInfo.isMock ? styles.statusMock : styles.statusActive]}>
-              <Text style={[styles.statusText, paymentInfo.isMock ? styles.statusMockText : styles.statusActiveText]}>
-                {paymentInfo.isMock ? 'TEST' : 'ACTIF'}
-              </Text>
-            </View>
-          </View>
-        </View>
+        {/* (Integration Info block removed per spec) */}
 
         {/* App Info */}
         <Text style={styles.sectionLabel}>APPLICATION</Text>

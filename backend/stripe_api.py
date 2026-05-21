@@ -183,7 +183,7 @@ SUBSCRIPTION_PRICES_CENTS = {
 # pricing is managed from the Stripe Dashboard, not from code.
 AMBASSADOR_PLAN_PRICES_CENTS = {
     "monthly":    400,   # €4.00 per code
-    "quarterly": 1200,   # €12.00 per code
+    "quarterly": 1300,   # €13.00 per code
     "yearly":    5000,   # €50.00 per code
 }
 

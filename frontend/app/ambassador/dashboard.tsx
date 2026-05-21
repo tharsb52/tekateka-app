@@ -100,62 +100,7 @@ export default function AmbassadorDashboard() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} tintColor={ACCENT} />}
         showsVerticalScrollIndicator={false}
       >
-        {/* Stats Cards */}
-        <View style={styles.statsGrid}>
-          <View style={[styles.statCard, { backgroundColor: '#1e3a5f' }]}>
-            <Ionicons name="cart" size={24} color="#60a5fa" />
-            <Text style={styles.statValue}>{stats.totalSales || 0}</Text>
-            <Text style={styles.statLabel}>Ventes totales</Text>
-          </View>
-          <View style={[styles.statCard, { backgroundColor: '#1a3d2e' }]}>
-            <Ionicons name="cash" size={24} color="#34d399" />
-            <Text style={styles.statValue}>${stats.totalCommission || 0}</Text>
-            <Text style={styles.statLabel}>Commissions</Text>
-          </View>
-          <View style={[styles.statCard, { backgroundColor: '#3d2e1a' }]}>
-            <Ionicons name="today" size={24} color={ACCENT} />
-            <Text style={styles.statValue}>{stats.monthlySales || 0}</Text>
-            <Text style={styles.statLabel}>Ce mois</Text>
-          </View>
-          <View style={[styles.statCard, { backgroundColor: '#2d1a3d' }]}>
-            <Ionicons name="key" size={24} color="#a78bfa" />
-            <Text style={styles.statValue}>{stats.remainingCodes || 0}</Text>
-            <Text style={styles.statLabel}>Codes dispo</Text>
-          </View>
-        </View>
-
-        {/* Multiplier Badge */}
-        {stats.hasMultiplier && (
-          <View style={styles.multiplierBadge}>
-            <Ionicons name="flame" size={18} color={ACCENT} />
-            <Text style={styles.multiplierText}>Commission x{stats.multiplier} activée !</Text>
-          </View>
-        )}
-
-        {/* Action Buttons */}
-        <View style={styles.actionsRow}>
-          <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/ambassador/scan')}>
-            <Ionicons name="qr-code" size={28} color="#fff" />
-            <Text style={styles.actionText}>Scanner Client</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#059669' }]} onPress={() => router.push('/ambassador/activate')}>
-            <Ionicons name="checkmark-circle" size={28} color="#fff" />
-            <Text style={styles.actionText}>Activer Code</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Buy Codes Button (Stripe) */}
-        <TouchableOpacity
-          style={styles.buyCodesBtn}
-          onPress={() => router.push('/ambassador/buy-codes')}
-          activeOpacity={0.85}
-        >
-          <Ionicons name="card" size={22} color="#0f172a" />
-          <Text style={styles.buyCodesText}>Acheter des codes d'activation</Text>
-          <Ionicons name="arrow-forward" size={20} color="#0f172a" />
-        </TouchableOpacity>
-
-        {/* Tabs */}
+        {/* === BLOC 1: Tabs "Mes codes / Historique" === */}
         <View style={styles.tabsRow}>
           <TouchableOpacity style={[styles.tab, activeTab === 'stats' && styles.tabActive]} onPress={() => setActiveTab('stats')}>
             <Text style={[styles.tabText, activeTab === 'stats' && styles.tabTextActive]}>Mes Codes</Text>
@@ -183,74 +128,62 @@ export default function AmbassadorDashboard() {
               </View>
             </View>
 
-            {/* Codes by Plan */}
+            {/* Codes by Plan — each row is tappable -> per-plan filtered codes view */}
             <Text style={styles.planSectionTitle}>Détail par catégorie</Text>
 
             {/* Monthly */}
-            <View style={[styles.planCard, { borderLeftColor: '#60a5fa' }]}>  
+            <TouchableOpacity
+              style={[styles.planCard, { borderLeftColor: '#60a5fa' }]}
+              activeOpacity={0.7}
+              onPress={() => router.push('/ambassador/codes/monthly')}
+            >
               <View style={styles.planCardHeader}>
                 <Ionicons name="calendar-outline" size={20} color="#60a5fa" />
                 <Text style={[styles.planCardTitle, { color: '#60a5fa' }]}>Mensuel</Text>
+                <Ionicons name="chevron-forward" size={18} color="#60a5fa" style={{ marginLeft: 'auto' }} />
               </View>
               <View style={styles.planCardStats}>
-                <View style={styles.planStatItem}>
-                  <Text style={styles.planStatValue}>{stats.codesByPlan?.monthly?.remaining || 0}</Text>
-                  <Text style={styles.planStatLabel}>Dispo</Text>
-                </View>
-                <View style={styles.planStatItem}>
-                  <Text style={[styles.planStatValue, { color: '#94a3b8' }]}>{stats.codesByPlan?.monthly?.used || 0}</Text>
-                  <Text style={styles.planStatLabel}>Utilisés</Text>
-                </View>
-                <View style={styles.planStatItem}>
-                  <Text style={[styles.planStatValue, { color: '#64748b' }]}>{stats.codesByPlan?.monthly?.total || 0}</Text>
-                  <Text style={styles.planStatLabel}>Total</Text>
-                </View>
+                <View style={styles.planStatItem}><Text style={styles.planStatValue}>{stats.codesByPlan?.monthly?.remaining || 0}</Text><Text style={styles.planStatLabel}>Dispo</Text></View>
+                <View style={styles.planStatItem}><Text style={[styles.planStatValue, { color: '#94a3b8' }]}>{stats.codesByPlan?.monthly?.used || 0}</Text><Text style={styles.planStatLabel}>Utilisés</Text></View>
+                <View style={styles.planStatItem}><Text style={[styles.planStatValue, { color: '#64748b' }]}>{stats.codesByPlan?.monthly?.total || 0}</Text><Text style={styles.planStatLabel}>Total</Text></View>
               </View>
-            </View>
+            </TouchableOpacity>
 
             {/* Quarterly */}
-            <View style={[styles.planCard, { borderLeftColor: '#f59e0b' }]}>  
+            <TouchableOpacity
+              style={[styles.planCard, { borderLeftColor: '#f59e0b' }]}
+              activeOpacity={0.7}
+              onPress={() => router.push('/ambassador/codes/quarterly')}
+            >
               <View style={styles.planCardHeader}>
                 <Ionicons name="calendar" size={20} color="#f59e0b" />
                 <Text style={[styles.planCardTitle, { color: '#f59e0b' }]}>Trimestriel</Text>
+                <Ionicons name="chevron-forward" size={18} color="#f59e0b" style={{ marginLeft: 'auto' }} />
               </View>
               <View style={styles.planCardStats}>
-                <View style={styles.planStatItem}>
-                  <Text style={styles.planStatValue}>{stats.codesByPlan?.quarterly?.remaining || 0}</Text>
-                  <Text style={styles.planStatLabel}>Dispo</Text>
-                </View>
-                <View style={styles.planStatItem}>
-                  <Text style={[styles.planStatValue, { color: '#94a3b8' }]}>{stats.codesByPlan?.quarterly?.used || 0}</Text>
-                  <Text style={styles.planStatLabel}>Utilisés</Text>
-                </View>
-                <View style={styles.planStatItem}>
-                  <Text style={[styles.planStatValue, { color: '#64748b' }]}>{stats.codesByPlan?.quarterly?.total || 0}</Text>
-                  <Text style={styles.planStatLabel}>Total</Text>
-                </View>
+                <View style={styles.planStatItem}><Text style={styles.planStatValue}>{stats.codesByPlan?.quarterly?.remaining || 0}</Text><Text style={styles.planStatLabel}>Dispo</Text></View>
+                <View style={styles.planStatItem}><Text style={[styles.planStatValue, { color: '#94a3b8' }]}>{stats.codesByPlan?.quarterly?.used || 0}</Text><Text style={styles.planStatLabel}>Utilisés</Text></View>
+                <View style={styles.planStatItem}><Text style={[styles.planStatValue, { color: '#64748b' }]}>{stats.codesByPlan?.quarterly?.total || 0}</Text><Text style={styles.planStatLabel}>Total</Text></View>
               </View>
-            </View>
+            </TouchableOpacity>
 
             {/* Yearly */}
-            <View style={[styles.planCard, { borderLeftColor: '#34d399' }]}>  
+            <TouchableOpacity
+              style={[styles.planCard, { borderLeftColor: '#34d399' }]}
+              activeOpacity={0.7}
+              onPress={() => router.push('/ambassador/codes/yearly')}
+            >
               <View style={styles.planCardHeader}>
                 <Ionicons name="calendar-sharp" size={20} color="#34d399" />
                 <Text style={[styles.planCardTitle, { color: '#34d399' }]}>Annuel</Text>
+                <Ionicons name="chevron-forward" size={18} color="#34d399" style={{ marginLeft: 'auto' }} />
               </View>
               <View style={styles.planCardStats}>
-                <View style={styles.planStatItem}>
-                  <Text style={styles.planStatValue}>{stats.codesByPlan?.yearly?.remaining || 0}</Text>
-                  <Text style={styles.planStatLabel}>Dispo</Text>
-                </View>
-                <View style={styles.planStatItem}>
-                  <Text style={[styles.planStatValue, { color: '#94a3b8' }]}>{stats.codesByPlan?.yearly?.used || 0}</Text>
-                  <Text style={styles.planStatLabel}>Utilisés</Text>
-                </View>
-                <View style={styles.planStatItem}>
-                  <Text style={[styles.planStatValue, { color: '#64748b' }]}>{stats.codesByPlan?.yearly?.total || 0}</Text>
-                  <Text style={styles.planStatLabel}>Total</Text>
-                </View>
+                <View style={styles.planStatItem}><Text style={styles.planStatValue}>{stats.codesByPlan?.yearly?.remaining || 0}</Text><Text style={styles.planStatLabel}>Dispo</Text></View>
+                <View style={styles.planStatItem}><Text style={[styles.planStatValue, { color: '#94a3b8' }]}>{stats.codesByPlan?.yearly?.used || 0}</Text><Text style={styles.planStatLabel}>Utilisés</Text></View>
+                <View style={styles.planStatItem}><Text style={[styles.planStatValue, { color: '#64748b' }]}>{stats.codesByPlan?.yearly?.total || 0}</Text><Text style={styles.planStatLabel}>Total</Text></View>
               </View>
-            </View>
+            </TouchableOpacity>
           </View>
         ) : (
           <View style={styles.salesSection}>
@@ -265,15 +198,83 @@ export default function AmbassadorDashboard() {
                   </View>
                   <View style={styles.saleDetails}>
                     <Text style={styles.salePlan}>{sale.plan}</Text>
-                    <Text style={styles.saleDate}>
-                      {formatLocal(sale.createdAt, 'dd/MM/yyyy HH:mm')}
-                    </Text>
+                    <Text style={styles.saleDate}>{formatLocal(sale.createdAt, 'dd/MM/yyyy HH:mm')}</Text>
                   </View>
                 </View>
               ))
             )}
           </View>
         )}
+
+        {/* Commissions shortcut (per spec — under Mes Codes/Historique block) */}
+        <TouchableOpacity
+          style={styles.commissionsBtn}
+          activeOpacity={0.85}
+          onPress={() => router.push('/ambassador/commissions')}
+        >
+          <Ionicons name="cash" size={20} color={ACCENT} />
+          <Text style={styles.commissionsBtnText}>Voir mes commissions</Text>
+          <Ionicons name="chevron-forward" size={20} color={ACCENT} />
+        </TouchableOpacity>
+
+        {/* === BLOC 2: Acheter des codes === */}
+        <TouchableOpacity
+          style={styles.buyCodesBtn}
+          onPress={() => router.push('/ambassador/buy-codes')}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="card" size={22} color="#0f172a" />
+          <Text style={styles.buyCodesText}>Acheter des codes d'activation</Text>
+          <Ionicons name="arrow-forward" size={20} color="#0f172a" />
+        </TouchableOpacity>
+
+        {/* === BLOC 3: Scanner client === */}
+        <View style={styles.singleActionRow}>
+          <TouchableOpacity style={styles.actionBtnFull} onPress={() => router.push('/ambassador/scan')}>
+            <Ionicons name="qr-code" size={28} color="#fff" />
+            <Text style={styles.actionText}>Scanner Client</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* === BLOC 4: Activer Abonnement (anciennement "Activer code") === */}
+        <View style={styles.singleActionRow}>
+          <TouchableOpacity style={[styles.actionBtnFull, { backgroundColor: '#059669' }]} onPress={() => router.push('/ambassador/activate')}>
+            <Ionicons name="checkmark-circle" size={28} color="#fff" />
+            <Text style={styles.actionText}>Activer Abonnement</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Multiplier Badge (rare, only shown if backend says so) */}
+        {stats.hasMultiplier && (
+          <View style={styles.multiplierBadge}>
+            <Ionicons name="flame" size={18} color={ACCENT} />
+            <Text style={styles.multiplierText}>Commission x{stats.multiplier} activée !</Text>
+          </View>
+        )}
+
+        {/* === BLOC 5: 4 stats en bas === */}
+        <View style={styles.statsGrid}>
+          <View style={[styles.statCard, { backgroundColor: '#1e3a5f' }]}>
+            <Ionicons name="cart" size={24} color="#60a5fa" />
+            <Text style={styles.statValue}>{stats.totalSales || 0}</Text>
+            <Text style={styles.statLabel}>Ventes totales</Text>
+          </View>
+          <View style={[styles.statCard, { backgroundColor: '#1a3d2e' }]}>
+            <Ionicons name="cash" size={24} color="#34d399" />
+            <Text style={styles.statValue}>${stats.totalCommission || 0}</Text>
+            <Text style={styles.statLabel}>Commissions</Text>
+          </View>
+          <View style={[styles.statCard, { backgroundColor: '#3d2e1a' }]}>
+            <Ionicons name="today" size={24} color={ACCENT} />
+            <Text style={styles.statValue}>{stats.monthlySales || 0}</Text>
+            <Text style={styles.statLabel}>Ce mois</Text>
+          </View>
+          <View style={[styles.statCard, { backgroundColor: '#2d1a3d' }]}>
+            <Ionicons name="key" size={24} color="#a78bfa" />
+            <Text style={styles.statValue}>{stats.remainingCodes || 0}</Text>
+            <Text style={styles.statLabel}>Codes dispo</Text>
+          </View>
+        </View>
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -331,4 +332,18 @@ const styles = StyleSheet.create({
   saleDetails: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
   salePlan: { fontSize: 13, color: '#94a3b8', textTransform: 'capitalize' },
   saleDate: { fontSize: 13, color: '#64748b' },
+  // New styles for reorganized blocks
+  singleActionRow: { paddingHorizontal: 16, marginTop: 12 },
+  actionBtnFull: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#3b82f6',
+    paddingVertical: 16, borderRadius: 14, gap: 10, minHeight: 56,
+  },
+  commissionsBtn: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: CARD, marginHorizontal: 16, marginTop: 12,
+    paddingVertical: 14, paddingHorizontal: 16,
+    borderRadius: 12, gap: 10, borderLeftWidth: 3, borderLeftColor: ACCENT,
+  },
+  commissionsBtnText: { color: '#fff', fontWeight: '700', fontSize: 14, flex: 1 },
 });
