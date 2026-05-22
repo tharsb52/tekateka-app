@@ -8,6 +8,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
+import { API_BASE_URL } from '../../../services/constants';
 
 const BG = '#0f172a';
 const CARD = '#1e293b';
@@ -54,7 +55,7 @@ export default function AmbassadorCodesByPlan() {
         router.replace('/ambassador');
         return;
       }
-      const backend = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+      const backend = API_BASE_URL;
       const res = await fetch(`${backend}/api/ambassador/codes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
