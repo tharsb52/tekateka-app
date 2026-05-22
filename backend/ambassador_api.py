@@ -39,16 +39,21 @@ router = APIRouter()
 # ==========================================
 # Pricing Configuration
 # ==========================================
-# Unified ambassador pricing (the prices each ambassador pays to TekaTeka to
-# acquire activation codes). These map to the Stripe Price IDs configured in
-# stripe_api.py — keep them in sync with the Stripe Dashboard catalog (4€/13€/50€).
-# `appPrice` is the price the END CLIENT pays for the subscription (used to
-# compute the ambassador's commission = appPrice - ambassadorPrice).
+# Single unified pricing tier. Subscription prices (what the END CLIENT pays)
+# are the authoritative source of truth — they come from
+# STRIPE_SUBSCRIPTION_PRICES_CENTS in stripe_api.py and are mirrored here so
+# we don't introduce a cross-module import cycle. Update both files together
+# if you ever change subscription prices.
+#
+# ambassadorPrice = what the ambassador actually pays to TekaTeka per code
+#                   (matches Stripe Price IDs configured in stripe_api.py).
+# appPrice        = what the end client pays to subscribe in-app.
+# Commission      = appPrice - ambassadorPrice (computed at activation time).
 PRICING_TIERS = {
     "standard": {
-        "monthly":   {"appPrice": 10, "ambassadorPrice":  4},
-        "quarterly": {"appPrice": 27, "ambassadorPrice": 13},
-        "yearly":    {"appPrice": 99, "ambassadorPrice": 50},
+        "monthly":   {"appPrice":  5, "ambassadorPrice":  4},   # 5€  - 4€  = 1€
+        "quarterly": {"appPrice": 14, "ambassadorPrice": 13},   # 14€ - 13€ = 1€
+        "yearly":    {"appPrice": 55, "ambassadorPrice": 50},   # 55€ - 50€ = 5€
     },
 }
 DEFAULT_TIER = "standard"
@@ -557,7 +562,7 @@ async def client_activate_code(body: dict):
     
     plan = code_doc["plan"]
     ambassador_id = code_doc["ambassadorId"]
-    
+
     # Calculate expiry based on plan
     now = datetime.utcnow()
     if plan == "monthly":
@@ -566,18 +571,23 @@ async def client_activate_code(body: dict):
         expiry = now + timedelta(days=90)
     else:  # yearly
         expiry = now + timedelta(days=365)
-    
-    # Get commission
-    commission = await get_ambassador_commission(ambassador_id, plan)
-    tier = await get_current_pricing_tier()
-    price = PRICING_TIERS[tier][plan]["ambassadorPrice"]
-    
-    # Mark code as used
-    await db.activation_codes.update_one(
-        {"_id": code_doc["_id"]},
+
+    # Pricing + commission for this activation. Source of truth for both
+    # numbers is PRICING_TIERS[DEFAULT_TIER]. Commission = appPrice - ambassadorPrice.
+    pricing_cfg = PRICING_TIERS[DEFAULT_TIER][plan]
+    sale_price = float(pricing_cfg["appPrice"])           # what the client paid
+    purchase_price = float(pricing_cfg["ambassadorPrice"])  # what the ambassador paid
+    commission = sale_price - purchase_price
+
+    # Mark code as used (atomic single-use: if status no longer 'unused',
+    # someone else just consumed it — bail out cleanly).
+    upd = await db.activation_codes.update_one(
+        {"_id": code_doc["_id"], "status": "unused"},
         {"$set": {"status": "used", "usedAt": now, "usedByUserId": user_id}}
     )
-    
+    if upd.modified_count != 1:
+        raise HTTPException(status_code=409, detail="Code déjà utilisé, veuillez réessayer")
+
     # Update user subscription
     await db.users.update_one(
         {"_id": ObjectId(user_id)},
@@ -596,24 +606,45 @@ async def client_activate_code(body: dict):
             "subscriptionEndDate": expiry.isoformat(),
         }}
     )
-    
-    # Record ambassador sale
+
+    # Record ambassador sale (legacy collection, kept for back-compat)
     ambassador = await db.ambassadors.find_one({"_id": ObjectId(ambassador_id)})
+    ambassador_name = ambassador["name"] if ambassador else "N/A"
+    client_display_name = user.get("username") or user.get("name") or user.get("phoneNumber", "Client")
     sale_doc = {
         "ambassadorId": ambassador_id,
-        "ambassadorName": ambassador["name"] if ambassador else "N/A",
+        "ambassadorName": ambassador_name,
         "clientUserId": user_id,
-        "clientName": user.get("username", user.get("phoneNumber", "N/A")),
+        "clientName": client_display_name,
         "clientPhone": user.get("phoneNumber", "N/A"),
         "plan": plan,
-        "price": price,
+        "price": purchase_price,
+        "salePrice": sale_price,
         "commission": commission,
         "activationCode": code_str,
-        "pricingTier": tier,
+        "pricingTier": DEFAULT_TIER,
         "method": "client_self_activation",
         "createdAt": now,
     }
-    await db.ambassador_sales.insert_one(sale_doc)
+    sale_res = await db.ambassador_sales.insert_one(sale_doc)
+
+    # FIX: also write to db.commissions (was missing -> the ambassador
+    # "Commissions" screen was showing empty for client-side activations).
+    await db.commissions.insert_one({
+        "ambassadorId": ambassador_id,
+        "codeId": str(code_doc["_id"]),
+        "code": code_str,
+        "planType": plan,
+        "purchasePrice": purchase_price,
+        "salePrice": sale_price,
+        "commissionAmount": commission,
+        "clientId": user_id,
+        "clientName": client_display_name,
+        "clientPhone": user.get("phoneNumber"),
+        "date": now,
+        "saleId": str(sale_res.inserted_id),
+        "source": "client_self_activation",
+    })
     
     plan_labels = {"monthly": "Mensuel", "quarterly": "Trimestriel", "yearly": "Annuel"}
     
@@ -876,4 +907,95 @@ async def admin_pricing_info(body: dict):
         "pricing": PRICING_TIERS,
         "commissionMultiplier": 1,
         "multiplierThreshold": None,
+    }
+
+
+# ==========================================
+# Admin: Backfill commissions from legacy ambassador_sales
+# ==========================================
+@router.post("/admin/commissions/backfill")
+async def backfill_commissions(body: dict):
+    """One-shot maintenance endpoint.
+
+    Purpose: many activations happened BEFORE the dedicated `commissions`
+    collection existed, OR through the client self-activation path which
+    initially didn't write to it. As a result, the ambassador "Commissions"
+    screen shows empty for those activations even though the sale exists in
+    legacy `ambassador_sales`.
+
+    What it does (idempotent):
+      * For every ambassador_sales doc that doesn't already have a matching
+        commissions doc (matched by activationCode), recompute the commission
+        amount using the CURRENT PRICING_TIERS (so historical wrong amounts
+        like 14€ for quarterly get fixed to 1€), update the sale's
+        commission field in place, AND create a fresh commissions entry.
+
+    Auth: requires the admin password (same as other /api/admin/* endpoints).
+    """
+    password = body.get("password", "")
+    admin_pass = os.getenv("ADMIN_PASSWORD", "TekaTeka2025")
+    if password != admin_pass:
+        raise HTTPException(status_code=401, detail="Mot de passe administrateur incorrect")
+
+    fixed = 0
+    created = 0
+    scanned = 0
+
+    async for sale in db.ambassador_sales.find({}):
+        scanned += 1
+        code = sale.get("activationCode")
+        if not code:
+            continue
+
+        # Skip if a commissions doc already exists for this code
+        existing = await db.commissions.find_one({"code": code})
+        if existing:
+            continue
+
+        plan = sale.get("plan")
+        if plan not in PRICING_TIERS[DEFAULT_TIER]:
+            continue
+
+        cfg = PRICING_TIERS[DEFAULT_TIER][plan]
+        sale_price = float(cfg["appPrice"])
+        purchase_price = float(cfg["ambassadorPrice"])
+        commission = sale_price - purchase_price
+
+        # Fix the legacy sale doc with the correct commission/salePrice
+        # so the dashboard stat ($ Commissions) matches.
+        await db.ambassador_sales.update_one(
+            {"_id": sale["_id"]},
+            {"$set": {
+                "salePrice": sale_price,
+                "price": purchase_price,
+                "commission": commission,
+            }},
+        )
+        fixed += 1
+
+        # Find the underlying code doc for codeId reference
+        code_doc = await db.activation_codes.find_one({"code": code}) or {}
+
+        await db.commissions.insert_one({
+            "ambassadorId": sale.get("ambassadorId"),
+            "codeId": str(code_doc.get("_id")) if code_doc else None,
+            "code": code,
+            "planType": plan,
+            "purchasePrice": purchase_price,
+            "salePrice": sale_price,
+            "commissionAmount": commission,
+            "clientId": sale.get("clientUserId"),
+            "clientName": sale.get("clientName"),
+            "clientPhone": sale.get("clientPhone"),
+            "date": sale.get("createdAt"),
+            "saleId": str(sale["_id"]),
+            "source": "backfill",
+        })
+        created += 1
+
+    return {
+        "success": True,
+        "scanned": scanned,
+        "fixedSales": fixed,
+        "createdCommissions": created,
     }
