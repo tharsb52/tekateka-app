@@ -718,9 +718,9 @@ export default function DashboardScreen() {
     </Modal>
 
     {/* Day Sales Modal */}
-    <Modal visible={selectedDay !== null} animationType="slide" transparent>
+    <Modal visible={selectedDay !== null} animationType="slide" transparent onRequestClose={() => setSelectedDay(null)}>
       <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
+        <View style={[styles.modalContent, { flex: 1, maxHeight: '85%' }]}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>
               Ventes — {selectedDay?.label}
@@ -737,7 +737,11 @@ export default function DashboardScreen() {
             </Text>
           </View>
 
-          <ScrollView style={{ maxHeight: 400 }}>
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingBottom: 32 }}
+            showsVerticalScrollIndicator={true}
+          >
             {selectedDay?.sales.length === 0 ? (
               <View style={{ alignItems: 'center', padding: 40 }}>
                 <Ionicons name="receipt-outline" size={48} color="#cbd5e1" />

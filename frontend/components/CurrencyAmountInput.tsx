@@ -62,20 +62,24 @@ export default function CurrencyAmountInput({
       )}
 
       {/* Currency Picker Modal */}
-      <Modal visible={showCurrencyPicker} animationType="fade" transparent>
+      <Modal visible={showCurrencyPicker} animationType="slide" transparent onRequestClose={() => setShowCurrencyPicker(false)}>
         <TouchableOpacity
           style={styles.overlay}
           activeOpacity={1}
           onPress={() => setShowCurrencyPicker(false)}
         >
-          <View style={styles.pickerContainer}>
+          <TouchableOpacity activeOpacity={1} onPress={() => {}} style={styles.pickerContainer}>
             <View style={styles.pickerHeader}>
               <Text style={styles.pickerTitle}>Devise</Text>
               <TouchableOpacity onPress={() => setShowCurrencyPicker(false)}>
                 <Ionicons name="close" size={24} color="#64748b" />
               </TouchableOpacity>
             </View>
-            <ScrollView style={styles.pickerList}>
+            <ScrollView
+              style={styles.pickerList}
+              contentContainerStyle={{ padding: 12, paddingBottom: 40 }}
+              showsVerticalScrollIndicator={true}
+            >
               {CURRENCIES.map((c) => (
                 <TouchableOpacity
                   key={c.code}
@@ -114,7 +118,7 @@ export default function CurrencyAmountInput({
                 </TouchableOpacity>
               ))}
             </ScrollView>
-          </View>
+          </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
     </View>
@@ -196,7 +200,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: '60%',
+    maxHeight: '75%',
+    minHeight: 320,
+    overflow: 'hidden',
   },
   pickerHeader: {
     flexDirection: 'row',
@@ -212,7 +218,8 @@ const styles = StyleSheet.create({
     color: '#1e293b',
   },
   pickerList: {
-    padding: 12,
+    flexGrow: 0,
+    flexShrink: 1,
   },
   pickerItem: {
     flexDirection: 'row',

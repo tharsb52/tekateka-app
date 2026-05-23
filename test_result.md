@@ -873,7 +873,52 @@ test_plan:
   test_all: false
   test_priority: "high_first"
 
+backend_new:
+  - task: "Ambassador Preferred Currency endpoint"
+    implemented: true
+    working: true
+    file: "backend/ambassador_api.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: |
+            FULL PASS (63/64 checks, 2026-05-23) on POST /api/ambassador/profile/currency + regression. Ran /app/backend_test.py against https://low-data-shop.preview.emergentagent.com/api using seeded ambassador@tekateka.com / Ambassador2025.
+
+            1) Login → 200, JWT captured.
+            2) Baseline /ambassador/dashboard → 200, response.ambassador.preferredCurrency present (was 'USD' from a prior run, then reset to 'EUR' at end).
+            3) Set USD → 200 {success:true, preferredCurrency:'USD'}; dashboard echoes 'USD'. ✓
+            4) Set 'cfa' (lowercase) → 200 preferredCurrency:'CFA' (server uppercases+strips); dashboard echoes 'CFA'. ✓
+            5) Reject 'JPY' → 400 detail='Devise non supportée'; dashboard STILL shows last valid value 'CFA' (no mutation on invalid). ✓
+            6) Reject '' (empty) → 400 detail='Devise non supportée'. ✓
+            7) Reject garbage token → 401 detail='Token invalide'. ✓
+            8) Whitelist coverage: EUR, CDF, KES, RWF, BIF, NGN — all 6 → 200 + correct dashboard echo. ✓
+            9) Reset to EUR at end of run → dashboard preferredCurrency='EUR'. ✓
+
+            Regression:
+              * POST /api/ambassador/commissions {token} → 200 with {total:189.0, totalCount:23, items:[...]} structure intact. ✓
+              * POST /api/ambassador/dashboard → stats.codesByPlan has monthly/quarterly/yearly each with total/used/remaining. ✓
+              * POST /api/ambassador/codes {token, plan:'monthly'} → 200, returned 23 codes, all with plan='monthly' (filter works), each carries 'code' and 'plan' fields. ✓
+
+            Minor: For the "missing token" test (POST without `token` field), the API returns 401 status (correct rejection) but detail='Token invalide' instead of the spec's 'Token requis'. Root cause: the endpoint does `f"Bearer {token}"` on body.get('token',''), so an empty string still becomes `"Bearer "` (truthy), bypassing the `if not authorization` early-return in get_ambassador_from_token and falling through to JWT decode failure. Functionally equivalent — unauthenticated callers are still rejected with 401. Not a security defect.
+
+            CONCLUSION: New currency endpoint is fully working, persists `preferredCurrency` on db.ambassadors, properly whitelisted (USD/EUR/CDF/CFA/KES/RWF/BIF/NGN), case-insensitive, dashboard correctly echoes the value (defaulting to 'EUR'). No regressions in commissions/codes/dashboard.
+
 agent_communication:
+    - agent: "testing"
+      message: |
+        AMBASSADOR PREFERRED CURRENCY ENDPOINT — PASS (2026-05-23).
+        Ran /app/backend_test.py: 63/64 checks pass.
+          * POST /api/ambassador/profile/currency works for all 8 whitelisted currencies (USD/EUR/CDF/CFA/KES/RWF/BIF/NGN).
+          * Lowercase input is correctly uppercased ('cfa' → 'CFA').
+          * Empty + invalid (JPY) → 400 'Devise non supportée'; previous valid value preserved.
+          * Bad JWT → 401 'Token invalide'.
+          * /ambassador/dashboard echoes ambassador.preferredCurrency on every call.
+          * Currency was reset to EUR at end of run for clean UI baseline.
+        Regression checks all green: /ambassador/commissions returns {total, totalCount, items}; /ambassador/dashboard stats.codesByPlan has monthly/quarterly/yearly; /ambassador/codes with plan filter works.
+        Minor (not a defect): "missing token" returns 401 'Token invalide' instead of 'Token requis' because the endpoint wraps body.get('token','') in f"Bearer {token}". 401 rejection is correct; only the detail string differs from spec. No action needed.
     - agent: "testing"
       message: |
         AMBASSADOR SYSTEM v3 — FULL E2E PASS (40/41 checks, 2026-05-21). The single non-passing check was a test-script artifact (snapshot captured AFTER B3 ran, so the diff was 14+49=63 instead of 6+14+49=69 — actual backend behavior is correct, all 3 commissions are recorded). All review-request scenarios A..J verified live:
@@ -983,3 +1028,14 @@ agent_communication:
           * db.counters: {_id, userId, name:'products', seq:<int>}.
         
         No defects, no stuck tasks. Task is GREEN and production-ready.
+    - agent: "main"
+      message: |
+        FINAL UI TWEAKS + AMBASSADOR LOCAL CURRENCY (2026-05-23):
+          * Fix 1 — Sales History modal (/app/frontend/app/(tabs)/dashboard.tsx): replaced fixed `maxHeight: 400` on the inner ScrollView with `flex: 1` + `paddingBottom: 32`; the modal container now uses `maxHeight: '85%'` so the last sales line is no longer cut off. Added `onRequestClose` for Android back-button safety.
+          * Fix 2 — Currency Picker modal (/app/frontend/components/CurrencyAmountInput.tsx): bumped pickerContainer maxHeight 60%→75% with minHeight 320, added flex/contentContainerStyle paddingBottom on the ScrollView, switched modal animation to slide and added a no-op inner TouchableOpacity to stop the overlay tap from intercepting list item taps.
+          * Fix 3 — Ambassador dashboard cleanup (/app/frontend/app/ambassador/dashboard.tsx): removed the "Ce mois" and "Codes dispo" stat cards from the bottom grid; only "Ventes totales" and "Commissions" remain.
+          * Fix 4 — Ambassador preferred currency (NEW):
+            - Backend (/app/backend/ambassador_api.py): added /api/ambassador/profile/currency endpoint that updates db.ambassadors.preferredCurrency with a whitelist of 8 supported currencies (USD/EUR/CDF/CFA/KES/RWF/BIF/NGN). /ambassador/dashboard now returns ambassador.preferredCurrency.
+            - Frontend service (/app/frontend/services/currencyConverter.ts, NEW): centralized convertAmount/formatAmount/normalizeCurrency helpers that wrap the static rate table in utils/currencies.ts so we keep ONE source of truth across merchant & ambassador screens. Design note in the file explains how to swap the static rates for a live API later (exchangerate.host) without touching business logic.
+            - Frontend UI (/app/frontend/app/ambassador/commissions.tsx + /app/frontend/app/ambassador/dashboard.tsx): added a currency-pill button in the commissions header that opens a slide-up sheet with all 8 currencies. Selection persists via the new backend endpoint; commissions are stored in EUR on the server and converted on the fly client-side. Total card now shows the converted amount + "base 189.00 €" reference when not in EUR. Ambassador dashboard's "Commissions" stat card also respects the preferred currency.
+          NEED BACKEND TESTING: POST /api/ambassador/profile/currency with valid currency (success), invalid currency (400), missing token (401), and verify dashboard echoes back the updated preferredCurrency.

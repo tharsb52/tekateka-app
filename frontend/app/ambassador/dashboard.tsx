@@ -9,10 +9,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { formatLocal } from '../../utils/dateUtils';
+import {
+  convertAmount, formatAmount, normalizeCurrency,
+} from '../../services/currencyConverter';
 
 const BG = '#0f172a';
 const ACCENT = '#f59e0b';
 const CARD = '#1e293b';
+
+// All ambassador commissions are stored in EUR on the backend.
+const STORAGE_CURRENCY = 'EUR';
 
 export default function AmbassadorDashboard() {
   const router = useRouter();
@@ -78,6 +84,9 @@ export default function AmbassadorDashboard() {
   const stats = dashboard?.stats || {};
   const ambassador = dashboard?.ambassador || {};
   const pricing = dashboard?.pricing || {};
+  const preferredCurrency = normalizeCurrency(ambassador.preferredCurrency, 'EUR');
+  const fmtCommission = (n: number) =>
+    formatAmount(convertAmount(Number(n) || 0, STORAGE_CURRENCY, preferredCurrency), preferredCurrency);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -194,7 +203,7 @@ export default function AmbassadorDashboard() {
                 <View key={sale.id || i} style={styles.saleCard}>
                   <View style={styles.saleHeader}>
                     <Text style={styles.saleClient}>{sale.clientName || sale.clientPhone}</Text>
-                    <Text style={styles.saleCommission}>+${sale.commission}</Text>
+                    <Text style={styles.saleCommission}>+{fmtCommission(sale.commission)}</Text>
                   </View>
                   <View style={styles.saleDetails}>
                     <Text style={styles.salePlan}>{sale.plan}</Text>
@@ -252,7 +261,7 @@ export default function AmbassadorDashboard() {
           </View>
         )}
 
-        {/* === BLOC 5: 4 stats en bas === */}
+        {/* === BLOC 5: 2 stats clés en bas (Ventes totales & Commissions) === */}
         <View style={styles.statsGrid}>
           <View style={[styles.statCard, { backgroundColor: '#1e3a5f' }]}>
             <Ionicons name="cart" size={24} color="#60a5fa" />
@@ -261,18 +270,8 @@ export default function AmbassadorDashboard() {
           </View>
           <View style={[styles.statCard, { backgroundColor: '#1a3d2e' }]}>
             <Ionicons name="cash" size={24} color="#34d399" />
-            <Text style={styles.statValue}>${stats.totalCommission || 0}</Text>
+            <Text style={styles.statValue}>{fmtCommission(stats.totalCommission || 0)}</Text>
             <Text style={styles.statLabel}>Commissions</Text>
-          </View>
-          <View style={[styles.statCard, { backgroundColor: '#3d2e1a' }]}>
-            <Ionicons name="today" size={24} color={ACCENT} />
-            <Text style={styles.statValue}>{stats.monthlySales || 0}</Text>
-            <Text style={styles.statLabel}>Ce mois</Text>
-          </View>
-          <View style={[styles.statCard, { backgroundColor: '#2d1a3d' }]}>
-            <Ionicons name="key" size={24} color="#a78bfa" />
-            <Text style={styles.statValue}>{stats.remainingCodes || 0}</Text>
-            <Text style={styles.statLabel}>Codes dispo</Text>
           </View>
         </View>
 

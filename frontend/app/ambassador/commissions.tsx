@@ -1,17 +1,27 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert, RefreshControl,
+  ActivityIndicator, Alert, RefreshControl, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { API_BASE_URL } from '../../services/constants';
+import {
+  SUPPORTED_CURRENCIES,
+  convertAmount,
+  formatAmount,
+  normalizeCurrency,
+} from '../../services/currencyConverter';
 
 const BG = '#0f172a';
 const CARD = '#1e293b';
 const ACCENT = '#f59e0b';
+
+// Commissions are stored in EUR on the backend. We convert to the
+// ambassador's preferred currency on the fly via currencyConverter service.
+const STORAGE_CURRENCY = 'EUR';
 
 type Plan = 'all' | 'monthly' | 'quarterly' | 'yearly';
 
@@ -47,21 +57,40 @@ export default function AmbassadorCommissionsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<Plan>('all');
+  // Display currency (cached locally + synced with backend). Defaults to EUR
+  // until we hear back from /ambassador/dashboard.
+  const [displayCurrency, setDisplayCurrency] = useState('EUR');
+  const [showCurrencyModal, setShowCurrencyModal] = useState(false);
+  const [updatingCurrency, setUpdatingCurrency] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
       const token = await AsyncStorage.getItem('ambassador_token');
       if (!token) { router.replace('/ambassador'); return; }
       const backend = API_BASE_URL;
-      const res = await fetch(`${backend}/api/ambassador/commissions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, plan: filter === 'all' ? null : filter }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.detail || 'Erreur de chargement');
+      const [commRes, dashRes] = await Promise.all([
+        fetch(`${backend}/api/ambassador/commissions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token, plan: filter === 'all' ? null : filter }),
+        }),
+        // Also fetch dashboard to pick up the latest preferredCurrency
+        fetch(`${backend}/api/ambassador/dashboard`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        }),
+      ]);
+      const data = await commRes.json();
+      if (!commRes.ok) throw new Error(data?.detail || 'Erreur de chargement');
       setItems(data.items || []);
       setTotal(data.total || 0);
+
+      if (dashRes.ok) {
+        const dashData = await dashRes.json();
+        const pref = dashData?.ambassador?.preferredCurrency;
+        if (pref) setDisplayCurrency(normalizeCurrency(pref, 'EUR'));
+      }
     } catch (e: any) {
       Alert.alert('Erreur', e?.message || 'Impossible de charger les commissions');
     } finally {
@@ -72,6 +101,27 @@ export default function AmbassadorCommissionsScreen() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  const handleSelectCurrency = async (code) => {
+    if (code === displayCurrency) { setShowCurrencyModal(false); return; }
+    setUpdatingCurrency(true);
+    try {
+      const token = await AsyncStorage.getItem('ambassador_token');
+      const res = await fetch(`${API_BASE_URL}/api/ambassador/profile/currency`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, currency: code }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail || 'Mise à jour impossible');
+      setDisplayCurrency(code);
+      setShowCurrencyModal(false);
+    } catch (e: any) {
+      Alert.alert('Erreur', e?.message || 'Impossible de changer la devise');
+    } finally {
+      setUpdatingCurrency(false);
+    }
+  };
+
   const formatDate = (iso?: string) => {
     if (!iso) return '—';
     try {
@@ -80,7 +130,7 @@ export default function AmbassadorCommissionsScreen() {
     } catch { return iso; }
   };
 
-  const fmt = (n: number) => `${(n || 0).toFixed(2)} €`;
+  const fmt = (n: number) => formatAmount(convertAmount(n || 0, STORAGE_CURRENCY, displayCurrency), displayCurrency);
 
   const grouped = useMemo(() => {
     return items.map(i => ({
@@ -104,14 +154,25 @@ export default function AmbassadorCommissionsScreen() {
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Commissions</Text>
-        <View style={{ width: 24 }} />
+        <TouchableOpacity
+          onPress={() => setShowCurrencyModal(true)}
+          style={styles.currencyPill}
+          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+        >
+          <Ionicons name="cash-outline" size={14} color={ACCENT} />
+          <Text style={styles.currencyPillText}>{displayCurrency}</Text>
+          <Ionicons name="chevron-down" size={12} color={ACCENT} />
+        </TouchableOpacity>
       </View>
 
       {/* Total card */}
       <View style={styles.totalCard}>
         <Text style={styles.totalLabel}>Total commissions {filter !== 'all' ? `(${PLAN_LABEL[filter]})` : ''}</Text>
         <Text style={styles.totalValue}>{fmt(total)}</Text>
-        <Text style={styles.totalCount}>{items.length} activation(s)</Text>
+        <Text style={styles.totalCount}>
+          {items.length} activation(s)
+          {displayCurrency !== STORAGE_CURRENCY ? `  ·  base ${total.toFixed(2)} €` : ''}
+        </Text>
       </View>
 
       {/* Filter pills */}
@@ -174,6 +235,66 @@ export default function AmbassadorCommissionsScreen() {
           ))
         )}
       </ScrollView>
+
+      {/* Currency picker modal */}
+      <Modal
+        visible={showCurrencyModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowCurrencyModal(false)}
+      >
+        <TouchableOpacity
+          activeOpacity={1}
+          style={styles.modalOverlay}
+          onPress={() => !updatingCurrency && setShowCurrencyModal(false)}
+        >
+          <TouchableOpacity activeOpacity={1} onPress={() => {}} style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Devise d'affichage</Text>
+              <TouchableOpacity onPress={() => setShowCurrencyModal(false)} disabled={updatingCurrency}>
+                <Ionicons name="close" size={24} color="#cbd5e1" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalHint}>
+              Les commissions sont stockées en EUR. Choisissez la devise dans laquelle vous voulez les voir.
+            </Text>
+            <ScrollView
+              style={{ flexGrow: 0, flexShrink: 1 }}
+              contentContainerStyle={{ paddingBottom: 24 }}
+              showsVerticalScrollIndicator={true}
+            >
+              {SUPPORTED_CURRENCIES.map((c) => {
+                const selected = c.code === displayCurrency;
+                return (
+                  <TouchableOpacity
+                    key={c.code}
+                    style={[styles.currencyRow, selected && styles.currencyRowSelected]}
+                    onPress={() => handleSelectCurrency(c.code)}
+                    disabled={updatingCurrency}
+                  >
+                    <Text style={[styles.currencySymbol, selected && { color: ACCENT }]}>{c.symbol}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.currencyCode, selected && { color: '#fff' }]}>{c.code}</Text>
+                      <Text style={styles.currencyName} numberOfLines={1}>{c.name}</Text>
+                    </View>
+                    {selected ? (
+                      <Ionicons name="checkmark-circle" size={22} color={ACCENT} />
+                    ) : (
+                      updatingCurrency ? null : <Ionicons name="chevron-forward" size={18} color="#475569" />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            {updatingCurrency && (
+              <View style={styles.updatingOverlay}>
+                <ActivityIndicator color={ACCENT} />
+                <Text style={{ color: '#cbd5e1', marginTop: 8, fontSize: 13 }}>Mise à jour…</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -202,4 +323,36 @@ const styles = StyleSheet.create({
   priceDetail: { color: '#94a3b8', fontSize: 12 },
   empty: { alignItems: 'center', marginTop: 80 },
   emptyText: { color: '#64748b', marginTop: 12, fontSize: 14 },
+  // Currency selector
+  currencyPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14,
+    backgroundColor: 'rgba(245,158,11,0.12)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.35)',
+  },
+  currencyPillText: { color: ACCENT, fontWeight: '800', fontSize: 12 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  modalSheet: {
+    backgroundColor: '#0b1220', borderTopLeftRadius: 22, borderTopRightRadius: 22,
+    paddingHorizontal: 16, paddingTop: 14, maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingBottom: 8,
+  },
+  modalTitle: { color: '#fff', fontSize: 17, fontWeight: '800' },
+  modalHint: { color: '#94a3b8', fontSize: 12, lineHeight: 17, marginBottom: 12 },
+  currencyRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingVertical: 14, paddingHorizontal: 12, borderRadius: 12,
+    backgroundColor: '#111827', marginBottom: 6,
+  },
+  currencyRowSelected: { backgroundColor: 'rgba(245,158,11,0.12)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.4)' },
+  currencySymbol: { color: '#cbd5e1', fontWeight: '800', fontSize: 16, minWidth: 38 },
+  currencyCode: { color: '#e2e8f0', fontWeight: '700', fontSize: 14 },
+  currencyName: { color: '#64748b', fontSize: 11, marginTop: 2 },
+  updatingOverlay: {
+    position: 'absolute', top: 0, bottom: 0, left: 0, right: 0,
+    backgroundColor: 'rgba(11,18,32,0.7)', alignItems: 'center', justifyContent: 'center',
+    borderTopLeftRadius: 22, borderTopRightRadius: 22,
+  },
 });

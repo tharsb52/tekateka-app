@@ -233,6 +233,10 @@ async def ambassador_dashboard(body: dict):
             "name": ambassador["name"],
             "country": ambassador["country"],
             "city": ambassador["city"],
+            # Preferred display currency for commissions (FX conversion is
+            # performed client-side using the shared rates table). EUR is the
+            # canonical storage currency for every commission amount.
+            "preferredCurrency": ambassador.get("preferredCurrency", "EUR"),
         },
         "stats": {
             "totalSales": total_sales,
@@ -248,6 +252,36 @@ async def ambassador_dashboard(body: dict):
         "pricingTier": tier,
         "pricing": PRICING_TIERS[tier],
     }
+
+
+# ==========================================
+# Ambassador: Update Preferred Currency
+# ==========================================
+# Whitelist mirrors frontend/utils/currencies.ts so an attacker can't write
+# arbitrary garbage into the ambassador document.
+_ALLOWED_CURRENCIES = {"USD", "EUR", "CDF", "CFA", "KES", "RWF", "BIF", "NGN"}
+
+
+@router.post("/ambassador/profile/currency")
+async def ambassador_update_currency(body: dict):
+    """Update the ambassador's preferred display currency.
+
+    Stored on the ambassador document as `preferredCurrency`. The conversion
+    itself happens on the client (via services/currencyConverter.ts) so the
+    backend keeps a single canonical storage unit (EUR) for every commission.
+    """
+    token = body.get("token", "")
+    ambassador = await get_ambassador_from_token(f"Bearer {token}")
+
+    currency = (body.get("currency") or "").upper().strip()
+    if currency not in _ALLOWED_CURRENCIES:
+        raise HTTPException(status_code=400, detail="Devise non supportée")
+
+    await db.ambassadors.update_one(
+        {"_id": ambassador["_id"]},
+        {"$set": {"preferredCurrency": currency}},
+    )
+    return {"success": True, "preferredCurrency": currency}
 
 # ==========================================
 # Ambassador Sales History
