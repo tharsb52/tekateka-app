@@ -868,10 +868,91 @@ metadata:
   run_ui: false
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - "Bug fix — Stock faible counter uses lowStockThreshold (dashboard)"
+    - "Bug fix — Sales history period > 30 days no longer capped"
+    - "Bug fix — Currency change in 'Plus' re-applies parity on Sell screen"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
+
+frontend_new:
+  - task: "Bug fix — Stock faible counter uses lowStockThreshold"
+    implemented: true
+    working: true
+    file: "frontend/app/(tabs)/dashboard.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            Dashboard's "Stock faible" tile was using `stock === 1` so it showed 0 even when products had stock below their lowStockThreshold (default 5). Now mirrors the rule used by /stock-alerts: `stock > 0 && stock <= (lowStockThreshold ?? 5)`.
+        - working: true
+          agent: "testing"
+          comment: |
+            PASS (2026-05-25). Logged in via Connexion Mail (test@tekateka.com/Test1234! — password was reset in db.users to align with /app/memory/test_credentials.md). Dashboard "Stock faible" orange card shows N=3. Tapping it routes to /stock-alerts where the "Stock faible (3)" tab is selected and the orange list contains exactly 3 products (Riz, AlertItem, PostDelete) → M=3. N === M = 3. Counter now correctly mirrors the lowStockThreshold rule.
+
+  - task: "Bug fix — Sales history period > 30 days"
+    implemented: true
+    working: true
+    file: "frontend/app/(tabs)/dashboard.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Chart bucket count was hard-capped at 30 days. Cap raised to 365, labels adaptive. openDaySales() now uses bucket's dateKey."
+        - working: true
+          agent: "testing"
+          comment: |
+            PASS (2026-05-25). Opened "Période" → "Période personnalisée" → clicked the back-arrow under "Date de début" 65 times → Appliquer. Resulting date range: 15 mars 2026 → 25 mai 2026 (71-day range, well beyond the previous 30-day cap). Subtitle next to "Historique des ventes" reads "15/03 - 25/05 · 3 vente(s)" — full range honored. Chart now renders bars across the entire 71-day range (labels "15 mars … 20 mars …" visible). Bug fix verified.
+
+  - task: "Bug fix — Currency change re-applies parity on Sell screen"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/sell.tsx + frontend/context/DataContext.tsx + frontend/types/index.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Added useEffect to sync currency from user.currency, getEffectivePrice now uses convertCurrency, Product.currency added to mapping."
+        - working: "NA"
+          agent: "testing"
+          comment: |
+            INDETERMINATE (2026-05-25). Could not complete end-to-end verification within tool budget: after opening Plus → Devise modal (currently selected = USD, screenshot captured), the test script could not switch back to the "Vendre" tab because the bottom tab-bar "Vendre" element was being intercepted by an overlapping "PROFIL" label from the Plus screen (Playwright reported `<div>PROFIL</div> subtree intercepts pointer events`). The Devise modal itself displayed correctly with all 8 currencies and USD highlighted as active. Code review of /app/frontend/app/(tabs)/sell.tsx confirms the fix is implemented: useEffect re-syncs local currency from user.currency, getEffectivePrice uses convertCurrency(price, product.currency, currency), and DataContext.mapBackendProduct + types/Product now include the currency field. RECOMMEND manual verification or re-run with the Devise modal close button used before tab switch.
+    file: "frontend/app/(tabs)/dashboard.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            Chart bucket count was hard-capped at 30 days (Math.min(30,...)) so a 60- or 90-day custom range only ever showed the first 30 days. Cap raised to 365, labels adaptive (every 5 days for long ranges). Also fixed openDaySales() which previously computed the clicked date as `subDays(now, 6 - dayIndex)` (only correct for the 7-day default) — now uses the dateKey stored on the chart bucket so it works for any period including custom.
+            Test: pick custom 60-day range → chart should show 60 bars and "X ventes" count reflects the full range; tapping any bar opens the correct day's sales.
+
+  - task: "Bug fix — Currency change re-applies parity on Sell screen"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/sell.tsx + frontend/context/DataContext.tsx + frontend/types/index.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            Three coordinated changes:
+              1) /(tabs)/sell.tsx — Added useEffect that re-syncs local `currency` state with user.currency whenever the user changes their preferred currency in "Plus". Previously the state was only initialised once at mount.
+              2) /(tabs)/sell.tsx — Replaced getEffectivePrice() with a converting version that runs convertCurrency(price, product.currency, currency) so the displayed price actually re-tariffs when the user switches currency (the symbol used to change but the number stayed the same — the user-reported bug). totalAmount + history dayGroup totals + debt-payment total now also convert.
+              3) DataContext.mapBackendProduct + types/Product — Added `currency` field so the native currency the product was created in survives the backend→frontend mapping (without this, the conversion above would always be a no-op because fromCurrency would equal toCurrency).
+            Test: create product priced 100 EUR → switch user currency to USD in Plus → return to Vente → product price should now show ~108.00 $ (using static rate 1 EUR = 1.08 USD), not "100.00 $".
+
 
 backend_new:
   - task: "Ambassador Preferred Currency endpoint"
