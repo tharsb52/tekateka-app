@@ -198,6 +198,14 @@ app.include_router(amb_panel_router, prefix="/api", tags=["ambassador-panel"])
 # Include Firebase auth page
 app.include_router(firebase_page_router, prefix="/api", tags=["firebase-auth"])
 
+# Serve downloadable brand assets (logos for Stripe, Play Store, etc.).
+# Files live in /app/backend/static and are reachable at /api/assets/<filename>
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+from pathlib import Path as _Path  # noqa: E402
+_static_dir = _Path(__file__).parent / "static"
+if _static_dir.exists():
+    app.mount("/api/assets", StaticFiles(directory=str(_static_dir)), name="assets")
+
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
