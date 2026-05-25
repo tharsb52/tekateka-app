@@ -26,6 +26,7 @@ export interface Product {
   category: string;
   unit?: string;                 // pcs, kg, L, sac... or custom (when user picked "autre")
   lowStockThreshold?: number;    // alert when stock <= this value (default 5)
+  currency?: string;             // Native currency the product was created in
   // Recomputed by the backend on every read
   outOfStock?: boolean;
   lowStock?: boolean;

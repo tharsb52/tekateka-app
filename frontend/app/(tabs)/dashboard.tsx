@@ -131,10 +131,18 @@ export default function DashboardScreen() {
   const [expandedProductId, setExpandedProductId] = useState<string | null>(null);
   const [monthlyOpen, setMonthlyOpen] = useState<boolean>(false);
 
-  // Stock indicator: low = 1 unit, empty = 0 units
+  // Stock indicator:
+  //   - empty = 0 units
+  //   - low   = stock > 0 AND stock <= product.lowStockThreshold (default 5)
+  // NOTE: must match the filter used in /stock-alerts so the count and the
+  // detail screen stay consistent.
   const stockStats = useMemo(() => {
-    const empty = products.filter(p => (p.stock ?? 0) === 0);
-    const low = products.filter(p => (p.stock ?? 0) === 1);
+    const empty = products.filter(p => (p.stock ?? 0) <= 0);
+    const low = products.filter(p => {
+      const stock = p.stock ?? 0;
+      const threshold = (p as any).lowStockThreshold ?? 5;
+      return stock > 0 && stock <= threshold;
+    });
     return { empty, low };
   }, [products]);
 
@@ -317,22 +325,31 @@ export default function DashboardScreen() {
       } catch { return false; }
     });
 
-    // Compute daily buckets
-    const dayCount = Math.min(30, Math.ceil((endDate.getTime() - startDate.getTime()) / (24 * 3600 * 1000)) + 1);
-    const days: { label: string; value: number }[] = [];
+    // Compute daily buckets — no more 30-day cap so custom periods (e.g. 90+
+    // days) are fully visualised. We cap at 365 to avoid extreme cases.
+    const rawDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (24 * 3600 * 1000)) + 1;
+    const dayCount = Math.max(1, Math.min(365, rawDays));
+    const days: { label: string; value: number; dateKey: string }[] = [];
     for (let i = 0; i < dayCount; i++) {
       const date = new Date(startDate);
       date.setDate(date.getDate() + i);
       const dateKey = format(date, 'yyyy-MM-dd');
-      const dayLabel = dayCount <= 7
-        ? (i === dayCount - 1 ? 'Auj' : format(date, 'EEE', { locale: fr }))
-        : format(date, 'd MMM', { locale: fr });
+      const isLast = i === dayCount - 1;
+      let dayLabel: string;
+      if (dayCount <= 7) {
+        dayLabel = isLast ? 'Auj' : format(date, 'EEE', { locale: fr });
+      } else if (dayCount <= 31) {
+        dayLabel = format(date, 'd MMM', { locale: fr });
+      } else {
+        // For long ranges, label every ~5 days to keep the axis readable.
+        dayLabel = (i % 5 === 0 || isLast) ? format(date, 'd MMM', { locale: fr }) : '';
+      }
       const dayRevenue = filtered
         .filter(s => {
           try { return localDayKey(s.createdAt) === dateKey; } catch { return false; }
         })
         .reduce((sum, s) => sum + convertCurrency(s.totalAmount, s.currency || userCurrency, userCurrency), 0);
-      days.push({ label: dayLabel.charAt(0).toUpperCase() + dayLabel.slice(1), value: dayRevenue });
+      days.push({ label: dayLabel.charAt(0).toUpperCase() + dayLabel.slice(1), value: dayRevenue, dateKey });
     }
     return { chartData: days, periodLabel: label, filteredSales: filtered };
   }, [sales, user?.currency, period, customStartDate, customEndDate]);
@@ -345,8 +362,10 @@ export default function DashboardScreen() {
 
   const openDaySales = (dayIndex: number) => {
     const day = chartData[dayIndex];
-    const date = subDays(new Date(), 6 - dayIndex);
-    const dateKey = format(date, 'yyyy-MM-dd');
+    if (!day) return;
+    // Use the dateKey computed inside the chart bucket so this works for any
+    // period (not just the legacy 7-day default).
+    const dateKey = day.dateKey;
     const userCurrency = user?.currency || 'USD';
     const daySales = sales
       .filter(s => {

@@ -33,6 +33,11 @@ function mapBackendProduct(p: any): Product {
     category: p.category || 'food',
     unit: p.unit || undefined,
     lowStockThreshold: typeof p.lowStockThreshold === 'number' ? p.lowStockThreshold : 5,
+    // Preserve the native currency the product was created in. Critical for
+    // multi-currency conversion on the Sell screen — without it we'd assume
+    // the product is already in the user's current currency, which breaks
+    // parity when the user switches currencies in "Plus".
+    currency: p.currency || 'USD',
     outOfStock: typeof p.outOfStock === 'boolean' ? p.outOfStock : (p.stock ?? 0) <= 0,
     lowStock: typeof p.lowStock === 'boolean'
       ? p.lowStock

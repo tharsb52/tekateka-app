@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   TextInput, Alert, Modal, KeyboardAvoidingView, Platform,
@@ -8,7 +8,7 @@ import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import i18n from '../../utils/i18n';
 import { Ionicons } from '@expo/vector-icons';
-import { formatCurrency, CURRENCIES } from '../../utils/currencies';
+import { formatCurrency, CURRENCIES, convertCurrency } from '../../utils/currencies';
 import { format, isToday, isYesterday, parseISO } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { formatLocal, localDayKey } from '../../utils/dateUtils';
@@ -30,8 +30,29 @@ export default function SellScreen() {
   const [editingSale, setEditingSale] = useState<any>(null);
   const [editQty, setEditQty] = useState('');
 
+  // Keep local currency in sync when the user changes their preferred currency
+  // in the "Plus" / settings screen. Without this, the sell screen would keep
+  // its initial value forever and prices would not re-convert.
+  useEffect(() => {
+    if (user?.currency && user.currency !== currency) {
+      setCurrency(user.currency);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.currency]);
+
   const availableProducts = products.filter(p => p.stock > 0);
-  const getEffectivePrice = (p: any) => p.promotionPrice && p.promotionPrice > 0 ? p.promotionPrice : (p.salePrice || p.price || 0);
+
+  // Effective price (promo or normal) in the PRODUCT's native currency.
+  const getEffectivePriceNative = (p: any) => p.promotionPrice && p.promotionPrice > 0 ? p.promotionPrice : (p.salePrice || p.price || 0);
+  // Price converted to the currently displayed currency so changing devise
+  // re-applies the parity instead of just swapping the symbol.
+  const getDisplayPrice = (p: any) => {
+    const native = getEffectivePriceNative(p);
+    const fromCur = (p as any).currency || user?.currency || currency;
+    return convertCurrency(native, fromCur, currency);
+  };
+  // Backwards-compat alias used elsewhere
+  const getEffectivePrice = getDisplayPrice;
 
   // Group sales by day
   const salesByDay = useMemo(() => {
@@ -68,12 +89,12 @@ export default function SellScreen() {
           label = dateKey;
         }
       }
-      const total = daySales.reduce((s, sale) => s + sale.totalAmount, 0);
+      const total = daySales.reduce((s, sale) => s + convertCurrency(sale.totalAmount, sale.currency || currency, currency), 0);
       groups.push({ label, date: dateKey, sales: daySales, total });
     });
     
     return groups;
-  }, [sales]);
+  }, [sales, currency]);
 
   // Debt payments (shown separately)
   const debtPayments = [...sales]
@@ -193,7 +214,7 @@ export default function SellScreen() {
                   <Text style={[styles.dayLabel, { color: '#10b981' }]}>Dettes payées</Text>
                 </View>
                 <Text style={[styles.dayTotal, { color: '#10b981' }]}>
-                  {formatCurrency(debtPayments.reduce((s, p) => s + p.totalAmount, 0), currency)}
+                  {formatCurrency(debtPayments.reduce((s, p) => s + convertCurrency(p.totalAmount, p.currency || currency, currency), 0), currency)}
                 </Text>
               </View>
               {debtPayments.map((sale) => (
