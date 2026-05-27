@@ -37,6 +37,38 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 router = APIRouter()
 
 # ==========================================
+# Subscription helpers
+# ==========================================
+PLAN_DURATION_DAYS = {"monthly": 30, "quarterly": 90, "yearly": 365}
+
+
+def compute_cumulative_expiry(user: dict, plan: str, now: datetime) -> datetime:
+    """
+    Cumul d'abonnement: si l'utilisateur a déjà un abonnement actif (non expiré),
+    le nouveau plan s'ajoute à la date d'expiration existante. Sinon, on repart
+    de maintenant.
+
+    Lit aussi bien `subscription.expiryDate` que `subscription.expiresAt` car
+    les deux clés ont coexisté dans la base.
+    """
+    days = PLAN_DURATION_DAYS.get(plan, 30)
+    existing_sub = (user or {}).get("subscription") or {}
+    existing_str = existing_sub.get("expiryDate") or existing_sub.get("expiresAt")
+    base = now
+    if existing_str and existing_sub.get("status") in ("active", "trial"):
+        try:
+            existing_dt = datetime.fromisoformat(
+                str(existing_str).replace("Z", "+00:00")
+            ).replace(tzinfo=None)
+            if existing_dt > now:
+                base = existing_dt
+        except Exception:
+            pass
+    return base + timedelta(days=days)
+
+
+
+# ==========================================
 # Pricing Configuration
 # ==========================================
 # Single unified pricing tier. Subscription prices (what the END CLIENT pays)
@@ -433,14 +465,9 @@ async def activate_code(body: dict):
     if not user:
         raise HTTPException(status_code=404, detail="Client introuvable")
 
-    # Calculate expiry based on plan
+    # Calculate expiry — CUMUL: prolonge l'abonnement actuel si encore actif
     now = datetime.utcnow()
-    if plan == "monthly":
-        expiry = now + timedelta(days=30)
-    elif plan == "quarterly":
-        expiry = now + timedelta(days=90)
-    else:  # yearly
-        expiry = now + timedelta(days=365)
+    expiry = compute_cumulative_expiry(user, plan, now)
 
     # Pricing + commission for this activation
     pricing_cfg = PRICING_TIERS[DEFAULT_TIER][plan]
@@ -597,14 +624,9 @@ async def client_activate_code(body: dict):
     plan = code_doc["plan"]
     ambassador_id = code_doc["ambassadorId"]
 
-    # Calculate expiry based on plan
+    # Calculate expiry — CUMUL: prolonge l'abonnement actuel si encore actif
     now = datetime.utcnow()
-    if plan == "monthly":
-        expiry = now + timedelta(days=30)
-    elif plan == "quarterly":
-        expiry = now + timedelta(days=90)
-    else:  # yearly
-        expiry = now + timedelta(days=365)
+    expiry = compute_cumulative_expiry(user, plan, now)
 
     # Pricing + commission for this activation. Source of truth for both
     # numbers is PRICING_TIERS[DEFAULT_TIER]. Commission = appPrice - ambassadorPrice.
@@ -793,6 +815,74 @@ async def admin_toggle_ambassador(body: dict):
     await db.ambassadors.update_one({"_id": ObjectId(ambassador_id)}, {"$set": {"status": new_status}})
     
     return {"success": True, "newStatus": new_status}
+
+# ==========================================
+# Admin: Reset Ambassador Password
+# ==========================================
+@router.post("/admin/ambassadors/reset-password")
+async def admin_reset_ambassador_password(body: dict):
+    password = body.get("adminPassword", "")
+    admin_pass = os.getenv("ADMIN_PASSWORD", "TekaTeka2025")
+    if password != admin_pass:
+        raise HTTPException(status_code=401, detail="Mot de passe admin incorrect")
+
+    ambassador_id = body.get("ambassadorId", "")
+    new_password = (body.get("newPassword", "") or "").strip()
+    if len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="Le mot de passe doit faire au moins 6 caractères")
+
+    try:
+        amb = await db.ambassadors.find_one({"_id": ObjectId(ambassador_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="ID invalide")
+    if not amb:
+        raise HTTPException(status_code=404, detail="Ambassadeur introuvable")
+
+    await db.ambassadors.update_one(
+        {"_id": ObjectId(ambassador_id)},
+        {"$set": {"passwordHash": pwd_context.hash(new_password), "passwordUpdatedAt": datetime.utcnow()}}
+    )
+    return {"success": True}
+
+
+# ==========================================
+# Ambassador: Change own password (requires current password)
+# ==========================================
+@router.post("/ambassador/profile/change-password")
+async def ambassador_change_password(body: dict):
+    token = body.get("token", "")
+    current_password = body.get("currentPassword", "") or ""
+    new_password = (body.get("newPassword", "") or "").strip()
+
+    if not token:
+        raise HTTPException(status_code=401, detail="Token requis")
+    if len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="Le nouveau mot de passe doit faire au moins 6 caractères")
+
+    # Decode token to retrieve the ambassador
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        ambassador_id = payload.get("ambassador_id")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Token invalide")
+
+    if not ambassador_id:
+        raise HTTPException(status_code=401, detail="Token invalide")
+
+    amb = await db.ambassadors.find_one({"_id": ObjectId(ambassador_id)})
+    if not amb:
+        raise HTTPException(status_code=404, detail="Ambassadeur introuvable")
+
+    if not pwd_context.verify(current_password, amb.get("passwordHash", "")):
+        raise HTTPException(status_code=401, detail="Mot de passe actuel incorrect")
+
+    await db.ambassadors.update_one(
+        {"_id": ObjectId(ambassador_id)},
+        {"$set": {"passwordHash": pwd_context.hash(new_password), "passwordUpdatedAt": datetime.utcnow()}}
+    )
+    return {"success": True}
+
+
 
 # ==========================================
 # Admin: Generate Codes

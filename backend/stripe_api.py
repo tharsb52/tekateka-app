@@ -692,7 +692,24 @@ async def _fulfill_payment(payment: dict, session: dict):
 
     if ptype == "subscription":
         plan = payment.get("plan", "monthly")
-        end_date = now + timedelta(days=SUBSCRIPTION_DURATION_DAYS.get(plan, 30))
+        plan_days = SUBSCRIPTION_DURATION_DAYS.get(plan, 30)
+        # CUMUL: si l'utilisateur a déjà un abonnement actif, le nouveau
+        # paiement prolonge la période d'expiration existante au lieu de la
+        # remplacer. Si expiré ou nouveau, on repart de maintenant.
+        existing_user = await db.users.find_one({"_id": ObjectId(user_id)}) or {}
+        existing_sub = existing_user.get("subscription") or {}
+        base = now
+        existing_expiry_str = existing_sub.get("expiresAt") or existing_sub.get("expiryDate")
+        if existing_expiry_str and existing_sub.get("status") in ("active", "trial"):
+            try:
+                existing_dt = datetime.fromisoformat(
+                    str(existing_expiry_str).replace("Z", "+00:00")
+                ).replace(tzinfo=None)
+                if existing_dt > now:
+                    base = existing_dt
+            except Exception:
+                pass
+        end_date = base + timedelta(days=plan_days)
         await db.users.update_one(
             {"_id": ObjectId(user_id)},
             {"$set": {
@@ -706,7 +723,7 @@ async def _fulfill_payment(payment: dict, session: dict):
                 "updatedAt": now.isoformat() + "Z",
             }}
         )
-        logger.info(f"Activated {plan} subscription for user {user_id}")
+        logger.info(f"Activated {plan} subscription for user {user_id} (cumul base={base.isoformat()}, end={end_date.isoformat()})")
 
     elif ptype == "ambassador_codes":
         qty = int(payment.get("quantity", 1))

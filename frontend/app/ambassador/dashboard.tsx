@@ -99,6 +99,9 @@ export default function AmbassadorDashboard() {
             <Text style={styles.name}>{ambassador.name}</Text>
           </View>
         </View>
+        <TouchableOpacity onPress={() => router.push('/ambassador/change-password')} style={styles.logoutBtn}>
+          <Ionicons name="key" size={20} color="#60a5fa" />
+        </TouchableOpacity>
         <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
           <Ionicons name="log-out" size={22} color="#ef4444" />
         </TouchableOpacity>

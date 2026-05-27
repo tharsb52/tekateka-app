@@ -868,13 +868,80 @@ metadata:
   run_ui: false
 
 test_plan:
-  current_focus:
-    - "Bug fix — Stock faible counter uses lowStockThreshold (dashboard)"
-    - "Bug fix — Sales history period > 30 days no longer capped"
-    - "Bug fix — Currency change in 'Plus' re-applies parity on Sell screen"
+  current_focus: []
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
+
+backend_v2:
+  - task: "Admin reset ambassador password endpoint"
+    implemented: true
+    working: true
+    file: "backend/ambassador_api.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: |
+            PASS (2026-05-26, 9/9 checks).
+            * POST /api/admin/ambassadors/reset-password with valid admin password + ambassadorId + newPassword="NewPass456" → 200 {success:true}.
+            * Old password rejected (401) and new password accepted (200) after reset.
+            * Negatives: wrong admin pw → 401, newPassword<6 → 400 "Le mot de passe doit faire au moins 6 caractères", non-existent 24-hex id → 404, bad id format → 400 "ID invalide". All as spec.
+
+  - task: "Ambassador self-service change password endpoint"
+    implemented: true
+    working: true
+    file: "backend/ambassador_api.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: |
+            PASS (2026-05-26, 8/8 checks).
+            * POST /api/ambassador/profile/change-password with valid token + currentPassword + newPassword → 200 {success:true}.
+            * New login works, old password rejected.
+            * Negatives: empty token → 401 "Token requis", bad JWT → 401 "Token invalide", wrong currentPassword → 401 "Mot de passe actuel incorrect", newPassword<6 → 400.
+
+  - task: "Cumulative subscription expiry on code activation (CUMUL)"
+    implemented: true
+    working: true
+    file: "backend/ambassador_api.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: |
+            PASS (2026-05-26, 7/7 checks).
+            * Generated 2 monthly codes for amb 6a17052e9076ab658d4626ab via /admin/codes/generate.
+            * Created fresh user via /auth/phone-login. Pre-subscription was the auto-granted 7-day trial (status='trial', expiresAt=now+7d).
+            * 1st activation via POST /api/subscription/activate-code → status='active', T1 = trial_expiry + 30d = now+37d (confirms cumul also applies on top of trial — correct per compute_cumulative_expiry logic).
+            * 2nd activation with the SAME userId → T2 = T1 + 30d EXACTLY (delta(T2-T1)=30.0000d). delta(T2-now)=67d, NOT 30d → CUMUL WORKS.
+            * Endpoint used: POST /api/subscription/activate-code {code, userId} (the canonical activation endpoint matching the requested body shape; /api/ambassador/codes/activate does not exist as a separate route, but the same compute_cumulative_expiry helper is shared with POST /api/ambassador/activate so behavior is identical).
+
+  - task: "Cumulative subscription expiry on Stripe webhook (code review)"
+    implemented: true
+    working: true
+    file: "backend/stripe_api.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: |
+            PASS by code review (2026-05-26, 7/7 checks). In _fulfill_payment (subscription branch, around line 693-726):
+              1. Reads existing user via db.users.find_one({_id: ObjectId(user_id)}).
+              2. Reads existing_sub = user.subscription; extracts existing_expiry_str = expiresAt or expiryDate.
+              3. If existing_expiry_str AND existing_sub.status in ("active", "trial"), parses to existing_dt and uses it as `base` only when existing_dt > now.
+              4. Otherwise falls back to base = now.
+              5. end_date = base + timedelta(days=plan_days).
+            All review criteria satisfied. Webhook subscription fulfillment now correctly cumulates on existing active/trial subscriptions.
 
 frontend_new:
   - task: "Bug fix — Stock faible counter uses lowStockThreshold"

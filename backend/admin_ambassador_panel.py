@@ -186,14 +186,15 @@ async function loadAmbassadors(){
       <input id="newCity" placeholder="Ville">
     </div>
     <div class="form-row">
-      <input id="newPwd" placeholder="Mot de passe" type="password">
+      <input id="newPwd" placeholder="Mot de passe" type="text" autocomplete="off">
+      <button class="btn" type="button" style="background:#475569;color:#fff" onclick="genPwd()">🎲 Générer</button>
       <button class="btn btn-success" onclick="createAmbassador()">Créer</button>
     </div>
     <div id="createMsg"></div>
   </div>`;
 
   html += `<div class="card"><h2>Liste des ambassadeurs (${ambassadors.length})</h2><table>
-    <thead><tr><th>Nom</th><th>Email</th><th>Pays/Ville</th><th>Ventes</th><th>Codes</th><th>Statut</th><th>Action</th></tr></thead>
+    <thead><tr><th>Nom</th><th>Email</th><th>Pays/Ville</th><th>Ventes</th><th>Codes</th><th>Statut</th><th>Actions</th></tr></thead>
     <tbody>${ambassadors.map(a=>`
       <tr>
         <td style="font-weight:600">${a.name}</td>
@@ -202,7 +203,10 @@ async function loadAmbassadors(){
         <td style="font-weight:700">${a.totalSales}</td>
         <td>${a.unusedCodes}/${a.totalCodes}</td>
         <td><span class="badge ${a.status}">${a.status==='active'?'Actif':'Bloqué'}</span></td>
-        <td><button class="btn ${a.status==='active'?'btn-danger':'btn-success'}" style="padding:6px 12px;font-size:12px" onclick="toggleAmbassador('${a.id}')">${a.status==='active'?'Bloquer':'Débloquer'}</button></td>
+        <td style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn" style="padding:6px 10px;font-size:12px;background:#2563eb;color:#fff" onclick="resetAmbassadorPwd('${a.id}','${a.name.replace(/'/g,"\\'")}')">🔑 MDP</button>
+          <button class="btn ${a.status==='active'?'btn-danger':'btn-success'}" style="padding:6px 10px;font-size:12px" onclick="toggleAmbassador('${a.id}')">${a.status==='active'?'Bloquer':'Débloquer'}</button>
+        </td>
       </tr>
     `).join('')}</tbody></table></div>`;
 
@@ -221,12 +225,37 @@ async function createAmbassador(){
     body:JSON.stringify({adminPassword,name,email,country:country||'Congo',city:city||'Kinshasa',ambassadorPassword:pwd})});
   const data=await res.json();
   if(res.ok){
-    document.getElementById('createMsg').innerHTML=`<div class="msg success">Ambassadeur "${name}" créé avec succès !</div>`;
+    document.getElementById('createMsg').innerHTML=`<div class="msg success">Ambassadeur "${name}" créé avec succès !<br><strong>Email: ${email}</strong><br><strong>Mot de passe: ${pwd}</strong><br><em>Notez-les maintenant, ils ne seront plus affichés.</em></div>`;
     document.getElementById('newName').value='';document.getElementById('newEmail').value='';
     document.getElementById('newPwd').value='';
-    setTimeout(()=>loadAmbassadors(),1000);
+    setTimeout(()=>loadAmbassadors(),3000);
   } else {
     document.getElementById('createMsg').innerHTML=`<div class="msg error">${data.detail||'Erreur'}</div>`;
+  }
+}
+
+function genPwd(){
+  const chars='ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  let out='';for(let i=0;i<10;i++) out+=chars.charAt(Math.floor(Math.random()*chars.length));
+  document.getElementById('newPwd').value=out;
+}
+
+async function resetAmbassadorPwd(id, name){
+  const newPwd=prompt('Nouveau mot de passe pour '+name+' :\n(laissez vide pour en générer un automatiquement)');
+  if(newPwd===null) return;
+  let finalPwd=newPwd.trim();
+  if(!finalPwd){
+    const chars='ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+    for(let i=0;i<10;i++) finalPwd+=chars.charAt(Math.floor(Math.random()*chars.length));
+  }
+  if(finalPwd.length<6){alert('Le mot de passe doit faire au moins 6 caractères');return;}
+  const res=await fetch('/api/admin/ambassadors/reset-password',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({adminPassword,ambassadorId:id,newPassword:finalPwd})});
+  const data=await res.json();
+  if(res.ok){
+    alert('✅ Mot de passe réinitialisé pour '+name+'\n\nNouveau mot de passe : '+finalPwd+'\n\nNotez-le immédiatement, il ne sera plus affiché.');
+  } else {
+    alert('❌ Erreur : '+(data.detail||'Erreur inconnue'));
   }
 }
 

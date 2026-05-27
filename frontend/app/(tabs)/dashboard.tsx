@@ -37,6 +37,7 @@ import { fr } from 'date-fns/locale';
 import { formatLocal, localDayKey } from '../../utils/dateUtils';
 
 import AppHeader from '../../components/AppHeader';
+import SubscriptionStatusCard from '../../components/SubscriptionStatusCard';
 import { cardShadow } from '../../utils/shadows';
 
 const BG = '#fef3e7';
@@ -423,6 +424,9 @@ export default function DashboardScreen() {
           <Text style={styles.refreshText}>Actualiser</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Subscription status card (always visible) */}
+      <SubscriptionStatusCard />
 
       {/* Expiry Reminder Banner */}
       {showBanner && (

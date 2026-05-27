@@ -498,28 +498,6 @@ export default function SubscriptionScreen() {
                 Entrez le code reçu de votre ambassadeur TekaTeka
               </Text>
             </View>
-
-            <View style={{ height: 1, backgroundColor: '#e2e8f0', marginVertical: 12 }} />
-
-            {/* Card Payment */}
-            <TouchableOpacity 
-              style={styles.payMethodBtn}
-              onPress={() => processSubscriptionPayment('card')}
-            >
-              <View style={[styles.payMethodIcon, { backgroundColor: '#eff6ff' }]}>
-                <Ionicons name="card" size={28} color="#2563eb" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.payMethodTitle}>Carte bancaire</Text>
-                <Text style={styles.payMethodSub}>Visa, Mastercard (Stripe)</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={22} color="#94a3b8" />
-            </TouchableOpacity>
-
-            <View style={styles.sandboxBadge}>
-              <Ionicons name="information-circle" size={18} color="#64748b" />
-              <Text style={styles.sandboxText}>Le paiement par carte sera disponible prochainement</Text>
-            </View>
           </View>
         </View>
       </Modal>

@@ -24,6 +24,7 @@ import { formatLocal } from '../../utils/dateUtils';
 import { getOTPProviderInfo } from '../../services/otpService';
 import { getPaymentProviderInfo } from '../../services/paymentService';
 import AppHeader from '../../components/AppHeader';
+import SubscriptionStatusCard from '../../components/SubscriptionStatusCard';
 import PinScreen from '../../components/PinScreen';
 import ErrorBoundary from '../../components/ErrorBoundary';
 
@@ -196,6 +197,9 @@ function SettingsScreenInner() {
       <AppHeader />
 
       <ScrollView style={styles.content}>
+        {/* Subscription status (always visible) */}
+        <SubscriptionStatusCard />
+
         {/* Profile Section */}
         <Text style={styles.sectionLabel}>PROFIL</Text>
         <View style={styles.card}>
@@ -554,33 +558,39 @@ function SettingsScreenInner() {
       </Modal>
 
       {/* Currency Modal */}
-      <Modal visible={currencyModalVisible} animationType="slide" transparent>
+      <Modal visible={currencyModalVisible} animationType="slide" transparent onRequestClose={() => setCurrencyModalVisible(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { maxHeight: '85%', minHeight: 320 }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Choisir la devise</Text>
               <TouchableOpacity onPress={() => setCurrencyModalVisible(false)}>
                 <Ionicons name="close" size={28} color="#64748b" />
               </TouchableOpacity>
             </View>
-            {CURRENCIES.map((curr) => (
-              <TouchableOpacity
-                key={curr.code}
-                style={[styles.modalOption, user?.currency === curr.code && styles.modalOptionSelected]}
-                onPress={() => handleCurrencyChange(curr.code)}
-              >
-                <Text style={styles.modalOptionFlag}>{curr.symbol}</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.modalOptionText, user?.currency === curr.code && styles.modalOptionTextSelected]}>
-                    {curr.name}
-                  </Text>
-                  <Text style={styles.modalOptionCode}>{curr.code}</Text>
-                </View>
-                {user?.currency === curr.code && (
-                  <Ionicons name="checkmark-circle" size={24} color="#2563eb" />
-                )}
-              </TouchableOpacity>
-            ))}
+            <ScrollView
+              style={{ flexGrow: 0 }}
+              contentContainerStyle={{ paddingBottom: 24 }}
+              showsVerticalScrollIndicator={true}
+            >
+              {CURRENCIES.map((curr) => (
+                <TouchableOpacity
+                  key={curr.code}
+                  style={[styles.modalOption, user?.currency === curr.code && styles.modalOptionSelected]}
+                  onPress={() => handleCurrencyChange(curr.code)}
+                >
+                  <Text style={styles.modalOptionFlag}>{curr.symbol}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.modalOptionText, user?.currency === curr.code && styles.modalOptionTextSelected]}>
+                      {curr.name}
+                    </Text>
+                    <Text style={styles.modalOptionCode}>{curr.code}</Text>
+                  </View>
+                  {user?.currency === curr.code && (
+                    <Ionicons name="checkmark-circle" size={24} color="#2563eb" />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
         </View>
       </Modal>

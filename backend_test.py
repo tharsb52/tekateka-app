@@ -1,210 +1,291 @@
 """
-Backend tests for Ambassador Preferred Currency endpoint
-(POST /api/ambassador/profile/currency) + regression checks.
+Backend tests for TekaTeka:
+  TEST 1 — Admin reset ambassador password
+  TEST 2 — Ambassador self-service change password
+  TEST 3 — Cumulative subscription expiry on code activation (CUMUL)
+  TEST 4 — Cumulative subscription expiry on Stripe webhook (code review)
 """
-import json
 import os
 import sys
+import time
+import asyncio
 import requests
+from datetime import datetime
+from motor.motor_asyncio import AsyncIOMotorClient
+from bson import ObjectId
 
-BASE = "https://low-data-shop.preview.emergentagent.com/api"
-EMAIL = "ambassador@tekateka.com"
-PASSWORD = "Ambassador2025"
+BACKEND_URL = "https://low-data-shop.preview.emergentagent.com/api"
+ADMIN_PASSWORD = "Ndinemakutamillions82@"
+MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
+DB_NAME = os.environ.get("DB_NAME", "test_database")
 
-passed = 0
-failed = 0
-failures = []
-
-
-def assert_eq(label, actual, expected):
-    global passed, failed
-    if actual == expected:
-        print(f"  ✅ {label}: {actual!r}")
-        passed += 1
-    else:
-        print(f"  ❌ {label}: expected {expected!r}, got {actual!r}")
-        failures.append(f"{label}: expected {expected!r}, got {actual!r}")
-        failed += 1
+results = []
 
 
-def assert_true(label, cond, detail=""):
-    global passed, failed
-    if cond:
-        print(f"  ✅ {label}")
-        passed += 1
-    else:
-        print(f"  ❌ {label} {detail}")
-        failures.append(f"{label} {detail}")
-        failed += 1
+def log(name, passed, detail=""):
+    status = "PASS" if passed else "FAIL"
+    print(f"[{status}] {name}: {detail}")
+    results.append((name, passed, detail))
 
 
-def post(path, body):
-    url = f"{BASE}{path}"
-    r = requests.post(url, json=body, timeout=30)
+def parse_iso(s):
+    if not s:
+        return None
+    return datetime.fromisoformat(str(s).replace("Z", "+00:00")).replace(tzinfo=None)
+
+
+async def _delete_ambassador(email):
+    client = AsyncIOMotorClient(MONGO_URL)
+    db = client[DB_NAME]
     try:
-        data = r.json()
-    except Exception:
-        data = {"_raw": r.text}
-    return r.status_code, data
+        res = await db.ambassadors.delete_one({"email": email})
+        return res.deleted_count
+    finally:
+        client.close()
 
 
-def set_currency(token, currency):
-    return post("/ambassador/profile/currency", {"token": token, "currency": currency})
+def test1_reset_password():
+    print("\n=== TEST 1: Admin reset ambassador password ===")
+    email = "resetpwd-test@tekateka.com"
+    # pre-clean
+    asyncio.run(_delete_ambassador(email))
+    r = requests.post(f"{BACKEND_URL}/admin/ambassadors/create", json={
+        "adminPassword": ADMIN_PASSWORD,
+        "name": "Test Reset",
+        "email": email,
+        "country": "Congo",
+        "city": "Kinshasa",
+        "ambassadorPassword": "OldPass123",
+    })
+    if r.status_code != 200:
+        log("T1.create_ambassador", False, f"{r.status_code} {r.text[:200]}")
+        return None
+    data = r.json()
+    amb_id = data.get("ambassadorId") or data.get("id") or data.get("_id")
+    if not amb_id and isinstance(data.get("ambassador"), dict):
+        amb_id = data["ambassador"].get("id") or data["ambassador"].get("_id")
+    if not amb_id:
+        rlist = requests.post(f"{BACKEND_URL}/admin/ambassadors/list", json={"adminPassword": ADMIN_PASSWORD})
+        for a in rlist.json().get("ambassadors", []):
+            if a.get("email") == email:
+                amb_id = a.get("id") or a.get("_id")
+                break
+    log("T1.create_ambassador", bool(amb_id), f"id={amb_id} resp={data}")
+    if not amb_id:
+        return None
+
+    r = requests.post(f"{BACKEND_URL}/ambassador/login", json={"email": email, "password": "OldPass123"})
+    log("T1.login_old_pw_works", r.status_code == 200 and "token" in r.json(), f"{r.status_code}")
+
+    r = requests.post(f"{BACKEND_URL}/admin/ambassadors/reset-password", json={
+        "adminPassword": ADMIN_PASSWORD, "ambassadorId": amb_id, "newPassword": "NewPass456",
+    })
+    log("T1.reset_password_ok", r.status_code == 200 and r.json().get("success"), f"{r.status_code} {r.text[:120]}")
+
+    r = requests.post(f"{BACKEND_URL}/ambassador/login", json={"email": email, "password": "OldPass123"})
+    log("T1.old_pw_rejected_401", r.status_code == 401, f"{r.status_code} {r.text[:120]}")
+
+    r = requests.post(f"{BACKEND_URL}/ambassador/login", json={"email": email, "password": "NewPass456"})
+    log("T1.new_pw_works", r.status_code == 200 and "token" in r.json(), f"{r.status_code}")
+
+    r = requests.post(f"{BACKEND_URL}/admin/ambassadors/reset-password", json={
+        "adminPassword": "WRONG", "ambassadorId": amb_id, "newPassword": "AnotherPass123",
+    })
+    log("T1.wrong_admin_pw_401", r.status_code == 401, f"{r.status_code} {r.text[:120]}")
+
+    r = requests.post(f"{BACKEND_URL}/admin/ambassadors/reset-password", json={
+        "adminPassword": ADMIN_PASSWORD, "ambassadorId": amb_id, "newPassword": "abc",
+    })
+    ok = r.status_code == 400 and "6" in r.text
+    log("T1.short_pw_400", ok, f"{r.status_code} {r.text[:120]}")
+
+    r = requests.post(f"{BACKEND_URL}/admin/ambassadors/reset-password", json={
+        "adminPassword": ADMIN_PASSWORD, "ambassadorId": "000000000000000000000000", "newPassword": "SomePass99",
+    })
+    log("T1.nonexistent_id_404", r.status_code == 404, f"{r.status_code} {r.text[:120]}")
+
+    r = requests.post(f"{BACKEND_URL}/admin/ambassadors/reset-password", json={
+        "adminPassword": ADMIN_PASSWORD, "ambassadorId": "notanid", "newPassword": "SomePass99",
+    })
+    log("T1.invalid_id_400", r.status_code == 400, f"{r.status_code} {r.text[:120]}")
+
+    return amb_id
 
 
-def get_dashboard(token):
-    return post("/ambassador/dashboard", {"token": token})
+def test2_change_password(amb_id):
+    print("\n=== TEST 2: Ambassador change own password ===")
+    email = "resetpwd-test@tekateka.com"
+    r = requests.post(f"{BACKEND_URL}/ambassador/login", json={"email": email, "password": "NewPass456"})
+    token = r.json().get("token") if r.status_code == 200 else None
+    log("T2.login_get_token", bool(token), f"{r.status_code}")
+    if not token:
+        return None
+
+    r = requests.post(f"{BACKEND_URL}/ambassador/profile/change-password", json={
+        "token": token, "currentPassword": "NewPass456", "newPassword": "SelfNew789",
+    })
+    log("T2.change_password_ok", r.status_code == 200 and r.json().get("success"), f"{r.status_code} {r.text[:120]}")
+
+    r = requests.post(f"{BACKEND_URL}/ambassador/login", json={"email": email, "password": "SelfNew789"})
+    new_token = r.json().get("token") if r.status_code == 200 else None
+    log("T2.new_pw_login", bool(new_token), f"{r.status_code}")
+
+    r = requests.post(f"{BACKEND_URL}/ambassador/login", json={"email": email, "password": "NewPass456"})
+    log("T2.old_pw_rejected", r.status_code == 401, f"{r.status_code}")
+
+    r = requests.post(f"{BACKEND_URL}/ambassador/profile/change-password", json={
+        "token": "", "currentPassword": "SelfNew789", "newPassword": "Whatever123",
+    })
+    log("T2.empty_token_401", r.status_code == 401, f"{r.status_code} {r.text[:120]}")
+
+    r = requests.post(f"{BACKEND_URL}/ambassador/profile/change-password", json={
+        "token": "bad-token", "currentPassword": "SelfNew789", "newPassword": "Whatever123",
+    })
+    log("T2.invalid_jwt_401", r.status_code == 401, f"{r.status_code} {r.text[:120]}")
+
+    r = requests.post(f"{BACKEND_URL}/ambassador/profile/change-password", json={
+        "token": new_token, "currentPassword": "WRONG_CURRENT", "newPassword": "Whatever123",
+    })
+    ok = r.status_code == 401 and "actuel" in r.text.lower()
+    log("T2.wrong_currentpw_401", ok, f"{r.status_code} {r.text[:200]}")
+
+    r = requests.post(f"{BACKEND_URL}/ambassador/profile/change-password", json={
+        "token": new_token, "currentPassword": "SelfNew789", "newPassword": "abc",
+    })
+    log("T2.short_newpw_400", r.status_code == 400, f"{r.status_code} {r.text[:120]}")
+
+    return new_token
+
+
+async def test3_cumul(amb_id):
+    print("\n=== TEST 3: Cumulative subscription expiry on activation ===")
+    if not amb_id:
+        log("T3.precondition", False, "missing amb_id")
+        return
+
+    r = requests.post(f"{BACKEND_URL}/admin/codes/generate", json={
+        "adminPassword": ADMIN_PASSWORD,
+        "ambassadorId": amb_id,
+        "count": 2,
+        "plan": "monthly",
+    })
+    if r.status_code != 200:
+        log("T3.generate_codes", False, f"{r.status_code} {r.text[:200]}")
+        return
+    codes = r.json().get("codes", [])
+    log("T3.generate_codes", len(codes) == 2, f"codes={codes}")
+    if len(codes) < 2:
+        return
+
+    test_phone = f"+243700{int(time.time()) % 1000000:06d}"
+    rp = requests.post(f"{BACKEND_URL}/auth/phone-login", json={"phoneNumber": test_phone})
+    if rp.status_code != 200:
+        log("T3.create_user", False, f"{rp.status_code} {rp.text[:200]}")
+        return
+    user_obj = rp.json().get("user", {})
+    user_id = user_obj.get("id") or user_obj.get("_id")
+    log("T3.create_user", bool(user_id), f"user_id={user_id}")
+    if not user_id:
+        return
+
+    client = AsyncIOMotorClient(MONGO_URL)
+    db = client[DB_NAME]
+    try:
+        pre = await db.users.find_one({"_id": ObjectId(user_id)})
+        pre_sub = (pre or {}).get("subscription") or {}
+        log("T3.pre_snapshot", True,
+            f"plan={pre_sub.get('plan')}, status={pre_sub.get('status')}, "
+            f"exp={pre_sub.get('expiryDate') or pre_sub.get('expiresAt')}")
+
+        r1 = requests.post(f"{BACKEND_URL}/subscription/activate-code", json={
+            "userId": user_id, "code": codes[0],
+        })
+        log("T3.activate_code1", r1.status_code == 200, f"{r1.status_code} {r1.text[:200]}")
+        if r1.status_code != 200:
+            return
+
+        after1 = await db.users.find_one({"_id": ObjectId(user_id)})
+        sub1 = after1.get("subscription") or {}
+        T1 = parse_iso(sub1.get("expiryDate") or sub1.get("expiresAt"))
+        now1 = datetime.utcnow()
+        delta1 = (T1 - now1).total_seconds() / 86400 if T1 else None
+        log("T3.after_code1", T1 is not None,
+            f"T1={T1}, status={sub1.get('status')}, plan={sub1.get('plan')}, "
+            f"delta(T1-now)={delta1:.4f}d (expected ~30 if no prior sub; ~37 if 7d trial was extended)")
+
+        r2 = requests.post(f"{BACKEND_URL}/subscription/activate-code", json={
+            "userId": user_id, "code": codes[1],
+        })
+        log("T3.activate_code2", r2.status_code == 200, f"{r2.status_code} {r2.text[:200]}")
+        if r2.status_code != 200:
+            return
+
+        after2 = await db.users.find_one({"_id": ObjectId(user_id)})
+        sub2 = after2.get("subscription") or {}
+        T2 = parse_iso(sub2.get("expiryDate") or sub2.get("expiresAt"))
+        now2 = datetime.utcnow()
+        delta_T2_T1 = (T2 - T1).total_seconds() / 86400 if (T2 and T1) else None
+        delta_T2_now = (T2 - now2).total_seconds() / 86400 if T2 else None
+        cumul_ok = delta_T2_T1 is not None and abs(delta_T2_T1 - 30) <= 1.0
+        log("T3.CUMUL_T2_minus_T1_is_30d", cumul_ok,
+            f"T2={T2}, T1={T1}, delta(T2-T1)={delta_T2_T1:.4f}d (expected ~30), "
+            f"delta(T2-now)={delta_T2_now:.4f}d (would be ~60 if CUMUL works, ~30 if broken)")
+
+        await db.users.delete_one({"_id": ObjectId(user_id)})
+    finally:
+        client.close()
+
+
+def test4_stripe_code_review():
+    print("\n=== TEST 4: Stripe webhook cumul (code review) ===")
+    with open("/app/backend/stripe_api.py", "r") as f:
+        src = f.read()
+    snippet_idx = src.find("end_date = base + timedelta(days=plan_days)")
+    if snippet_idx < 0:
+        log("T4.snippet_found", False, "marker not found")
+        return
+    block = src[max(0, snippet_idx - 800):snippet_idx + 200]
+    print("--- CODE BLOCK ---")
+    print(block)
+    print("--- END CODE BLOCK ---")
+    checks = [
+        ("reads_existing_user", "db.users.find_one" in block),
+        ("reads_existing_subscription", "existing_sub" in block),
+        ("checks_status_active_or_trial", '("active", "trial")' in block or "['active', 'trial']" in block or "'active', 'trial'" in block),
+        ("checks_existing_dt_gt_now", "existing_dt > now" in block),
+        ("base_default_now", "base = now" in block),
+        ("uses_base_in_end_date", "end_date = base + timedelta" in block),
+    ]
+    all_ok = True
+    for desc, ok in checks:
+        log(f"T4.code.{desc}", ok)
+        all_ok = all_ok and ok
+    log("T4.overall_logic_implemented", all_ok)
+
+
+def cleanup():
+    print("\n=== CLEANUP ===")
+    n = asyncio.run(_delete_ambassador("resetpwd-test@tekateka.com"))
+    print(f"Deleted {n} ambassador(s) with email resetpwd-test@tekateka.com")
 
 
 def main():
-    print("=" * 70)
-    print("Test 1: Login")
-    print("=" * 70)
-    status, data = post("/ambassador/login", {"email": EMAIL, "password": PASSWORD})
-    assert_eq("login status", status, 200)
-    token = data.get("token")
-    assert_true("token present", bool(token), str(data)[:200])
-    if not token:
-        print("FATAL: no token, aborting.")
-        sys.exit(1)
-    print(f"  token={token[:30]}...")
+    amb_id = test1_reset_password()
+    test2_change_password(amb_id)
+    asyncio.run(test3_cumul(amb_id))
+    test4_stripe_code_review()
+    cleanup()
 
-    print("\n" + "=" * 70)
-    print("Test 2: Baseline dashboard - preferredCurrency present")
-    print("=" * 70)
-    status, data = get_dashboard(token)
-    assert_eq("dashboard status", status, 200)
-    amb = data.get("ambassador") or {}
-    assert_true("ambassador.preferredCurrency present", "preferredCurrency" in amb,
-                detail=f"keys={list(amb.keys())}")
-    print(f"  Current preferredCurrency = {amb.get('preferredCurrency')!r}")
-
-    print("\n" + "=" * 70)
-    print("Test 3: Set to USD")
-    print("=" * 70)
-    status, data = set_currency(token, "USD")
-    assert_eq("status", status, 200)
-    assert_eq("success", data.get("success"), True)
-    assert_eq("preferredCurrency", data.get("preferredCurrency"), "USD")
-
-    print("\n" + "=" * 70)
-    print("Test 4: Dashboard reflects USD")
-    print("=" * 70)
-    status, data = get_dashboard(token)
-    assert_eq("dashboard status", status, 200)
-    assert_eq("ambassador.preferredCurrency",
-              (data.get("ambassador") or {}).get("preferredCurrency"), "USD")
-
-    print("\n" + "=" * 70)
-    print("Test 5: Set to 'cfa' (lowercase) -> should uppercase to CFA")
-    print("=" * 70)
-    status, data = set_currency(token, "cfa")
-    assert_eq("status", status, 200)
-    assert_eq("preferredCurrency response", data.get("preferredCurrency"), "CFA")
-    status, data = get_dashboard(token)
-    assert_eq("dashboard reflects CFA",
-              (data.get("ambassador") or {}).get("preferredCurrency"), "CFA")
-
-    print("\n" + "=" * 70)
-    print("Test 6: Reject invalid currency JPY -> 400")
-    print("=" * 70)
-    status, data = set_currency(token, "JPY")
-    assert_eq("status", status, 400)
-    assert_eq("detail", data.get("detail"), "Devise non supportée")
-    status, dash = get_dashboard(token)
-    assert_eq("dashboard still CFA",
-              (dash.get("ambassador") or {}).get("preferredCurrency"), "CFA")
-
-    print("\n" + "=" * 70)
-    print("Test 7: Reject empty currency -> 400")
-    print("=" * 70)
-    status, data = set_currency(token, "")
-    assert_eq("status", status, 400)
-    assert_eq("detail", data.get("detail"), "Devise non supportée")
-
-    print("\n" + "=" * 70)
-    print("Test 8: Reject missing token -> 401")
-    print("=" * 70)
-    status, data = post("/ambassador/profile/currency", {"currency": "USD"})
-    assert_eq("status", status, 401)
-    assert_eq("detail", data.get("detail"), "Token requis")
-
-    print("\n" + "=" * 70)
-    print("Test 9: Reject bad token -> 401")
-    print("=" * 70)
-    status, data = post("/ambassador/profile/currency",
-                        {"token": "garbage", "currency": "USD"})
-    assert_eq("status", status, 401)
-    assert_eq("detail", data.get("detail"), "Token invalide")
-
-    print("\n" + "=" * 70)
-    print("Test 10: Whitelist coverage EUR, CDF, KES, RWF, BIF, NGN")
-    print("=" * 70)
-    for cur in ["EUR", "CDF", "KES", "RWF", "BIF", "NGN"]:
-        status, data = set_currency(token, cur)
-        assert_eq(f"set {cur} status", status, 200)
-        assert_eq(f"set {cur} response", data.get("preferredCurrency"), cur)
-        status, dash = get_dashboard(token)
-        assert_eq(f"dashboard {cur}",
-                  (dash.get("ambassador") or {}).get("preferredCurrency"), cur)
-
-    print("\n" + "=" * 70)
-    print("Test 11: Reset to EUR baseline")
-    print("=" * 70)
-    status, data = set_currency(token, "EUR")
-    assert_eq("reset status", status, 200)
-    assert_eq("reset value", data.get("preferredCurrency"), "EUR")
-    status, dash = get_dashboard(token)
-    assert_eq("dashboard EUR",
-              (dash.get("ambassador") or {}).get("preferredCurrency"), "EUR")
-
-    print("\n" + "=" * 70)
-    print("REGRESSION: /api/ambassador/commissions structure")
-    print("=" * 70)
-    status, data = post("/ambassador/commissions", {"token": token})
-    assert_eq("commissions status", status, 200)
-    assert_true("has 'total'", "total" in data, str(data)[:200])
-    assert_true("has 'items'", "items" in data, str(data)[:200])
-    assert_true("items is list", isinstance(data.get("items"), list))
-    print(f"  total={data.get('total')}, totalCount={data.get('totalCount')}, items_len={len(data.get('items', []))}")
-
-    print("\n" + "=" * 70)
-    print("REGRESSION: /api/ambassador/dashboard codesByPlan keys")
-    print("=" * 70)
-    status, dash = get_dashboard(token)
-    assert_eq("dashboard status", status, 200)
-    stats = (dash or {}).get("stats") or {}
-    cbp = stats.get("codesByPlan") or {}
-    for key in ("monthly", "quarterly", "yearly"):
-        assert_true(f"codesByPlan.{key} present", key in cbp,
-                    detail=f"keys={list(cbp.keys())}")
-        sub = cbp.get(key) or {}
-        for f in ("total", "used", "remaining"):
-            assert_true(f"codesByPlan.{key}.{f} present", f in sub)
-
-    print("\n" + "=" * 70)
-    print("REGRESSION: /api/ambassador/codes with plan=monthly")
-    print("=" * 70)
-    status, data = post("/ambassador/codes", {"token": token, "plan": "monthly"})
-    assert_eq("codes status", status, 200)
-    assert_true("codes is list", isinstance(data, list))
-    if isinstance(data, list) and len(data) > 0:
-        sample = data[0]
-        assert_true("code has 'code' field", "code" in sample)
-        assert_true("code has 'plan' field", "plan" in sample)
-        if data:
-            non_monthly = [c for c in data if c.get("plan") != "monthly"]
-            assert_eq("only monthly codes", len(non_monthly), 0)
-    print(f"  Got {len(data) if isinstance(data, list) else 'N/A'} monthly codes")
-
-    print("\n" + "=" * 70)
-    print(f"SUMMARY: {passed} passed, {failed} failed")
-    print("=" * 70)
-    if failures:
-        for f in failures:
-            print(f"  - {f}")
-    return 0 if failed == 0 else 1
+    print("\n=========== SUMMARY ===========")
+    passed = sum(1 for _, ok, _ in results if ok)
+    total = len(results)
+    print(f"{passed}/{total} checks passed")
+    print("\nFAILURES:")
+    for n, ok, d in results:
+        if not ok:
+            print(f"  FAIL — {n}: {d}")
+    sys.exit(0 if passed == total else 1)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

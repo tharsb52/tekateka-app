@@ -380,7 +380,7 @@ export default function ProductsScreen() {
                 onChangeText={(t) => setFormData({ ...formData, name: t })} placeholder="Ex: Coca Cola 50cl" />
 
               <CurrencyAmountInput
-                label="Prix d'achat / unite *"
+                label="Prix d'achat / unité *"
                 value={formData.purchasePrice}
                 currency={formCurrency}
                 onChangeAmount={(t) => setFormData({ ...formData, purchasePrice: t })}
@@ -388,7 +388,7 @@ export default function ProductsScreen() {
                 voiceButton={<VoiceInputButton onTranscript={(t) => { const n = t.replace(/[^0-9.,]/g, '').replace(',', '.'); setFormData({ ...formData, purchasePrice: n }); }} />}
               />
 
-              <Text style={styles.label}>Quantite *</Text>
+              <Text style={styles.label}>Quantité *</Text>
               <TextInput style={styles.input} value={formData.stock}
                 onChangeText={(t) => setFormData({ ...formData, stock: t })}
                 keyboardType="number-pad" placeholder="0" />
@@ -632,7 +632,7 @@ const styles = StyleSheet.create({
   categoryButtonSelected: { backgroundColor: '#2563eb', borderColor: '#2563eb' },
   categoryText: { fontSize: 14, color: '#64748b' },
   categoryTextSelected: { color: '#fff', fontWeight: '600' },
-  modalActions: { flexDirection: 'row', padding: 20, gap: 12, borderTopWidth: 1, borderTopColor: '#e2e8f0' },
+  modalActions: { flexDirection: 'row', padding: 20, paddingBottom: 36, gap: 12, borderTopWidth: 1, borderTopColor: '#e2e8f0', backgroundColor: '#fff' },
   cancelButton: { flex: 1, padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', alignItems: 'center' },
   cancelButtonText: { fontSize: 16, fontWeight: '600', color: '#64748b' },
   saveButton: { flex: 1, padding: 16, borderRadius: 12, backgroundColor: '#2563eb', alignItems: 'center' },

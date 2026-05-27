@@ -207,7 +207,7 @@ export default function ExpensesScreen() {
                 voiceButton={<VoiceInputButton onTranscript={(t) => { const n = t.replace(/[^0-9.,]/g, '').replace(',', '.'); setFormData({ ...formData, amount: n }); }} />}
               />
 
-              <Text style={styles.label}>Produit lie (optionnel)</Text>
+              <Text style={styles.label}>Produit lié (facultatif)</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
                 <TouchableOpacity
                   style={[styles.productChip, !formData.productId && styles.productChipSelected]}
@@ -223,7 +223,7 @@ export default function ExpensesScreen() {
                 ))}
               </ScrollView>
 
-              <Text style={styles.label}>Notes (optionnel)</Text>
+              <Text style={styles.label}>Notes (facultatif)</Text>
               <TextInput style={[styles.input, styles.textArea]} value={formData.notes}
                 onChangeText={(t) => setFormData({ ...formData, notes: t })}
                 placeholder="Notes..." multiline numberOfLines={3} />
@@ -285,7 +285,7 @@ const styles = StyleSheet.create({
   productChipSelected: { backgroundColor: '#7c3aed', borderColor: '#7c3aed' },
   productChipText: { fontSize: 13, color: '#64748b' },
   productChipTextSelected: { color: '#fff', fontWeight: '600' },
-  modalActions: { flexDirection: 'row', padding: 20, gap: 12, borderTopWidth: 1, borderTopColor: '#e2e8f0' },
+  modalActions: { flexDirection: 'row', padding: 20, paddingBottom: 36, gap: 12, borderTopWidth: 1, borderTopColor: '#e2e8f0', backgroundColor: '#fff' },
   cancelButton: { flex: 1, padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', alignItems: 'center' },
   cancelButtonText: { fontSize: 16, fontWeight: '600', color: '#64748b' },
   saveButton: { flex: 1, padding: 16, borderRadius: 12, backgroundColor: '#dc2626', alignItems: 'center' },
