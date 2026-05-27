@@ -603,11 +603,29 @@ async def ambassador_commissions(body: dict):
 async def client_activate_code(body: dict):
     """Allow a user to self-activate using a code bought from an ambassador"""
     user_id = body.get("userId", "")
-    code_str = body.get("code", "").strip().upper()
-    
+    # Normalise input: trim spaces, uppercase, remove any non-alphanumeric/dash
+    # so "tk qtfp 6t7x", "tk-qtfp-6t7x" and "TKQTFP6T7X" all resolve correctly.
+    raw_code = (body.get("code", "") or "").strip().upper()
+    import re as _re
+    cleaned = _re.sub(r"[^A-Z0-9-]", "", raw_code)
+    # If the user typed without dashes, restore them at expected positions
+    # (format: TK-XXXX-XXXX = 12 chars with dashes).
+    no_dash = cleaned.replace("-", "")
+    if len(no_dash) == 10 and no_dash.startswith("TK"):
+        cleaned = f"{no_dash[:2]}-{no_dash[2:6]}-{no_dash[6:]}"
+    code_str = cleaned
+
     if not user_id or not code_str:
         raise HTTPException(status_code=400, detail="ID utilisateur et code requis")
-    
+
+    # Sanity check on length before hitting DB — helps catch truncated codes
+    # (typical bug: user reads code from screen and misses the last character).
+    if len(code_str) != 12 or not code_str.startswith("TK-"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Format de code invalide. Le code doit avoir 12 caractères au format TK-XXXX-XXXX (vous avez saisi {len(code_str)} caractères : '{code_str}')."
+        )
+
     # Find the code (no expiry enforcement — codes are valid until used)
     code_doc = await db.activation_codes.find_one({
         "code": code_str,

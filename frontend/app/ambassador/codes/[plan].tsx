@@ -160,13 +160,21 @@ export default function AmbassadorCodesByPlan() {
             const isUsed = c.status === 'used';
             return (
               <View key={c.id || c.code} style={[styles.card, isUsed && styles.cardUsed]}>
-                <View style={styles.cardTopRow}>
-                  <Text style={styles.codeText}>{c.code}</Text>
-                  <TouchableOpacity style={styles.copyBtn} onPress={() => handleCopy(c.code)}>
-                    <Ionicons name="copy-outline" size={16} color="#fff" />
-                    <Text style={styles.copyBtnText}>Copier</Text>
-                  </TouchableOpacity>
+                <View style={styles.codeBox}>
+                  <Text
+                    style={styles.codeText}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.7}
+                    selectable
+                  >
+                    {c.code}
+                  </Text>
                 </View>
+                <TouchableOpacity style={[styles.copyBtn, { alignSelf: 'flex-end', marginBottom: 10 }]} onPress={() => handleCopy(c.code)}>
+                  <Ionicons name="copy-outline" size={16} color="#fff" />
+                  <Text style={styles.copyBtnText}>Copier</Text>
+                </TouchableOpacity>
 
                 <View style={styles.row}>
                   <Text style={styles.rowLabel}>Abonnement</Text>
@@ -223,7 +231,8 @@ const styles = StyleSheet.create({
   card: { backgroundColor: CARD, borderRadius: 12, padding: 14, marginBottom: 10 },
   cardUsed: { opacity: 0.85 },
   cardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  codeText: { color: '#fff', fontSize: 18, fontWeight: '800', letterSpacing: 1, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  codeBox: { backgroundColor: '#0b1220', borderWidth: 1, borderColor: '#334155', borderRadius: 10, paddingVertical: 14, paddingHorizontal: 12, marginBottom: 10, alignItems: 'center', justifyContent: 'center' },
+  codeText: { color: '#fff', fontSize: 20, fontWeight: '800', letterSpacing: 2, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', textAlign: 'center' },
   copyBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#334155', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
   copyBtnText: { color: '#fff', fontWeight: '600', fontSize: 12 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 4 },
