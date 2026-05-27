@@ -66,7 +66,10 @@ td{padding:10px 12px;border-bottom:1px solid #1e293b}
     <div style="text-align:center;margin-bottom:12px"><div style="font-size:48px;font-weight:900;color:#f59e0b">TK</div></div>
     <h1>TekaTeka Admin</h1>
     <p>Gestion des Ambassadeurs & Codes</p>
-    <input type="password" id="adminPwd" placeholder="Mot de passe admin" onkeypress="if(event.key==='Enter')doLogin()">
+    <div style="position:relative;margin-bottom:16px">
+      <input type="password" id="adminPwd" placeholder="Mot de passe admin" onkeypress="if(event.key==='Enter')doLogin()" style="padding-right:50px;margin-bottom:0">
+      <span onclick="toggleAdminPwd()" id="eyeBtn" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#94a3b8;cursor:pointer;font-size:22px;user-select:none">👁️</span>
+    </div>
     <button onclick="doLogin()">Accéder</button>
     <p id="loginError" style="color:#fca5a5;margin-top:12px;display:none"></p>
   </div>
@@ -123,6 +126,13 @@ function doLogout(){
   adminPassword='';
   document.getElementById('loginSection').style.display='flex';
   document.getElementById('appSection').style.display='none';
+}
+
+function toggleAdminPwd(){
+  const inp=document.getElementById('adminPwd');
+  const btn=document.getElementById('eyeBtn');
+  if(inp.type==='password'){inp.type='text';btn.textContent='🙈';}
+  else{inp.type='password';btn.textContent='👁️';}
 }
 
 async function showTab(tab){
@@ -241,7 +251,7 @@ function genPwd(){
 }
 
 async function resetAmbassadorPwd(id, name){
-  const newPwd=prompt('Nouveau mot de passe pour '+name+' :\n(laissez vide pour en générer un automatiquement)');
+  const newPwd=prompt('Nouveau mot de passe pour '+name+' :\\n(laissez vide pour en générer un automatiquement)');
   if(newPwd===null) return;
   let finalPwd=newPwd.trim();
   if(!finalPwd){
@@ -253,7 +263,7 @@ async function resetAmbassadorPwd(id, name){
     body:JSON.stringify({adminPassword,ambassadorId:id,newPassword:finalPwd})});
   const data=await res.json();
   if(res.ok){
-    alert('✅ Mot de passe réinitialisé pour '+name+'\n\nNouveau mot de passe : '+finalPwd+'\n\nNotez-le immédiatement, il ne sera plus affiché.');
+    alert('✅ Mot de passe réinitialisé pour '+name+'\\n\\nNouveau mot de passe : '+finalPwd+'\\n\\nNotez-le immédiatement, il ne sera plus affiché.');
   } else {
     alert('❌ Erreur : '+(data.detail||'Erreur inconnue'));
   }
@@ -386,3 +396,4 @@ async function loadSales(){
 @router.get("/admin/ambassador-panel", response_class=HTMLResponse)
 async def ambassador_admin_panel():
     return AMBASSADOR_ADMIN_HTML
+
