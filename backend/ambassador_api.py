@@ -606,6 +606,7 @@ async def client_activate_code(body: dict):
     # Normalise input: trim spaces, uppercase, remove any non-alphanumeric/dash
     # so "tk qtfp 6t7x", "tk-qtfp-6t7x" and "TKQTFP6T7X" all resolve correctly.
     raw_code = (body.get("code", "") or "").strip().upper()
+    logger.info(f"[ACTIVATE-CODE] raw='{raw_code}' userId='{user_id}'")
     import re as _re
     cleaned = _re.sub(r"[^A-Z0-9-]", "", raw_code)
     # If the user typed without dashes, restore them at expected positions
