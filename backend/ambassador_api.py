@@ -184,10 +184,19 @@ async def get_ambassador_from_token(authorization: str = None):
 # ==========================================
 @router.post("/ambassador/login")
 async def ambassador_login(req: AmbassadorLogin):
-    logger.info(f"Ambassador login attempt: email='{req.email}'")
-    ambassador = await db.ambassadors.find_one({"email": req.email})
+    # Normalise to lowercase to make the login case-insensitive — historically
+    # we had duplicate accounts because `Jane@x.com` and `jane@x.com` were
+    # stored as two different ambassadors. We match on a case-insensitive regex
+    # that anchors at start/end so partial matches don't leak through.
+    email_input = (req.email or "").strip()
+    if not email_input:
+        raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
+    logger.info(f"Ambassador login attempt: email='{email_input}'")
+    import re as _re
+    safe_email = _re.escape(email_input)
+    ambassador = await db.ambassadors.find_one({"email": {"$regex": f"^{safe_email}$", "$options": "i"}})
     if not ambassador:
-        logger.warning(f"Ambassador not found for email: '{req.email}'")
+        logger.warning(f"Ambassador not found for email: '{email_input}'")
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
     
     if not pwd_context.verify(req.password, ambassador["passwordHash"]):
@@ -732,8 +741,12 @@ async def admin_create_ambassador(body: dict):
     if not all([name, country, city, email, amb_password]):
         raise HTTPException(status_code=400, detail="Tous les champs sont requis")
     
-    # Check email uniqueness
-    existing = await db.ambassadors.find_one({"email": email})
+    # Normalise email + reject duplicate accounts case-insensitively (so
+    # "Jane@x.com" and "jane@x.com" can't coexist).
+    email = email.strip()
+    import re as _re
+    safe_email = _re.escape(email)
+    existing = await db.ambassadors.find_one({"email": {"$regex": f"^{safe_email}$", "$options": "i"}})
     if existing:
         raise HTTPException(status_code=400, detail="Cet email est déjà utilisé")
     
