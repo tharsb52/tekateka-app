@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "696848531104",
+    "project_id": "tekateka-f8aac",
+    "storage_bucket": "tekateka-f8aac.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:696848531104:android:c5b4c0163574af6289d3c5",
+        "android_client_info": {
+          "package_name": "com.tekateka.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBEwEESdLjVk85F6oTHq6Y7-AJczaFwBN8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

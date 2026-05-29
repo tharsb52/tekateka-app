@@ -38,7 +38,8 @@
         "CAMERA",
         "READ_EXTERNAL_STORAGE"
       ],
-      "package": "com.tekateka.app"
+      "package": "com.tekateka.app",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "bundler": "metro",
@@ -47,6 +48,16 @@
     },
     "plugins": [
       "expo-router",
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          }
+        }
+      ],
       [
         "expo-splash-screen",
         {
@@ -64,7 +75,8 @@
         }
       ],
       "expo-web-browser",
-      "expo-localization"
+      "expo-localization",
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true
