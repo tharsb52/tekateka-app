@@ -845,6 +845,34 @@ async def admin_toggle_ambassador(body: dict):
     
     new_status = "blocked" if amb.get("status") == "active" else "active"
     await db.ambassadors.update_one({"_id": ObjectId(ambassador_id)}, {"$set": {"status": new_status}})
+
+# ==========================================
+# Admin: Delete Ambassador (and their unused codes)
+# ==========================================
+@router.post("/admin/ambassadors/delete")
+async def admin_delete_ambassador(body: dict):
+    password = body.get("adminPassword", "")
+    admin_pass = os.getenv("ADMIN_PASSWORD", "TekaTeka2025")
+    if password != admin_pass:
+        raise HTTPException(status_code=401, detail="Mot de passe admin incorrect")
+
+    ambassador_id = body.get("ambassadorId", "")
+    try:
+        amb = await db.ambassadors.find_one({"_id": ObjectId(ambassador_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="ID invalide")
+    if not amb:
+        raise HTTPException(status_code=404, detail="Ambassadeur introuvable")
+
+    # Remove only UNUSED codes — keep history of used codes for audit/commissions.
+    deleted_codes = await db.activation_codes.delete_many({
+        "ambassadorId": str(amb["_id"]),
+        "status": "unused"
+    })
+    await db.ambassadors.delete_one({"_id": ObjectId(ambassador_id)})
+    return {"success": True, "deletedCodes": deleted_codes.deleted_count}
+
+
     
     return {"success": True, "newStatus": new_status}
 

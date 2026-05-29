@@ -43,7 +43,18 @@ export default function SubscriptionStatusCard({ compact = false }: { compact?: 
   const daysLeft = isActive ? getSubscriptionDaysRemaining() : getDaysRemaining();
   const planKey = isActive ? (user.subscriptionPlan || 'monthly') : 'trial';
   const planLabel = PLAN_LABELS[planKey] || PLAN_LABELS.monthly;
-  const endDateIso = isActive ? user.subscriptionEndDate : null;
+  // Compute expiry date for both active subs AND ongoing/expired trials so the
+  // user always sees "jusqu'au DD MMM YYYY" — not just an opaque "X jours".
+  let endDateIso: string | null = null;
+  if (isActive && user.subscriptionEndDate) {
+    endDateIso = user.subscriptionEndDate;
+  } else if (user.trialStartDate) {
+    try {
+      const trialEnd = new Date(user.trialStartDate);
+      trialEnd.setDate(trialEnd.getDate() + 14); // default trial = 14 days
+      endDateIso = trialEnd.toISOString();
+    } catch {}
+  }
   const colors = urgencyStyles(daysLeft, isTrial);
 
   let endDateLabel = '';
@@ -68,7 +79,7 @@ export default function SubscriptionStatusCard({ compact = false }: { compact?: 
             {daysLeft > 0
               ? `${daysLeft} jour${daysLeft > 1 ? 's' : ''} restant${daysLeft > 1 ? 's' : ''}`
               : "Aucun jour restant"}
-            {endDateLabel ? `  ·  Expire le ${endDateLabel}` : ''}
+            {endDateLabel ? `  ·  ${daysLeft > 0 ? 'Jusqu\'au' : 'Expiré le'} ${endDateLabel}` : ''}
           </Text>
         </View>
       </View>

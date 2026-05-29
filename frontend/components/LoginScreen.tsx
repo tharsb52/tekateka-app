@@ -143,9 +143,10 @@ export default function LoginScreen() {
       const code = error?.code || '';
       let msg = error?.message || "Erreur lors de l'envoi du SMS";
       if (code.includes('invalid-phone-number')) msg = 'Numéro de téléphone invalide';
-      else if (code.includes('too-many-requests')) msg = 'Trop de tentatives. Réessayez plus tard.';
-      else if (code.includes('quota-exceeded')) msg = 'Quota SMS atteint. Contactez le support.';
-      else if (code.includes('network')) msg = 'Erreur réseau. Vérifiez votre connexion.';
+      else if (code.includes('too-many-requests')) msg = "Trop d'essais consécutifs. Attendez 60 secondes puis réessayez (vous pouvez retenter — vous ne serez pas bloqué).";
+      else if (code.includes('quota-exceeded')) msg = "Quota SMS atteint pour aujourd'hui. Contactez le support TekaTeka.";
+      else if (code.includes('network')) msg = 'Erreur réseau. Vérifiez votre connexion 4G/WiFi et réessayez.';
+      else if (code.includes('captcha-check-failed')) msg = "Vérification échouée. Réessayez (votre compte n'est pas bloqué).";
       setLoginError(msg);
     }
   };

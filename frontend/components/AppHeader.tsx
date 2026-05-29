@@ -37,41 +37,10 @@ export default function AppHeader({ showSubscription = false }: AppHeaderProps) 
             <Image source={{ uri: getFlagUrl(country.code) }} style={styles.flagImage} />
           )}
         </View>
-        {showSubscription && (
-          <TouchableOpacity
-            style={[
-              styles.badge,
-              isSubActive
-                ? (expiryReminder ? styles.warningBadge : styles.activeBadge)
-                : (daysRemaining > 0 ? styles.trialBadge : styles.expiredBadge),
-            ]}
-            onPress={() => router.push('/subscription')}
-          >
-            <Ionicons
-              name={
-                isSubActive
-                  ? (expiryReminder ? 'warning' : 'shield-checkmark')
-                  : (daysRemaining > 0 ? 'time' : 'alert-circle')
-              }
-              size={14}
-              color={
-                isSubActive
-                  ? (expiryReminder ? '#fcd34d' : '#6ee7b7')
-                  : (daysRemaining > 0 ? '#93c5fd' : '#fca5a5')
-              }
-            />
-            <Text style={[
-              styles.badgeText,
-              isSubActive
-                ? (expiryReminder ? styles.warningText : styles.activeText)
-                : (daysRemaining > 0 ? styles.trialText : styles.expiredText),
-            ]}>
-              {isSubActive
-                ? (expiryReminder ? `${subDaysLeft}j` : 'Pro')
-                : (daysRemaining > 0 ? `${daysRemaining}j essai` : 'Expiré')}
-            </Text>
-          </TouchableOpacity>
-        )}
+        {/* Badge "Pro / Essai / Expiré" supprimé du header : la
+            SubscriptionStatusCard juste en-dessous affiche déjà toutes
+            ces infos (plan + jours restants + date d'expiration).
+            Évite le doublon visuel demandé par l'utilisateur. */}
       </View>
     </>
   );

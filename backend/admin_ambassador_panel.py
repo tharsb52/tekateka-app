@@ -216,6 +216,7 @@ async function loadAmbassadors(){
         <td style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn" style="padding:6px 10px;font-size:12px;background:#2563eb;color:#fff" onclick="resetAmbassadorPwd('${a.id}','${a.name.replace(/'/g,"\\'")}')">🔑 MDP</button>
           <button class="btn ${a.status==='active'?'btn-danger':'btn-success'}" style="padding:6px 10px;font-size:12px" onclick="toggleAmbassador('${a.id}')">${a.status==='active'?'Bloquer':'Débloquer'}</button>
+          <button class="btn btn-danger" style="padding:6px 10px;font-size:12px;background:#dc2626" onclick="deleteAmbassador('${a.id}','${a.name.replace(/'/g,"\\'")}')">🗑️ Suppr.</button>
         </td>
       </tr>
     `).join('')}</tbody></table></div>`;
@@ -249,6 +250,20 @@ function genPwd(){
   let out='';for(let i=0;i<10;i++) out+=chars.charAt(Math.floor(Math.random()*chars.length));
   document.getElementById('newPwd').value=out;
 }
+
+async function deleteAmbassador(id, name){
+  if(!confirm('⚠️ Êtes-vous SÛR de vouloir supprimer "'+name+'" ?\\n\\nCela supprimera aussi tous ses codes NON utilisés.\\nLes codes déjà utilisés et les commissions seront conservés (historique).')){return;}
+  const res=await fetch('/api/admin/ambassadors/delete',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({adminPassword,ambassadorId:id})});
+  const data=await res.json();
+  if(res.ok){
+    alert('✅ Ambassadeur "'+name+'" supprimé.\\nCodes inutilisés supprimés : '+data.deletedCodes);
+    loadAmbassadors();
+  } else {
+    alert('❌ Erreur : '+(data.detail||'Erreur inconnue'));
+  }
+}
+
 
 async function resetAmbassadorPwd(id, name){
   const newPwd=prompt('Nouveau mot de passe pour '+name+' :\\n(laissez vide pour en générer un automatiquement)');

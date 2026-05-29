@@ -855,6 +855,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
+    paddingBottom: 48,
   },
   payModalHeader: {
     flexDirection: 'row',

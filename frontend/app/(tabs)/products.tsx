@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   TextInput, Alert, Modal, Switch, ActivityIndicator,
@@ -48,6 +48,39 @@ export default function ProductsScreen() {
     lowStockThreshold: String(DEFAULT_LOW_STOCK_THRESHOLD),
   });
   const [formCurrency, setFormCurrency] = useState(user?.currency || 'USD');
+
+  // ====== Tools: search / filter / sort — to make the screen usable when the
+  // user has dozens or hundreds of products (requested explicitly).
+  const [searchQuery, setSearchQuery] = useState('');
+  const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'empty'>('all');
+  const [sortMode, setSortMode] = useState<'name' | 'stockAsc' | 'stockDesc' | 'priceDesc'>('name');
+
+  const filteredProducts = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    let list = products;
+    if (q) {
+      list = list.filter(p =>
+        (p.name || '').toLowerCase().includes(q) ||
+        ((p as any).sku || '').toLowerCase().includes(q) ||
+        i18n.t(p.category).toLowerCase().includes(q)
+      );
+    }
+    if (stockFilter === 'empty') {
+      list = list.filter(p => (p.stock ?? 0) <= 0);
+    } else if (stockFilter === 'low') {
+      list = list.filter(p => {
+        const s = p.stock ?? 0;
+        const t = (p as any).lowStockThreshold ?? DEFAULT_LOW_STOCK_THRESHOLD;
+        return s > 0 && s <= t;
+      });
+    }
+    const sorted = [...list];
+    if (sortMode === 'name') sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    else if (sortMode === 'stockAsc') sorted.sort((a, b) => (a.stock ?? 0) - (b.stock ?? 0));
+    else if (sortMode === 'stockDesc') sorted.sort((a, b) => (b.stock ?? 0) - (a.stock ?? 0));
+    else if (sortMode === 'priceDesc') sorted.sort((a, b) => (b.salePrice || 0) - (a.salePrice || 0));
+    return sorted;
+  }, [products, searchQuery, stockFilter, sortMode]);
 
   const currency = user?.currency || 'USD';
   const totalInventoryValue = products.reduce((s, p) => s + (p.purchasePrice || 0) * p.stock, 0);
@@ -249,8 +282,60 @@ export default function ProductsScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Column Headers */}
+      {/* Search + filters + sort — appears only when there is at least 1 product */}
       {products.length > 0 && (
+        <View style={styles.toolsBar}>
+          <View style={styles.searchRow}>
+            <Ionicons name="search" size={18} color="#94a3b8" />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Rechercher (nom, SKU, catégorie)…"
+              placeholderTextColor="#94a3b8"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              returnKeyType="search"
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close-circle" size={18} color="#94a3b8" />
+              </TouchableOpacity>
+            )}
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+            {([
+              { k: 'all', label: 'Tous', count: products.length },
+              { k: 'low', label: 'Stock faible', count: products.filter(p => { const s = p.stock ?? 0; const t = (p as any).lowStockThreshold ?? DEFAULT_LOW_STOCK_THRESHOLD; return s > 0 && s <= t; }).length },
+              { k: 'empty', label: 'Rupture', count: products.filter(p => (p.stock ?? 0) <= 0).length },
+            ] as const).map(f => (
+              <TouchableOpacity
+                key={f.k}
+                style={[styles.chip, stockFilter === f.k && styles.chipActive]}
+                onPress={() => setStockFilter(f.k as any)}
+              >
+                <Text style={[styles.chipText, stockFilter === f.k && styles.chipTextActive]}>{f.label} · {f.count}</Text>
+              </TouchableOpacity>
+            ))}
+            <View style={{ width: 12 }} />
+            {([
+              { k: 'name', label: 'A→Z' },
+              { k: 'stockAsc', label: 'Stock ↑' },
+              { k: 'stockDesc', label: 'Stock ↓' },
+              { k: 'priceDesc', label: 'Prix ↓' },
+            ] as const).map(s => (
+              <TouchableOpacity
+                key={s.k}
+                style={[styles.sortChip, sortMode === s.k && styles.sortChipActive]}
+                onPress={() => setSortMode(s.k as any)}
+              >
+                <Text style={[styles.sortChipText, sortMode === s.k && styles.sortChipTextActive]}>{s.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Column Headers */}
+      {filteredProducts.length > 0 && (
         <View style={styles.columnHeader}>
           <Text style={[styles.colText, { flex: 2.5 }]}>Produit</Text>
           <Text style={[styles.colText, { flex: 1.5 }]}>Achat/u</Text>
@@ -265,14 +350,16 @@ export default function ProductsScreen() {
             <ActivityIndicator size="large" color="#2563eb" />
             <Text style={styles.emptySubtext}>Chargement...</Text>
           </View>
-        ) : products.length === 0 ? (
+        ) : filteredProducts.length === 0 ? (
           <View style={styles.emptyState}>
-            <Ionicons name="cube-outline" size={64} color="#cbd5e1" />
-            <Text style={styles.emptyText}>{i18n.t('noData')}</Text>
-            <Text style={styles.emptySubtext}>Appuyez + pour ajouter un produit</Text>
+            <Ionicons name={products.length === 0 ? 'cube-outline' : 'search'} size={64} color="#cbd5e1" />
+            <Text style={styles.emptyText}>{products.length === 0 ? i18n.t('noData') : 'Aucun résultat'}</Text>
+            <Text style={styles.emptySubtext}>
+              {products.length === 0 ? 'Appuyez + pour ajouter un produit' : 'Essayez un autre filtre ou recherche'}
+            </Text>
           </View>
         ) : (
-          products.map((product) => {
+          filteredProducts.map((product) => {
             const effectivePrice = getEffectivePrice(product);
             const margin = getMargin(product);
             const totalCost = (product.purchasePrice || 0) * product.stock;
@@ -595,6 +682,17 @@ const styles = StyleSheet.create({
   totalText: { fontSize: 13, color: '#2563eb', fontWeight: '600', marginTop: 2 },
   addButton: { backgroundColor: '#2563eb', width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   columnHeader: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 8, backgroundColor: '#f5e6d3', borderBottomWidth: 1, borderBottomColor: '#edd5be' },
+  toolsBar: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4, backgroundColor: '#fef3e7' },
+  searchRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fff', borderRadius: 10, paddingHorizontal: 12, height: 40, borderWidth: 1, borderColor: '#e2e8f0' },
+  searchInput: { flex: 1, fontSize: 14, color: '#0f172a' },
+  chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0', marginRight: 8 },
+  chipActive: { backgroundColor: '#2563eb', borderColor: '#2563eb' },
+  chipText: { fontSize: 12, fontWeight: '600', color: '#475569' },
+  chipTextActive: { color: '#fff' },
+  sortChip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: 'transparent', borderWidth: 1, borderColor: '#cbd5e1', marginRight: 6 },
+  sortChipActive: { backgroundColor: '#0f172a', borderColor: '#0f172a' },
+  sortChipText: { fontSize: 11, fontWeight: '600', color: '#64748b' },
+  sortChipTextActive: { color: '#fff' },
   colText: { fontSize: 11, fontWeight: '700', color: '#64748b', textTransform: 'uppercase' },
   content: { flex: 1, padding: 12 },
   emptyState: { alignItems: 'center', marginTop: 80 },

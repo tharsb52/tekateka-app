@@ -258,65 +258,98 @@ export default function SellScreen() {
           </View>
 
           {selectedProduct && (
-            <>
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>{i18n.t('quantity')}</Text>
-                <View style={styles.quantityContainer}>
-                  <TouchableOpacity style={styles.quantityButton}
-                    onPress={() => setQuantity(Math.max(1, parseInt(quantity) - 1).toString())}>
-                    <Ionicons name="remove" size={24} color="#fff" />
-                  </TouchableOpacity>
-                  <TextInput style={styles.quantityInput} value={quantity}
-                    onChangeText={setQuantity} keyboardType="number-pad" />
-                  <TouchableOpacity style={styles.quantityButton}
-                    onPress={() => setQuantity((parseInt(quantity) + 1).toString())}>
-                    <Ionicons name="add" size={24} color="#fff" />
-                  </TouchableOpacity>
-                </View>
-              </View>
+            <Modal
+              visible={!!selectedProduct}
+              animationType="slide"
+              transparent
+              onRequestClose={() => setSelectedProduct(null)}
+            >
+              <KeyboardAvoidingView
+                style={{ flex: 1 }}
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              >
+                <View style={styles.sellModalOverlay}>
+                  <View style={styles.sellModalSheet}>
+                    {/* Header with close button */}
+                    <View style={styles.sellModalHeader}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.sellModalTitle} numberOfLines={1}>{selectedProduct.name}</Text>
+                        <Text style={styles.sellModalSubtitle}>
+                          {formatCurrency(getEffectivePrice(selectedProduct), currency)} · Stock: {selectedProduct.stock}
+                        </Text>
+                      </View>
+                      <TouchableOpacity onPress={() => setSelectedProduct(null)} style={styles.sellModalClose}>
+                        <Ionicons name="close" size={24} color="#64748b" />
+                      </TouchableOpacity>
+                    </View>
 
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>{i18n.t('paymentMethod')}</Text>
-                <View style={styles.paymentRow}>
-                  {(['cash', 'mobileMoney', 'card'] as const).map((m) => (
-                    <TouchableOpacity key={m}
-                      style={[styles.paymentButton, paymentMethod === m && styles.paymentButtonSelected]}
-                      onPress={() => setPaymentMethod(m)}>
-                      <Ionicons name={m === 'cash' ? 'cash' : m === 'mobileMoney' ? 'phone-portrait' : 'card'} size={22}
-                        color={paymentMethod === m ? '#fff' : '#2563eb'} />
-                      <Text style={[styles.paymentText, paymentMethod === m && styles.paymentTextSelected]}>
-                        {m === 'cash' ? i18n.t('cash') : m === 'mobileMoney' ? i18n.t('mobileMoney') : 'Carte'}
-                      </Text>
+                    <ScrollView
+                      style={{ flexGrow: 0 }}
+                      contentContainerStyle={{ paddingBottom: 12 }}
+                      keyboardShouldPersistTaps="handled"
+                    >
+                      <View style={styles.section}>
+                        <Text style={styles.sectionTitle}>{i18n.t('quantity')}</Text>
+                        <View style={styles.quantityContainer}>
+                          <TouchableOpacity style={styles.quantityButton}
+                            onPress={() => setQuantity(Math.max(1, parseInt(quantity) - 1).toString())}>
+                            <Ionicons name="remove" size={24} color="#fff" />
+                          </TouchableOpacity>
+                          <TextInput style={styles.quantityInput} value={quantity}
+                            onChangeText={setQuantity} keyboardType="number-pad" />
+                          <TouchableOpacity style={styles.quantityButton}
+                            onPress={() => setQuantity((parseInt(quantity) + 1).toString())}>
+                            <Ionicons name="add" size={24} color="#fff" />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+
+                      <View style={styles.section}>
+                        <Text style={styles.sectionTitle}>{i18n.t('paymentMethod')}</Text>
+                        <View style={styles.paymentRow}>
+                          {(['cash', 'mobileMoney', 'card'] as const).map((m) => (
+                            <TouchableOpacity key={m}
+                              style={[styles.paymentButton, paymentMethod === m && styles.paymentButtonSelected]}
+                              onPress={() => setPaymentMethod(m)}>
+                              <Ionicons name={m === 'cash' ? 'cash' : m === 'mobileMoney' ? 'phone-portrait' : 'card'} size={22}
+                                color={paymentMethod === m ? '#fff' : '#2563eb'} />
+                              <Text style={[styles.paymentText, paymentMethod === m && styles.paymentTextSelected]}>
+                                {m === 'cash' ? i18n.t('cash') : m === 'mobileMoney' ? i18n.t('mobileMoney') : 'Carte'}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+
+                      <View style={styles.section}>
+                        <Text style={styles.sectionTitle}>Devise du client</Text>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+                          {CURRENCIES.map((c) => (
+                            <TouchableOpacity key={c.code}
+                              style={[styles.currencyChip, currency === c.code && styles.currencyChipSelected]}
+                              onPress={() => setCurrency(c.code)}>
+                              <Text style={[styles.currencyChipText, currency === c.code && styles.currencyChipTextSelected]}>
+                                {c.symbol} {c.code}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </ScrollView>
+                      </View>
+
+                      <View style={styles.totalCard}>
+                        <Text style={styles.totalLabel}>{i18n.t('totalAmount')}</Text>
+                        <Text style={styles.totalAmount}>{formatCurrency(totalAmount, currency)}</Text>
+                      </View>
+                    </ScrollView>
+
+                    <TouchableOpacity style={[styles.recordButton, { marginTop: 8 }]} onPress={async () => { await handleRecordSale(); setSelectedProduct(null); }}>
+                      <Ionicons name="checkmark-circle" size={24} color="#fff" />
+                      <Text style={styles.recordButtonText}>{i18n.t('recordSale')}</Text>
                     </TouchableOpacity>
-                  ))}
+                  </View>
                 </View>
-              </View>
-
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Devise du client</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
-                  {CURRENCIES.map((c) => (
-                    <TouchableOpacity key={c.code}
-                      style={[styles.currencyChip, currency === c.code && styles.currencyChipSelected]}
-                      onPress={() => setCurrency(c.code)}>
-                      <Text style={[styles.currencyChipText, currency === c.code && styles.currencyChipTextSelected]}>
-                        {c.symbol} {c.code}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-
-              <View style={styles.totalCard}>
-                <Text style={styles.totalLabel}>{i18n.t('totalAmount')}</Text>
-                <Text style={styles.totalAmount}>{formatCurrency(totalAmount, currency)}</Text>
-              </View>
-
-              <TouchableOpacity style={styles.recordButton} onPress={handleRecordSale}>
-                <Ionicons name="checkmark-circle" size={24} color="#fff" />
-                <Text style={styles.recordButtonText}>{i18n.t('recordSale')}</Text>
-              </TouchableOpacity>
-            </>
+              </KeyboardAvoidingView>
+            </Modal>
           )}
         </>
       )}
@@ -403,6 +436,14 @@ const styles = StyleSheet.create({
   totalAmount: { fontSize: 30, fontWeight: 'bold', color: '#2563eb' },
   recordButton: { backgroundColor: '#10b981', margin: 16, padding: 18, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
   recordButtonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+  // Bottom-sheet modal qu'on ouvre quand un produit est tapé. Évite de
+  // scroller la page entière vers le bas pour saisir la quantité/devise/etc.
+  sellModalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.55)', justifyContent: 'flex-end' },
+  sellModalSheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 16, paddingBottom: 32, maxHeight: '85%' },
+  sellModalHeader: { flexDirection: 'row', alignItems: 'center', paddingBottom: 12, marginBottom: 4, borderBottomWidth: 1, borderBottomColor: '#e2e8f0' },
+  sellModalTitle: { fontSize: 17, fontWeight: '800', color: '#0f172a' },
+  sellModalSubtitle: { fontSize: 12, color: '#64748b', marginTop: 2 },
+  sellModalClose: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f1f5f9' },
   noData: { textAlign: 'center', color: '#94a3b8', fontSize: 15, marginTop: 20 },
   // Sales history
   saleCard: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: '#ede0d4', ...cardShadow },
