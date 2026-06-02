@@ -34,6 +34,7 @@ interface AuthContextType {
   hasPin: boolean;
   login: (phoneNumber: string, otp: string) => Promise<void>;
   loginWithCredentials: (identifier: string, password: string) => Promise<void>;
+  quickLogin: (phoneNumber: string) => Promise<void>;
   setupCredentials: (email?: string, username?: string, password?: string) => Promise<void>;
   updateProfilePhoto: (photoBase64: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -136,7 +137,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const mappedUser = mapBackendUser(result.user);
         setUser(mappedUser);
         await changeLocale(mappedUser.language);
-        
+
+        // Persist the phone+userId so that even after logout the user can
+        // come back via "Quick Login (PIN)" without re-doing the SMS dance.
+        // This dramatically improves the experience for repeat users on
+        // shaky African networks where re-receiving a SMS can fail multiple
+        // times before Firebase rate-limits the phone for 1 hour.
+        try {
+          await AsyncStorage.setItem('@tekateka:lastPhone', phoneNumber);
+          await AsyncStorage.setItem('@tekateka:lastUserId', mappedUser.id);
+          await AsyncStorage.setItem('@tekateka:lastUserName', mappedUser.name || '');
+        } catch (e) { console.warn('persist lastPhone failed', e); }
+
         // Schedule trial expiry reminders - DEFERRED & ISOLATED so any native crash
         // here cannot break the login flow
         if (!mappedUser.isSubscribed) {
@@ -155,6 +167,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
     } catch (error: any) {
       console.error('Phone login error:', error);
+      throw new Error(error.message || 'Erreur de connexion');
+    }
+  };
+
+  // QUICK LOGIN — fast path that skips Firebase entirely.
+  // Used when the user already has a PIN set on this device AND the backend
+  // recognises their phone (returning user). No SMS, no reCAPTCHA, no rate
+  // limit. The backend `quickLogin` endpoint re-issues a fresh JWT.
+  const quickLogin = async (phoneNumber: string) => {
+    try {
+      const result = await authAPI.phoneLogin(phoneNumber);
+      if (result.user) {
+        const mappedUser = mapBackendUser(result.user);
+        setUser(mappedUser);
+        await changeLocale(mappedUser.language);
+        try {
+          await AsyncStorage.setItem('@tekateka:lastPhone', phoneNumber);
+          await AsyncStorage.setItem('@tekateka:lastUserId', mappedUser.id);
+          await AsyncStorage.setItem('@tekateka:lastUserName', mappedUser.name || '');
+        } catch {}
+      }
+    } catch (error: any) {
       throw new Error(error.message || 'Erreur de connexion');
     }
   };
@@ -348,6 +382,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         hasPin,
         login,
         loginWithCredentials,
+        quickLogin,
         setupCredentials,
         updateProfilePhoto,
         logout,

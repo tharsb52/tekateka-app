@@ -16,6 +16,7 @@ import {
   EmitterSubscription,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../context/AuthContext';
 import { useRouter } from 'expo-router';
 import i18n from '../utils/i18n';
@@ -40,7 +41,7 @@ const BG = '#fef3e7';
 type LoginTab = 'phone' | 'credentials';
 
 export default function LoginScreen() {
-  const { login, loginWithCredentials } = useAuth();
+  const { login, loginWithCredentials, quickLogin } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<LoginTab>('phone');
 
@@ -52,6 +53,87 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // QUICK LOGIN — when the user has already logged in on this device once,
+  // we remember their phone number + userId so they can come back via a
+  // simple PIN without re-doing the SMS dance. CRITICAL fix for the
+  // "trop d'essais" loop reported by the user (Firebase rate-limits a
+  // phone for 1h after ~5 SMS in a row).
+  const [savedPhone, setSavedPhone] = useState<string | null>(null);
+  const [savedUserId, setSavedUserId] = useState<string | null>(null);
+  const [savedUserName, setSavedUserName] = useState<string>('');
+  const [quickPin, setQuickPin] = useState('');
+  const [quickPinError, setQuickPinError] = useState('');
+  const [showFullLogin, setShowFullLogin] = useState(false);
+
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const [phone, uid, name] = await Promise.all([
+          AsyncStorage.getItem('@tekateka:lastPhone'),
+          AsyncStorage.getItem('@tekateka:lastUserId'),
+          AsyncStorage.getItem('@tekateka:lastUserName'),
+        ]);
+        if (phone && uid) {
+          const savedPinForUser = await AsyncStorage.getItem(`@tekateka:${uid}:pin`);
+          if (savedPinForUser) {
+            // Pre-populate phone field + show PIN-only screen
+            setSavedPhone(phone);
+            setSavedUserId(uid);
+            setSavedUserName(name || '');
+            // Pre-fill phone tab too in case user switches to full login
+            const cc = ALL_COUNTRIES.find(c => phone.startsWith('+' + c.code));
+            if (cc) {
+              setSelectedCountry(cc);
+              setLocalNumber(phone.replace('+' + cc.code, ''));
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('quick login init failed', e);
+      }
+    })();
+  }, []);
+
+  const handleQuickPinSubmit = async () => {
+    if (!savedPhone || !savedUserId || quickPin.length < 4) {
+      setQuickPinError('Entrez votre code PIN à 4 chiffres');
+      return;
+    }
+    setQuickPinError('');
+    try {
+      const storedPin = await AsyncStorage.getItem(`@tekateka:${savedUserId}:pin`);
+      if (!storedPin) {
+        setQuickPinError("PIN introuvable. Utilisez 'Se connecter avec mon numéro'.");
+        return;
+      }
+      if (storedPin !== quickPin) {
+        setQuickPinError('Code PIN incorrect.');
+        setQuickPin('');
+        return;
+      }
+      setLoading(true);
+      await quickLogin(savedPhone);
+      // AuthContext will navigate automatically
+    } catch (e: any) {
+      setLoading(false);
+      setQuickPinError(e?.message || 'Erreur de connexion');
+    }
+  };
+
+  const handleUseOtherAccount = async () => {
+    // Clear stored quick-login data and show the full phone+OTP flow
+    try {
+      await AsyncStorage.multiRemove(['@tekateka:lastPhone', '@tekateka:lastUserId', '@tekateka:lastUserName']);
+    } catch {}
+    setSavedPhone(null);
+    setSavedUserId(null);
+    setSavedUserName('');
+    setQuickPin('');
+    setShowFullLogin(true);
+  };
+
+  const showQuickLogin = savedPhone && savedUserId && !showFullLogin;
 
   // Firebase native auth state — replaces the old WebView/reCAPTCHA flow.
   // With Play Integrity enabled in Firebase Console, no reCAPTCHA is shown.
@@ -238,6 +320,52 @@ export default function LoginScreen() {
             <Text style={styles.subtitle}>{i18n.t('welcome')}</Text>
           </View>
 
+          {/* QUICK LOGIN — returning user just enters their PIN.
+              SAVES THE USER from the Firebase "trop d'essais" lock-out. */}
+          {showQuickLogin ? (
+            <View style={styles.quickLoginCard}>
+              <View style={styles.quickLoginIcon}>
+                <Ionicons name="person-circle" size={64} color="#2563eb" />
+              </View>
+              <Text style={styles.quickLoginHello}>Bon retour{savedUserName ? ',' : ' !'}</Text>
+              {!!savedUserName && <Text style={styles.quickLoginName}>{savedUserName}</Text>}
+              <Text style={styles.quickLoginPhone}>{savedPhone}</Text>
+
+              <Text style={styles.quickLoginLabel}>Entrez votre code PIN à 4 chiffres</Text>
+              <TextInput
+                style={styles.quickPinInput}
+                value={quickPin}
+                onChangeText={(t) => { setQuickPin(t.replace(/\D/g, '').slice(0, 4)); setQuickPinError(''); }}
+                keyboardType="number-pad"
+                placeholder="••••"
+                placeholderTextColor="#cbd5e1"
+                maxLength={4}
+                secureTextEntry
+                autoFocus
+              />
+              {!!quickPinError && <Text style={styles.quickPinError}>{quickPinError}</Text>}
+
+              <TouchableOpacity
+                style={[styles.quickLoginBtn, (loading || quickPin.length < 4) && styles.quickLoginBtnDisabled]}
+                onPress={handleQuickPinSubmit}
+                disabled={loading || quickPin.length < 4}
+                activeOpacity={0.85}
+              >
+                {loading ? <ActivityIndicator color="#fff" /> : (
+                  <>
+                    <Ionicons name="log-in" size={20} color="#fff" />
+                    <Text style={styles.quickLoginBtnText}>Se connecter</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity onPress={handleUseOtherAccount} style={styles.useOtherBtn}>
+                <Text style={styles.useOtherBtnText}>Utiliser un autre numéro</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+
           <View style={styles.storiesSection}>
             <Text style={styles.storiesTitle}>Ils réussissent avec TekaTeka</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.storiesScroll}>
@@ -392,6 +520,8 @@ export default function LoginScreen() {
               <Text style={{ color: '#2563eb', fontWeight: '600' }}>Se connecter ici</Text>
             </Text>
           </TouchableOpacity>
+            </>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -478,6 +608,19 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
+  quickLoginCard: { backgroundColor: '#fff', marginHorizontal: 16, marginTop: 16, marginBottom: 24, borderRadius: 18, padding: 24, alignItems: 'center', borderWidth: 1, borderColor: '#e2e8f0' },
+  quickLoginIcon: { marginBottom: 8 },
+  quickLoginHello: { fontSize: 20, fontWeight: '800', color: '#0f172a' },
+  quickLoginName: { fontSize: 16, fontWeight: '700', color: '#2563eb', marginTop: 2 },
+  quickLoginPhone: { fontSize: 13, color: '#64748b', marginTop: 4, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  quickLoginLabel: { fontSize: 13, fontWeight: '600', color: '#475569', marginTop: 22, marginBottom: 8 },
+  quickPinInput: { width: 200, height: 60, backgroundColor: '#f1f5f9', borderRadius: 14, textAlign: 'center', fontSize: 32, fontWeight: '700', letterSpacing: 16, color: '#0f172a', borderWidth: 2, borderColor: '#e2e8f0' },
+  quickPinError: { fontSize: 12, color: '#dc2626', marginTop: 8, fontWeight: '600' },
+  quickLoginBtn: { marginTop: 18, width: '100%', height: 52, borderRadius: 14, backgroundColor: '#2563eb', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  quickLoginBtnDisabled: { backgroundColor: '#94a3b8' },
+  quickLoginBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  useOtherBtn: { marginTop: 12, paddingVertical: 8 },
+  useOtherBtnText: { fontSize: 13, color: '#64748b', textDecorationLine: 'underline' },
   safeArea: { flex: 1, backgroundColor: BG },
   container: { flex: 1, backgroundColor: BG },
   scrollContent: { flexGrow: 1, justifyContent: 'center', padding: 24 },
