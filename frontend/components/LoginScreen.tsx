@@ -22,19 +22,8 @@ import { useRouter } from 'expo-router';
 import i18n from '../utils/i18n';
 import { Ionicons } from '@expo/vector-icons';
 import { ALL_COUNTRIES, searchCountries, getFlagUrl, Country } from '../utils/countries';
-
-// Native Firebase Auth (Android/iOS only). On web we keep a noop fallback so
-// the bundle still builds — login on web isn't a target use case anyway.
-type ConfirmationResult = { confirm: (otp: string) => Promise<{ user: { getIdToken: () => Promise<string> } }>; verificationId?: string };
-let nativeAuth: any = null;
-if (Platform.OS !== 'web') {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    nativeAuth = require('@react-native-firebase/auth').default;
-  } catch (e) {
-    console.warn('[Firebase] native auth not available:', e);
-  }
-}
+import WebView from 'react-native-webview';
+import { buildFirebaseAuthHTML, FIREBASE_AUTH_BASE_URL } from '../services/firebaseAuthHTML';
 
 const BG = '#fef3e7';
 
@@ -135,11 +124,14 @@ export default function LoginScreen() {
 
   const showQuickLogin = savedPhone && savedUserId && !showFullLogin;
 
-  // Firebase native auth state — replaces the old WebView/reCAPTCHA flow.
-  // With Play Integrity enabled in Firebase Console, no reCAPTCHA is shown.
-  const confirmationRef = useRef<ConfirmationResult | null>(null);
-  const sendTimeoutRef = useRef<any>(null);
+  // Firebase WebView state (kept for OTA-compatibility with the currently
+  // installed APK which has react-native-webview but NOT @react-native-firebase
+  // natively). When the user rebuilds the APK with the native SDK we'll swap.
+  const [showFirebaseWebView, setShowFirebaseWebView] = useState(false);
+  const [webViewVisible, setWebViewVisible] = useState(false);
   const [verifiedNeedsRetry, setVerifiedNeedsRetry] = useState(false);
+  const webViewRef = useRef<any>(null);
+  const sendTimeoutRef = useRef<any>(null);
 
   // Attempt backend login with retry — keeps Firebase verification intact on failure
   const attemptBackendLogin = async () => {
@@ -189,13 +181,12 @@ export default function LoginScreen() {
 
   const fullPhoneNumber = '+' + selectedCountry.code + localNumber.replace(/^0+/, '');
 
+  // Build the inline HTML once per phone change
+  const html = buildFirebaseAuthHTML(fullPhoneNumber);
+
   const handleSendOTP = async () => {
     if (localNumber.length < 6) {
       setLoginError('Veuillez entrer un numéro valide');
-      return;
-    }
-    if (!nativeAuth) {
-      setLoginError('Module Firebase non disponible sur cette plateforme.');
       return;
     }
     setLoginError('');
@@ -203,33 +194,59 @@ export default function LoginScreen() {
     setOtpSent(false);
     setLoading(true);
 
-    // Safety timeout in case Firebase never replies
+    // Mount the WebView (visible for reCAPTCHA challenge)
+    setShowFirebaseWebView(true);
+    setWebViewVisible(true);
+
     if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
     sendTimeoutRef.current = setTimeout(() => {
       setLoading(false);
-      setLoginError('Délai dépassé. Vérifiez votre connexion et réessayez.');
+      setShowFirebaseWebView(false);
+      setWebViewVisible(false);
+      setLoginError("Délai dépassé. Vérifiez votre connexion 4G/WiFi et réessayez (vous n'êtes pas bloqué).");
     }, 60000);
+  };
 
+  const handleWebViewMessage = async (event: any) => {
     try {
-      // With Play Integrity activated in Firebase Console, the call below is
-      // VERIFIED SILENTLY by Google — NO reCAPTCHA, NO challenge images.
-      // The SMS arrives in ~3 seconds.
-      const confirmation = await nativeAuth().signInWithPhoneNumber(fullPhoneNumber);
-      if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
-      confirmationRef.current = confirmation as any;
-      setLoading(false);
-      setOtpSent(true);
-    } catch (error: any) {
-      if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
-      setLoading(false);
-      const code = error?.code || '';
-      let msg = error?.message || "Erreur lors de l'envoi du SMS";
-      if (code.includes('invalid-phone-number')) msg = 'Numéro de téléphone invalide';
-      else if (code.includes('too-many-requests')) msg = "Trop d'essais consécutifs. Attendez 60 secondes puis réessayez (vous pouvez retenter — vous ne serez pas bloqué).";
-      else if (code.includes('quota-exceeded')) msg = "Quota SMS atteint pour aujourd'hui. Contactez le support TekaTeka.";
-      else if (code.includes('network')) msg = 'Erreur réseau. Vérifiez votre connexion 4G/WiFi et réessayez.';
-      else if (code.includes('captcha-check-failed')) msg = "Vérification échouée. Réessayez (votre compte n'est pas bloqué).";
-      setLoginError(msg);
+      const data = JSON.parse(event.nativeEvent.data);
+      console.log('[WebView]', data.type, data.message || '');
+
+      if (data.type === 'codeSent' && data.success) {
+        if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
+        setLoading(false);
+        setOtpSent(true);
+        setWebViewVisible(false);
+      } else if (data.type === 'verified' && data.success) {
+        if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
+        setShowFirebaseWebView(false);
+        setWebViewVisible(false);
+        setLoading(true);
+        setLoginError('');
+        await attemptBackendLogin();
+      } else if (data.type === 'error') {
+        if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
+        setLoading(false);
+        let msg = data.message || "Erreur lors de l'envoi du SMS";
+        if (msg.toLowerCase().includes('too-many')) msg = "Trop d'essais consécutifs. Attendez 60 secondes puis réessayez (vous n'êtes pas bloqué).";
+        else if (msg.toLowerCase().includes('captcha')) msg = "Vérification échouée. Réessayez (votre compte n'est pas bloqué).";
+        setLoginError(msg);
+        setShowFirebaseWebView(false);
+        setWebViewVisible(false);
+      } else if (data.type === 'verifyError') {
+        setLoading(false);
+        const errMsg = data.message || 'Code incorrect';
+        if (errMsg.toLowerCase().includes('session expir') || errMsg.toLowerCase().includes('expired')) {
+          setLoginError('Session expirée. Renvoi automatique du SMS...');
+          setOtp('');
+          setOtpSent(false);
+          setTimeout(() => { handleSendOTP(); }, 600);
+        } else {
+          setLoginError(errMsg);
+        }
+      }
+    } catch (e) {
+      console.log('[WebView] parse error', e);
     }
   };
 
@@ -238,42 +255,33 @@ export default function LoginScreen() {
       setLoginError('Entrez le code reçu par SMS');
       return;
     }
-    if (!confirmationRef.current) {
-      setLoginError('Session expirée. Renvoyez le code.');
-      return;
-    }
     setLoading(true);
     setLoginError('');
-    try {
-      // Confirm the OTP — Firebase native SDK returns a UserCredential
-      const cred = await confirmationRef.current.confirm(otp);
-      // We don't need the idToken anymore because the backend uses
-      // phone-number-only login (`'firebase-verified'` shared secret), but we
-      // could log it for debug if needed.
-      try { await cred.user.getIdToken(); } catch {}
-      await attemptBackendLogin();
-    } catch (error: any) {
+    if (webViewRef.current) {
+      webViewRef.current.injectJavaScript(`
+        (function() {
+          try {
+            document.getElementById('otpInput').value = ${JSON.stringify(otp)};
+            window.verifyCode();
+          } catch (e) {
+            if (window.ReactNativeWebView) {
+              window.ReactNativeWebView.postMessage(JSON.stringify({type:'verifyError',message:'Erreur interne: '+e.message}));
+            }
+          }
+        })();
+        true;
+      `);
+    } else {
       setLoading(false);
-      const code = error?.code || '';
-      let msg = error?.message || 'Code incorrect';
-      if (code.includes('invalid-verification-code') || code.includes('invalid-otp')) {
-        msg = 'Code incorrect. Vérifiez et réessayez.';
-      } else if (code.includes('session-expired') || code.includes('code-expired')) {
-        // Auto-resend SMS so the user can try again seamlessly
-        setLoginError('Session expirée. Renvoi automatique du SMS...');
-        setOtp('');
-        setOtpSent(false);
-        setTimeout(() => { handleSendOTP(); }, 600);
-        return;
-      }
-      setLoginError(msg);
+      setLoginError('Session expirée. Renvoyez le code.');
     }
   };
 
   const handleCancelOtp = () => {
     if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
-    confirmationRef.current = null;
     setLoading(false);
+    setShowFirebaseWebView(false);
+    setWebViewVisible(false);
     setOtpSent(false);
     setOtp('');
     setLoginError('');
@@ -525,9 +533,68 @@ export default function LoginScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* PERSISTENT Firebase WebView REMOVED: replaced by native @react-native-firebase/auth.
-          With Play Integrity activated in Firebase Console, SMS sign-in is fully
-          silent on Android — no WebView, no reCAPTCHA, no image challenges. */}
+      {/* PERSISTENT Firebase WebView — kept for OTA compatibility with the
+          currently installed APK (which has react-native-webview but NOT
+          @react-native-firebase natively). Will be removed when rebuilding
+          the APK with @react-native-firebase/auth. */}
+      {showFirebaseWebView && Platform.OS !== 'web' && (
+        <View
+          style={
+            webViewVisible
+              ? { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#0f172a', zIndex: 1000 }
+              : { position: 'absolute', width: 2, height: 2, top: -9999, left: -9999, opacity: 0.01, overflow: 'hidden' }
+          }
+          pointerEvents={webViewVisible ? 'auto' : 'none'}
+        >
+          {webViewVisible && (
+            <SafeAreaView edges={['top']} style={{ backgroundColor: '#0f172a' }}>
+              <View style={styles.fbHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.fbHeaderTitle}>Vérification</Text>
+                  <Text style={styles.fbHeaderSub}>{fullPhoneNumber}</Text>
+                </View>
+                <TouchableOpacity onPress={handleCancelOtp} style={{ padding: 8 }}>
+                  <Ionicons name="close" size={28} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            </SafeAreaView>
+          )}
+          <WebView
+            ref={webViewRef}
+            source={{ html, baseUrl: FIREBASE_AUTH_BASE_URL }}
+            onMessage={handleWebViewMessage}
+            style={{ flex: 1, backgroundColor: '#0f172a', opacity: 0.99 }}
+            javaScriptEnabled
+            domStorageEnabled
+            originWhitelist={['*']}
+            mixedContentMode="always"
+            thirdPartyCookiesEnabled
+            startInLoadingState
+            androidLayerType="hardware"
+            onRenderProcessGone={() => {
+              setLoading(false);
+              setShowFirebaseWebView(false);
+              setWebViewVisible(false);
+              setOtpSent(false);
+              setOtp('');
+              setLoginError('Erreur technique. Veuillez réessayer.');
+            }}
+            renderLoading={() => (
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f172a' }}>
+                <ActivityIndicator size="large" color="#f59e0b" />
+                <Text style={{ color: '#94a3b8', marginTop: 16 }}>Chargement...</Text>
+              </View>
+            )}
+            onError={() => {
+              if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
+              setLoading(false);
+              setShowFirebaseWebView(false);
+              setWebViewVisible(false);
+              setLoginError('Impossible de charger Firebase. Vérifiez votre connexion.');
+            }}
+          />
+        </View>
+      )}
 
       {/* Country Picker Modal */}
       <Modal visible={showCountryPicker} animationType="slide" transparent onRequestClose={() => { setShowCountryPicker(false); setSearchQuery(''); }}>
