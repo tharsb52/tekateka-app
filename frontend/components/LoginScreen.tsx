@@ -22,8 +22,33 @@ import { useRouter } from 'expo-router';
 import i18n from '../utils/i18n';
 import { Ionicons } from '@expo/vector-icons';
 import { ALL_COUNTRIES, searchCountries, getFlagUrl, Country } from '../utils/countries';
-import WebView from 'react-native-webview';
-import { buildFirebaseAuthHTML, FIREBASE_AUTH_BASE_URL } from '../services/firebaseAuthHTML';
+
+// ===========================================================================
+// NATIVE FIREBASE AUTH (no WebView, no visible reCAPTCHA)
+// ---------------------------------------------------------------------------
+// We use @react-native-firebase/auth + Play Integrity (configured in the
+// Firebase Console). On Android, this triggers a silent device-attestation
+// challenge that is INVISIBLE to the user. No image puzzle. No "I'm not a
+// robot" checkbox. No WebView.
+//
+// IMPORTANT: This module is ONLY available in a custom EAS build (it requires
+// native code). It does NOT work in Expo Go, nor on web. We require() it
+// behind a Platform guard so the web bundle keeps compiling.
+// ===========================================================================
+type ConfirmationResult = {
+  confirm: (code: string) => Promise<any>;
+  verificationId?: string;
+};
+
+let nativeAuth: any = null;
+if (Platform.OS !== 'web') {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    nativeAuth = require('@react-native-firebase/auth').default;
+  } catch (e) {
+    console.warn('[Firebase] native auth not available:', e);
+  }
+}
 
 const BG = '#fef3e7';
 
@@ -42,12 +67,15 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [verifiedNeedsRetry, setVerifiedNeedsRetry] = useState(false);
 
-  // QUICK LOGIN — when the user has already logged in on this device once,
-  // we remember their phone number + userId so they can come back via a
-  // simple PIN without re-doing the SMS dance. CRITICAL fix for the
-  // "trop d'essais" loop reported by the user (Firebase rate-limits a
-  // phone for 1h after ~5 SMS in a row).
+  // Holds the Firebase confirmation object returned by signInWithPhoneNumber.
+  // We .confirm(otp) on it to complete sign-in.
+  const confirmationRef = useRef<ConfirmationResult | null>(null);
+
+  // QUICK LOGIN — returning user enters a 4-digit PIN, no SMS at all.
+  // Used ONLY after at least one successful Firebase sign-in on this device.
+  // A new user / new device must still go through the full Firebase phone flow.
   const [savedPhone, setSavedPhone] = useState<string | null>(null);
   const [savedUserId, setSavedUserId] = useState<string | null>(null);
   const [savedUserName, setSavedUserName] = useState<string>('');
@@ -55,7 +83,7 @@ export default function LoginScreen() {
   const [quickPinError, setQuickPinError] = useState('');
   const [showFullLogin, setShowFullLogin] = useState(false);
 
-  React.useEffect(() => {
+  useEffect(() => {
     (async () => {
       try {
         const [phone, uid, name] = await Promise.all([
@@ -66,11 +94,9 @@ export default function LoginScreen() {
         if (phone && uid) {
           const savedPinForUser = await AsyncStorage.getItem(`@tekateka:${uid}:pin`);
           if (savedPinForUser) {
-            // Pre-populate phone field + show PIN-only screen
             setSavedPhone(phone);
             setSavedUserId(uid);
             setSavedUserName(name || '');
-            // Pre-fill phone tab too in case user switches to full login
             const cc = ALL_COUNTRIES.find(c => phone.startsWith('+' + c.code));
             if (cc) {
               setSelectedCountry(cc);
@@ -103,7 +129,6 @@ export default function LoginScreen() {
       }
       setLoading(true);
       await quickLogin(savedPhone);
-      // AuthContext will navigate automatically
     } catch (e: any) {
       setLoading(false);
       setQuickPinError(e?.message || 'Erreur de connexion');
@@ -111,7 +136,6 @@ export default function LoginScreen() {
   };
 
   const handleUseOtherAccount = async () => {
-    // Clear stored quick-login data and show the full phone+OTP flow
     try {
       await AsyncStorage.multiRemove(['@tekateka:lastPhone', '@tekateka:lastUserId', '@tekateka:lastUserName']);
     } catch {}
@@ -123,34 +147,6 @@ export default function LoginScreen() {
   };
 
   const showQuickLogin = savedPhone && savedUserId && !showFullLogin;
-
-  // Firebase WebView state (kept for OTA-compatibility with the currently
-  // installed APK which has react-native-webview but NOT @react-native-firebase
-  // natively). When the user rebuilds the APK with the native SDK we'll swap.
-  const [showFirebaseWebView, setShowFirebaseWebView] = useState(false);
-  const [webViewVisible, setWebViewVisible] = useState(false);
-  const [verifiedNeedsRetry, setVerifiedNeedsRetry] = useState(false);
-  const webViewRef = useRef<any>(null);
-  const sendTimeoutRef = useRef<any>(null);
-
-  // Attempt backend login with retry — keeps Firebase verification intact on failure
-  const attemptBackendLogin = async () => {
-    setLoading(true);
-    setLoginError('');
-    setVerifiedNeedsRetry(false);
-    try {
-      await login(fullPhoneNumber, 'firebase-verified');
-      // Auth context will navigate to dashboard
-    } catch (error: any) {
-      console.error('Backend login error:', error);
-      setLoginError(
-        (error.message || 'Connexion serveur instable.') +
-        ' Cliquez sur "Réessayer" — votre code SMS reste valide.'
-      );
-      setVerifiedNeedsRetry(true);
-      setLoading(false);
-    }
-  };
 
   // Track keyboard height (used for the country picker modal)
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -168,7 +164,6 @@ export default function LoginScreen() {
     return () => {
       showSub.remove();
       hideSub.remove();
-      if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
     };
   }, []);
 
@@ -181,72 +176,74 @@ export default function LoginScreen() {
 
   const fullPhoneNumber = '+' + selectedCountry.code + localNumber.replace(/^0+/, '');
 
-  // Build the inline HTML once per phone change
-  const html = buildFirebaseAuthHTML(fullPhoneNumber);
+  // Translate a Firebase auth error code into a friendly French message.
+  const friendlyFirebaseError = (err: any): string => {
+    const code = (err?.code || '').toString();
+    const msg = (err?.message || '').toString();
+    if (code.includes('too-many-requests') || msg.toLowerCase().includes('too-many')) {
+      return "Trop d'essais consécutifs. Attendez 60 secondes et réessayez — vous n'êtes pas bloqué.";
+    }
+    if (code.includes('invalid-phone-number')) {
+      return 'Numéro de téléphone invalide. Vérifiez l\'indicatif et le num\u00e9ro.';
+    }
+    if (code.includes('quota-exceeded')) {
+      return 'Quota SMS dépassé pour aujourd\'hui. Réessayez demain.';
+    }
+    if (code.includes('network')) {
+      return 'Erreur réseau. Vérifiez votre connexion 4G/WiFi.';
+    }
+    if (code.includes('app-not-authorized') || code.includes('missing-client-identifier')) {
+      return 'Configuration Firebase manquante. Une nouvelle version de l\'app est requise.';
+    }
+    return msg || 'Erreur lors de la vérification.';
+  };
+
+  // Attempt backend login with retry — keeps Firebase verification intact on failure
+  const attemptBackendLogin = async () => {
+    setLoading(true);
+    setLoginError('');
+    setVerifiedNeedsRetry(false);
+    try {
+      await login(fullPhoneNumber, 'firebase-verified');
+      // AuthContext will navigate to dashboard
+    } catch (error: any) {
+      console.error('Backend login error:', error);
+      setLoginError(
+        (error.message || 'Connexion serveur instable.') +
+        ' Cliquez sur "Réessayer" — votre vérification reste valide.'
+      );
+      setVerifiedNeedsRetry(true);
+      setLoading(false);
+    }
+  };
 
   const handleSendOTP = async () => {
     if (localNumber.length < 6) {
       setLoginError('Veuillez entrer un numéro valide');
       return;
     }
+    if (!nativeAuth) {
+      setLoginError(
+        "Module d'authentification non disponible. Vous utilisez une ancienne version de l'app — une mise à jour est requise."
+      );
+      return;
+    }
     setLoginError('');
     setOtp('');
     setOtpSent(false);
+    setVerifiedNeedsRetry(false);
     setLoading(true);
 
-    // Mount the WebView (visible for reCAPTCHA challenge)
-    setShowFirebaseWebView(true);
-    setWebViewVisible(true);
-
-    if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
-    sendTimeoutRef.current = setTimeout(() => {
-      setLoading(false);
-      setShowFirebaseWebView(false);
-      setWebViewVisible(false);
-      setLoginError("Délai dépassé. Vérifiez votre connexion 4G/WiFi et réessayez (vous n'êtes pas bloqué).");
-    }, 60000);
-  };
-
-  const handleWebViewMessage = async (event: any) => {
     try {
-      const data = JSON.parse(event.nativeEvent.data);
-      console.log('[WebView]', data.type, data.message || '');
-
-      if (data.type === 'codeSent' && data.success) {
-        if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
-        setLoading(false);
-        setOtpSent(true);
-        setWebViewVisible(false);
-      } else if (data.type === 'verified' && data.success) {
-        if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
-        setShowFirebaseWebView(false);
-        setWebViewVisible(false);
-        setLoading(true);
-        setLoginError('');
-        await attemptBackendLogin();
-      } else if (data.type === 'error') {
-        if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
-        setLoading(false);
-        let msg = data.message || "Erreur lors de l'envoi du SMS";
-        if (msg.toLowerCase().includes('too-many')) msg = "Trop d'essais consécutifs. Attendez 60 secondes puis réessayez (vous n'êtes pas bloqué).";
-        else if (msg.toLowerCase().includes('captcha')) msg = "Vérification échouée. Réessayez (votre compte n'est pas bloqué).";
-        setLoginError(msg);
-        setShowFirebaseWebView(false);
-        setWebViewVisible(false);
-      } else if (data.type === 'verifyError') {
-        setLoading(false);
-        const errMsg = data.message || 'Code incorrect';
-        if (errMsg.toLowerCase().includes('session expir') || errMsg.toLowerCase().includes('expired')) {
-          setLoginError('Session expirée. Renvoi automatique du SMS...');
-          setOtp('');
-          setOtpSent(false);
-          setTimeout(() => { handleSendOTP(); }, 600);
-        } else {
-          setLoginError(errMsg);
-        }
-      }
-    } catch (e) {
-      console.log('[WebView] parse error', e);
+      console.log('[Firebase Native] signInWithPhoneNumber', fullPhoneNumber);
+      const confirmation = await nativeAuth().signInWithPhoneNumber(fullPhoneNumber);
+      confirmationRef.current = confirmation;
+      setOtpSent(true);
+      setLoading(false);
+    } catch (error: any) {
+      console.error('[Firebase Native] signInWithPhoneNumber error', error);
+      setLoading(false);
+      setLoginError(friendlyFirebaseError(error));
     }
   };
 
@@ -255,40 +252,42 @@ export default function LoginScreen() {
       setLoginError('Entrez le code reçu par SMS');
       return;
     }
+    const conf = confirmationRef.current;
+    if (!conf) {
+      setLoginError('Session expirée. Renvoyez le code SMS.');
+      setOtpSent(false);
+      return;
+    }
     setLoading(true);
     setLoginError('');
-    if (webViewRef.current) {
-      webViewRef.current.injectJavaScript(`
-        (function() {
-          try {
-            document.getElementById('otpInput').value = ${JSON.stringify(otp)};
-            window.verifyCode();
-          } catch (e) {
-            if (window.ReactNativeWebView) {
-              window.ReactNativeWebView.postMessage(JSON.stringify({type:'verifyError',message:'Erreur interne: '+e.message}));
-            }
-          }
-        })();
-        true;
-      `);
-    } else {
+    try {
+      await conf.confirm(otp);
+      // Firebase succeeded — now hit the backend
+      await attemptBackendLogin();
+    } catch (error: any) {
+      console.error('[Firebase Native] confirm error', error);
+      const code = (error?.code || '').toString();
+      if (code.includes('invalid-verification-code') || code.includes('invalid-code')) {
+        setLoginError('Code incorrect. Vérifiez et réessayez.');
+      } else if (code.includes('session-expired') || code.includes('code-expired')) {
+        setLoginError('Code expiré. Renvoi automatique du SMS...');
+        setOtp('');
+        setOtpSent(false);
+        setTimeout(() => { handleSendOTP(); }, 600);
+      } else {
+        setLoginError(friendlyFirebaseError(error));
+      }
       setLoading(false);
-      setLoginError('Session expirée. Renvoyez le code.');
     }
   };
 
-  const handleCancelOtp = () => {
-    if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
+  const handleResetPhone = () => {
+    confirmationRef.current = null;
     setLoading(false);
-    setShowFirebaseWebView(false);
-    setWebViewVisible(false);
     setOtpSent(false);
     setOtp('');
     setLoginError('');
-  };
-
-  const handleResetPhone = () => {
-    handleCancelOtp();
+    setVerifiedNeedsRetry(false);
   };
 
   const handleCredentialLogin = async () => {
@@ -458,7 +457,7 @@ export default function LoginScreen() {
                     placeholder="------"
                     placeholderTextColor="#d1d5db"
                     value={otp}
-                    onChangeText={(t) => { setOtp(t); setLoginError(''); }}
+                    onChangeText={(t) => { setOtp(t.replace(/\D/g, '').slice(0, 6)); setLoginError(''); }}
                     keyboardType="number-pad"
                     maxLength={6}
                     autoFocus
@@ -532,69 +531,6 @@ export default function LoginScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
-
-      {/* PERSISTENT Firebase WebView — kept for OTA compatibility with the
-          currently installed APK (which has react-native-webview but NOT
-          @react-native-firebase natively). Will be removed when rebuilding
-          the APK with @react-native-firebase/auth. */}
-      {showFirebaseWebView && Platform.OS !== 'web' && (
-        <View
-          style={
-            webViewVisible
-              ? { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#0f172a', zIndex: 1000 }
-              : { position: 'absolute', width: 2, height: 2, top: -9999, left: -9999, opacity: 0.01, overflow: 'hidden' }
-          }
-          pointerEvents={webViewVisible ? 'auto' : 'none'}
-        >
-          {webViewVisible && (
-            <SafeAreaView edges={['top']} style={{ backgroundColor: '#0f172a' }}>
-              <View style={styles.fbHeader}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.fbHeaderTitle}>Vérification</Text>
-                  <Text style={styles.fbHeaderSub}>{fullPhoneNumber}</Text>
-                </View>
-                <TouchableOpacity onPress={handleCancelOtp} style={{ padding: 8 }}>
-                  <Ionicons name="close" size={28} color="#fff" />
-                </TouchableOpacity>
-              </View>
-            </SafeAreaView>
-          )}
-          <WebView
-            ref={webViewRef}
-            source={{ html, baseUrl: FIREBASE_AUTH_BASE_URL }}
-            onMessage={handleWebViewMessage}
-            style={{ flex: 1, backgroundColor: '#0f172a', opacity: 0.99 }}
-            javaScriptEnabled
-            domStorageEnabled
-            originWhitelist={['*']}
-            mixedContentMode="always"
-            thirdPartyCookiesEnabled
-            startInLoadingState
-            androidLayerType="hardware"
-            onRenderProcessGone={() => {
-              setLoading(false);
-              setShowFirebaseWebView(false);
-              setWebViewVisible(false);
-              setOtpSent(false);
-              setOtp('');
-              setLoginError('Erreur technique. Veuillez réessayer.');
-            }}
-            renderLoading={() => (
-              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f172a' }}>
-                <ActivityIndicator size="large" color="#f59e0b" />
-                <Text style={{ color: '#94a3b8', marginTop: 16 }}>Chargement...</Text>
-              </View>
-            )}
-            onError={() => {
-              if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
-              setLoading(false);
-              setShowFirebaseWebView(false);
-              setWebViewVisible(false);
-              setLoginError('Impossible de charger Firebase. Vérifiez votre connexion.');
-            }}
-          />
-        </View>
-      )}
 
       {/* Country Picker Modal */}
       <Modal visible={showCountryPicker} animationType="slide" transparent onRequestClose={() => { setShowCountryPicker(false); setSearchQuery(''); }}>
@@ -761,10 +697,6 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { backgroundColor: '#94a3b8' },
   buttonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-
-  fbHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: '#1e293b' },
-  fbHeaderTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
-  fbHeaderSub: { color: '#94a3b8', fontSize: 12, marginTop: 2 },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24 },
