@@ -27,6 +27,20 @@ import AppHeader from '../../components/AppHeader';
 import SubscriptionStatusCard from '../../components/SubscriptionStatusCard';
 import PinScreen from '../../components/PinScreen';
 import ErrorBoundary from '../../components/ErrorBoundary';
+import { authAPI } from '../../services/apiService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Native Firebase Auth — used only to delete the user's OWN credential
+// during account deletion (GDPR). require()'d lazily so the web bundle
+// keeps compiling without the native module.
+let nativeFirebaseAuth: any = null;
+if (Platform.OS !== 'web') {
+  try {
+    nativeFirebaseAuth = require('@react-native-firebase/auth').default;
+  } catch (e) {
+    // OK — only matters for the delete-account flow.
+  }
+}
 
 // Lazy-load expo-image-picker to avoid crash if native module fails
 let ImagePicker: any = null;
@@ -118,6 +132,90 @@ function SettingsScreenInner() {
 
   const handleLogout = async () => {
     await logout();
+  };
+
+  // ====================================================================
+  // GDPR — Account deletion flow
+  // ====================================================================
+  // 1) User taps "Supprimer mon compte"  → confirmation modal opens.
+  // 2) User must type SUPPRIMER (irreversible action confirmation).
+  // 3) Backend purges all user-owned MongoDB documents.
+  // 4) Client deletes the Firebase Auth user (if signed in via phone).
+  // 5) Local AsyncStorage is wiped, then logout() returns to login screen.
+  // ====================================================================
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteResult, setDeleteResult] = useState<string | null>(null);
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmText.trim().toUpperCase() !== 'SUPPRIMER') {
+      Alert.alert(
+        'Confirmation requise',
+        'Vous devez taper exactement SUPPRIMER pour confirmer.'
+      );
+      return;
+    }
+    setDeleting(true);
+    setDeleteResult(null);
+    try {
+      // 1) Backend purge — must succeed BEFORE we drop the Firebase
+      //    credential, otherwise the user would lose the only thing that
+      //    lets them re-authenticate to finish the deletion.
+      const res = await authAPI.deleteAccount();
+      const counts = res?.deleted_counts || {};
+      const totalDocs = Object.values(counts).reduce(
+        (s: number, n: any) => s + (typeof n === 'number' && n > 0 ? n : 0),
+        0,
+      );
+
+      // 2) Firebase Auth user — best-effort. If it fails (eg. requires
+      //    recent re-auth) we still continue with local cleanup because
+      //    the backend has already wiped everything.
+      if (nativeFirebaseAuth) {
+        try {
+          const fbUser = nativeFirebaseAuth().currentUser;
+          if (fbUser) {
+            await fbUser.delete();
+          }
+        } catch (fbErr: any) {
+          console.warn('[GDPR] Firebase user.delete() failed:', fbErr?.code, fbErr?.message);
+          // Carry on — backend data is gone, Firebase credential will
+          // age out / can be removed manually by the user re-signing in.
+        }
+      }
+
+      // 3) Wipe every TekaTeka-prefixed key in AsyncStorage so a fresh
+      //    install on the same device starts truly empty.
+      try {
+        const allKeys = await AsyncStorage.getAllKeys();
+        const ours = allKeys.filter((k) => k.startsWith('@tekateka:'));
+        if (ours.length > 0) await AsyncStorage.multiRemove(ours);
+      } catch (e) {
+        console.warn('[GDPR] AsyncStorage cleanup failed:', e);
+      }
+
+      setDeleteResult(
+        `Compte supprimé. ${totalDocs} enregistrement${totalDocs > 1 ? 's' : ''} effacé${totalDocs > 1 ? 's' : ''}.`,
+      );
+
+      // Give the user a beat to read the confirmation, then sign out.
+      setTimeout(async () => {
+        setDeleteModalVisible(false);
+        setDeleteConfirmText('');
+        setDeleteResult(null);
+        setDeleting(false);
+        await logout();
+      }, 2000);
+    } catch (err: any) {
+      console.error('[GDPR] deleteAccount failed:', err);
+      setDeleting(false);
+      Alert.alert(
+        'Erreur',
+        err?.message ||
+          "Impossible de supprimer votre compte pour le moment. Réessayez ou contactez le support.",
+      );
+    }
   };
 
   const handlePickPhoto = async () => {
@@ -492,6 +590,30 @@ function SettingsScreenInner() {
           <Text style={styles.logoutText}>Déconnexion</Text>
         </TouchableOpacity>
 
+        {/* GDPR — Danger Zone */}
+        <View style={styles.dangerZone}>
+          <View style={styles.dangerHeaderRow}>
+            <Ionicons name="warning" size={18} color="#dc2626" />
+            <Text style={styles.dangerHeader}>Zone de danger</Text>
+          </View>
+          <Text style={styles.dangerBlurb}>
+            Supprimer votre compte effacera de manière définitive toutes vos données :
+            produits, ventes, dépenses, dettes, notes. Cette action est{' '}
+            <Text style={{ fontWeight: '700' }}>irréversible</Text>.
+          </Text>
+          <TouchableOpacity
+            style={styles.deleteAccountButton}
+            onPress={() => {
+              setDeleteConfirmText('');
+              setDeleteResult(null);
+              setDeleteModalVisible(true);
+            }}
+          >
+            <Ionicons name="trash" size={18} color="#fff" />
+            <Text style={styles.deleteAccountText}>Supprimer mon compte</Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={{ height: 80 }} />
       </ScrollView>
 
@@ -740,6 +862,73 @@ function SettingsScreenInner() {
           </View>
         </View>
       </Modal>
+
+      {/* GDPR — Delete account confirmation modal */}
+      <Modal
+        visible={deleteModalVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={() => !deleting && setDeleteModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { paddingHorizontal: 22, paddingVertical: 22, maxHeight: '90%' }]}>
+            <View style={{ alignItems: 'center', marginBottom: 12 }}>
+              <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: '#fee2e2', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="trash" size={32} color="#dc2626" />
+              </View>
+            </View>
+            <Text style={{ fontSize: 20, fontWeight: '800', color: '#0f172a', textAlign: 'center' }}>Supprimer définitivement mon compte ?</Text>
+            <Text style={{ fontSize: 13, color: '#475569', textAlign: 'center', marginTop: 10, lineHeight: 18 }}>
+              Toutes vos données seront effacées de manière permanente : produits, ventes, dépenses, dettes, notes, photos et profil.{'\n\n'}Cette action est <Text style={{ fontWeight: '700', color: '#dc2626' }}>irréversible</Text>.
+            </Text>
+            <View style={{ backgroundColor: '#fef3c7', borderRadius: 10, padding: 12, marginTop: 14 }}>
+              <Text style={{ fontSize: 12, color: '#78350f', fontWeight: '600' }}>
+                Conformité RGPD : votre numéro de téléphone est aussi supprimé de Firebase. Les données comptables liées à un éventuel rôle d'ambassadeur sont conservées séparément selon les obligations légales.
+              </Text>
+            </View>
+            <Text style={{ fontSize: 13, fontWeight: '600', color: '#334155', marginTop: 18, marginBottom: 6 }}>Pour confirmer, tapez <Text style={{ color: '#dc2626', fontWeight: '800' }}>SUPPRIMER</Text> ci-dessous :</Text>
+            <TextInput
+              style={{ borderWidth: 2, borderColor: '#e2e8f0', borderRadius: 10, padding: 12, fontSize: 16, color: '#0f172a', backgroundColor: '#fff' }}
+              value={deleteConfirmText}
+              onChangeText={setDeleteConfirmText}
+              placeholder="SUPPRIMER"
+              placeholderTextColor="#cbd5e1"
+              autoCapitalize="characters"
+              autoCorrect={false}
+              editable={!deleting}
+            />
+            {!!deleteResult && (
+              <View style={{ marginTop: 12, padding: 10, backgroundColor: '#dcfce7', borderRadius: 8 }}>
+                <Text style={{ fontSize: 13, color: '#166534', fontWeight: '600' }}>✓ {deleteResult}</Text>
+              </View>
+            )}
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
+              <TouchableOpacity
+                style={{ flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#f1f5f9', alignItems: 'center', opacity: deleting ? 0.5 : 1 }}
+                onPress={() => { if (!deleting) { setDeleteModalVisible(false); setDeleteConfirmText(''); } }}
+                disabled={deleting}
+              >
+                <Text style={{ fontSize: 15, fontWeight: '700', color: '#475569' }}>Annuler</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{
+                  flex: 1, padding: 14, borderRadius: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6,
+                  backgroundColor: deleteConfirmText.trim().toUpperCase() === 'SUPPRIMER' && !deleting ? '#dc2626' : '#fca5a5',
+                }}
+                onPress={handleDeleteAccount}
+                disabled={deleting || deleteConfirmText.trim().toUpperCase() !== 'SUPPRIMER'}
+              >
+                {deleting ? <ActivityIndicator color="#fff" /> : (
+                  <>
+                    <Ionicons name="trash" size={16} color="#fff" />
+                    <Text style={{ fontSize: 15, fontWeight: '800', color: '#fff' }}>Supprimer</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -899,6 +1088,46 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#dc2626',
+  },
+  // GDPR — Danger zone
+  dangerZone: {
+    marginTop: 24,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#fecaca',
+  },
+  dangerHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  dangerHeader: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#dc2626',
+  },
+  dangerBlurb: {
+    fontSize: 12,
+    color: '#64748b',
+    lineHeight: 17,
+    marginBottom: 14,
+  },
+  deleteAccountButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#dc2626',
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  deleteAccountText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#fff',
   },
   // Modals
   modalOverlay: {

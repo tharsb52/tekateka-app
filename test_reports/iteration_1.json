@@ -1,0 +1,54 @@
+{
+  "summary": "Tested the new GDPR account-deletion endpoint DELETE /api/account/me end-to-end. 8/8 pytest tests passed against the public preview URL. Verified auth failures (missing/malformed/invalid Bearer all return 401), happy-path deletion returns 200 with correct response shape (status, message, deleted_counts, user_doc_existed=true), all 10 user-owned collections appear in deleted_counts, seeded product/sale/expense are actually purged (counts >=1), users-row deleted exactly once (counts.users == 1), ambassador collections are NOT touched (not present in counts), idempotent 2nd call returns 200 with user_doc_existed=false and empty/zero deleted_counts. Note: after deletion GET /api/auth/profile returns 404 (not 401) because data_api.get_current_user only validates JWT signature, not user existence — the spec explicitly allows either status, so this is acceptable.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "DELETE /api/account/me",
+        "issue": "Uses deprecated datetime.utcnow() in the audit log (account_api.py:105). Works on Python 3.11 (the runtime) but emits a DeprecationWarning on 3.12+. Cosmetic only."
+      },
+      {
+        "endpoint": "DELETE /api/account/me",
+        "issue": "account_api.py creates its own AsyncIOMotorClient (account_api.py:46) separate from data_api/server clients — three connection pools to the same DB. Matches existing project convention but inefficient. No functional impact."
+      },
+      {
+        "endpoint": "GET /api/auth/profile (post-deletion)",
+        "issue": "After account is purged, profile endpoint returns 404 'Utilisateur non trouvé' instead of 401. Spec allows either; flag only if you prefer the 401 behaviour — would require reading users in get_current_user."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_account_deletion.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Optional: consider migrating datetime.utcnow() -> datetime.now(timezone.utc) in account_api.py:105 for future-proofing.",
+    "Optional: if you want post-deletion API calls to return 401 (not 404), have get_current_user verify the user still exists in db.users (would also force token invalidation server-side on account purge).",
+    "No blocking issues — endpoint behaves exactly as the GDPR spec requires."
+  ],
+  "critical_code_review_comments": [
+    "account_api.py is small (~140 lines), well-commented, and properly excludes ambassador collections per requirement.",
+    "Error handling per-collection (deleted_counts[col] = -1 on exception, continues purge) is the right call for right-to-be-forgotten — partial purge is better than aborting.",
+    "Audit log is anonymized correctly (only last-4 of phone), good GDPR practice.",
+    "USER_OWNED_COLLECTIONS tuple matches the spec exactly (10 collections)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/__init__.py (created)",
+    "/app/backend/tests/test_account_deletion.py (created)"
+  ],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "N/A — backend-only test request"
+  },
+  "seed_data_creation": "Each happy-path test class spins up a fresh user via /api/auth/phone-login with a unique +243* phone (timestamp suffix). One product + one sale + one expense are seeded and immediately purged by the test. No residue left in DB.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Test file: /app/backend/tests/test_account_deletion.py. Run with: EXPO_PUBLIC_BACKEND_URL=<public_url> pytest backend/tests/test_account_deletion.py -v. Tests use unique phone numbers per run so they're safe to re-run. Note that data_api's brute-force middleware on /auth/phone-login (5 attempts / 5 min per IP) means heavy parallel test runs from the same IP may hit 429 — the test calls pytest.skip() on 429.",
+  "rca_of_issue": "No bugs found. The endpoint implementation matches the GDPR specification."
+}

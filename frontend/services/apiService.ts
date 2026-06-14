@@ -196,6 +196,13 @@ export const authAPI = {
       body: JSON.stringify({ photo: photoBase64 }),
     });
   },
+
+  // GDPR — irreversibly purge every personal record on the backend.
+  // The Firebase Auth credential is deleted SEPARATELY from the device,
+  // by the LoginScreen / settings flow (auth().currentUser?.delete()).
+  deleteAccount: async () => {
+    return apiFetch('/account/me', { method: 'DELETE' });
+  },
 };
 
 // ==========================================

@@ -24,6 +24,7 @@ from stripe_api import router as stripe_router
 from ambassador_api import router as ambassador_router
 from admin_ambassador_panel import router as amb_panel_router
 from firebase_auth_page import router as firebase_page_router
+from account_api import router as account_router
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -197,6 +198,9 @@ app.include_router(amb_panel_router, prefix="/api", tags=["ambassador-panel"])
 
 # Include Firebase auth page
 app.include_router(firebase_page_router, prefix="/api", tags=["firebase-auth"])
+
+# Include account API router (GDPR account deletion)
+app.include_router(account_router, prefix="/api", tags=["account"])
 
 # Serve downloadable brand assets (logos for Stripe, Play Store, etc.).
 # Files live in /app/backend/static and are reachable at /api/assets/<filename>
