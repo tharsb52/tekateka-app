@@ -673,6 +673,10 @@ async def client_activate_code(body: dict):
         raise HTTPException(status_code=409, detail="Code déjà utilisé, veuillez réessayer")
 
     # Update user subscription
+    # Write BOTH `expiryDate` (legacy) AND `expiresAt` (canonical) so every
+    # reader in the codebase (admin panel, SubscriptionStatusCard, stripe_api)
+    # sees the same expiry — this was the root cause of the
+    # "subscription expired but admin shows active" mismatch.
     await db.users.update_one(
         {"_id": ObjectId(user_id)},
         {"$set": {
@@ -680,14 +684,18 @@ async def client_activate_code(body: dict):
                 "status": "active",
                 "plan": plan,
                 "startDate": now.isoformat(),
+                "startedAt": now.isoformat(),
                 "expiryDate": expiry.isoformat(),
+                "expiresAt": expiry.isoformat(),
                 "activatedBy": ambassador_id,
                 "activationCode": code_str,
                 "method": "activation_code",
+                "provider": "ambassador_code",
             },
             "isSubscribed": True,
             "subscriptionPlan": plan,
             "subscriptionEndDate": expiry.isoformat(),
+            "updatedAt": now.isoformat(),
         }}
     )
 

@@ -266,10 +266,15 @@ async def admin_grant_premium(user_id: str, request: Request):
             "subscription": {
                 "plan": plan,
                 "status": "active",
+                "startDate": now.isoformat(),
                 "startedAt": now.isoformat() + "Z",
+                "expiryDate": end_date.isoformat(),
                 "expiresAt": end_date.isoformat() + "Z",
                 "provider": "admin_grant",
             },
+            "isSubscribed": True,
+            "subscriptionPlan": plan,
+            "subscriptionEndDate": end_date.isoformat(),
             "updatedAt": now.isoformat() + "Z",
         }},
     )
