@@ -361,7 +361,10 @@ tr:hover td{background:#1e293b}
 <h1>TekaTeka Admin</h1>
 <p>Backoffice de gestion</p>
 <div class="login-error" id="loginError">Mot de passe incorrect</div>
-<input type="password" id="adminPass" placeholder="Mot de passe admin" onkeydown="if(event.key==='Enter')doLogin()">
+<div style="position:relative">
+  <input type="password" id="adminPass" placeholder="Mot de passe admin" style="padding-right:48px" onkeydown="if(event.key==='Enter')doLogin()">
+  <button type="button" onclick="togglePw('adminPass',this)" aria-label="Afficher/masquer le mot de passe" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:transparent;border:none;cursor:pointer;font-size:20px;color:#94a3b8;padding:8px;line-height:1">👁️</button>
+</div>
 <button onclick="doLogin()">Connexion</button>
 </div>
 </div>
@@ -374,9 +377,18 @@ tr:hover td{background:#1e293b}
 <div class="pw-box">
 <h3>Changer le mot de passe</h3>
 <div class="pw-msg" id="pwMsg"></div>
-<input type="password" id="pwCurrent" placeholder="Mot de passe actuel">
-<input type="password" id="pwNew" placeholder="Nouveau mot de passe (min 6 car.)">
-<input type="password" id="pwConfirm" placeholder="Confirmer le nouveau mot de passe">
+<div style="position:relative">
+<input type="password" id="pwCurrent" placeholder="Mot de passe actuel" style="padding-right:48px">
+<button type="button" onclick="togglePw('pwCurrent',this)" aria-label="Afficher/masquer" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:transparent;border:none;cursor:pointer;font-size:18px;color:#94a3b8;padding:6px;line-height:1">👁️</button>
+</div>
+<div style="position:relative">
+<input type="password" id="pwNew" placeholder="Nouveau mot de passe (min 6 car.)" style="padding-right:48px">
+<button type="button" onclick="togglePw('pwNew',this)" aria-label="Afficher/masquer" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:transparent;border:none;cursor:pointer;font-size:18px;color:#94a3b8;padding:6px;line-height:1">👁️</button>
+</div>
+<div style="position:relative">
+<input type="password" id="pwConfirm" placeholder="Confirmer le nouveau mot de passe" style="padding-right:48px">
+<button type="button" onclick="togglePw('pwConfirm',this)" aria-label="Afficher/masquer" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:transparent;border:none;cursor:pointer;font-size:18px;color:#94a3b8;padding:6px;line-height:1">👁️</button>
+</div>
 <div class="pw-btns">
 <button style="background:#334155;color:#94a3b8" onclick="hidePwModal()">Annuler</button>
 <button style="background:#3b82f6;color:#fff" onclick="changePw()">Enregistrer</button>
@@ -389,17 +401,29 @@ tr:hover td{background:#1e293b}
 let adminPass='';
 const API=window.location.origin+'/api';
 const post=(url,extra={})=>fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:adminPass,...extra})});
+function togglePw(inputId,btn){
+  const input=document.getElementById(inputId);
+  if(!input)return;
+  if(input.type==='password'){input.type='text';btn.textContent='🙈';}
+  else{input.type='password';btn.textContent='👁️';}
+}
 async function doLogin(){
   const p=document.getElementById('adminPass').value;
-  if(!p){document.getElementById('loginError').style.display='block';return}
+  const errEl=document.getElementById('loginError');
+  errEl.style.display='none';
+  if(!p){errEl.textContent='Veuillez saisir le mot de passe';errEl.style.display='block';return}
   try{
     const r=await fetch(API+'/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:p})});
-    if(!r.ok)throw new Error();
+    if(r.status===401){errEl.textContent='Mot de passe incorrect';errEl.style.display='block';return}
+    if(!r.ok){errEl.textContent='Erreur serveur ('+r.status+'). Réessayez.';errEl.style.display='block';return}
     adminPass=p;
     document.getElementById('loginPage').style.display='none';
     document.getElementById('dashboard').style.display='block';
     loadDashboard();
-  }catch(e){document.getElementById('loginError').style.display='block'}
+  }catch(e){
+    errEl.textContent='Erreur réseau. Vérifiez votre connexion.';
+    errEl.style.display='block';
+  }
 }
 function doLogout(){adminPass='';document.getElementById('loginPage').style.display='flex';document.getElementById('dashboard').style.display='none';document.getElementById('adminPass').value=''}
 function showPwModal(){document.getElementById('pwModal').classList.add('show');document.getElementById('pwCurrent').value='';document.getElementById('pwNew').value='';document.getElementById('pwConfirm').value='';document.getElementById('pwMsg').style.display='none'}
