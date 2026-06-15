@@ -363,7 +363,7 @@ tr:hover td{background:#1e293b}
 <div class="login-error" id="loginError">Mot de passe incorrect</div>
 <div style="position:relative">
   <input type="password" id="adminPass" placeholder="Mot de passe admin" style="padding-right:48px" onkeydown="if(event.key==='Enter')doLogin()">
-  <button type="button" onclick="togglePw('adminPass',this)" aria-label="Afficher/masquer le mot de passe" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:transparent;border:none;cursor:pointer;font-size:20px;color:#94a3b8;padding:8px;line-height:1">👁️</button>
+  <button type="button" onclick="togglePw('adminPass',this)" aria-label="Afficher/masquer le mot de passe" style="position:absolute;right:8px;top:14px;width:auto;background:transparent;border:none;cursor:pointer;font-size:20px;color:#94a3b8;padding:8px;line-height:1">👁️</button>
 </div>
 <button onclick="doLogin()">Connexion</button>
 </div>
@@ -379,15 +379,15 @@ tr:hover td{background:#1e293b}
 <div class="pw-msg" id="pwMsg"></div>
 <div style="position:relative">
 <input type="password" id="pwCurrent" placeholder="Mot de passe actuel" style="padding-right:48px">
-<button type="button" onclick="togglePw('pwCurrent',this)" aria-label="Afficher/masquer" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:transparent;border:none;cursor:pointer;font-size:18px;color:#94a3b8;padding:6px;line-height:1">👁️</button>
+<button type="button" onclick="togglePw('pwCurrent',this)" aria-label="Afficher/masquer" style="position:absolute;right:8px;top:14px;width:auto;background:transparent;border:none;cursor:pointer;font-size:18px;color:#94a3b8;padding:6px;line-height:1">👁️</button>
 </div>
 <div style="position:relative">
 <input type="password" id="pwNew" placeholder="Nouveau mot de passe (min 6 car.)" style="padding-right:48px">
-<button type="button" onclick="togglePw('pwNew',this)" aria-label="Afficher/masquer" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:transparent;border:none;cursor:pointer;font-size:18px;color:#94a3b8;padding:6px;line-height:1">👁️</button>
+<button type="button" onclick="togglePw('pwNew',this)" aria-label="Afficher/masquer" style="position:absolute;right:8px;top:14px;width:auto;background:transparent;border:none;cursor:pointer;font-size:18px;color:#94a3b8;padding:6px;line-height:1">👁️</button>
 </div>
 <div style="position:relative">
 <input type="password" id="pwConfirm" placeholder="Confirmer le nouveau mot de passe" style="padding-right:48px">
-<button type="button" onclick="togglePw('pwConfirm',this)" aria-label="Afficher/masquer" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:transparent;border:none;cursor:pointer;font-size:18px;color:#94a3b8;padding:6px;line-height:1">👁️</button>
+<button type="button" onclick="togglePw('pwConfirm',this)" aria-label="Afficher/masquer" style="position:absolute;right:8px;top:14px;width:auto;background:transparent;border:none;cursor:pointer;font-size:18px;color:#94a3b8;padding:6px;line-height:1">👁️</button>
 </div>
 <div class="pw-btns">
 <button style="background:#334155;color:#94a3b8" onclick="hidePwModal()">Annuler</button>
@@ -515,12 +515,12 @@ async function showUser(id){
 }
 async function grantPremium(userId,days,plan){
   const label=days===365?'1 an':(days+' jours');
-  if(!confirm('Activer un abonnement '+plan+' de '+label+' pour cet utilisateur ?\n\nCette action écrase tout abonnement existant.')) return;
+  if(!confirm('Activer un abonnement '+plan+' de '+label+' pour cet utilisateur ? Cette action écrase tout abonnement existant.')) return;
   try{
     const r=await fetch(API+'/admin/user/'+userId+'/grant-premium',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:adminPass,days:days,plan:plan})});
     const j=await r.json();
     if(!r.ok){alert('Erreur : '+(j.detail||r.status));return;}
-    alert('✅ '+(j.message||'Abonnement activé')+'\nExpire : '+(j.expiresAt||'').slice(0,10));
+    alert('✅ '+(j.message||'Abonnement activé')+' — Expire : '+(j.expiresAt||'').slice(0,10));
     showUser(userId);
   }catch(e){alert('Erreur réseau : '+e.message);}
 }
