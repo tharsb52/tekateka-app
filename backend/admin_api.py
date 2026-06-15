@@ -200,6 +200,10 @@ async def admin_user_detail(user_id: str, request: Request):
     expenses = await db.expenses.find({"userId": user_id}).to_list(5000)
     debts = await db.debts.find({"userId": user_id}).to_list(5000)
 
+    # also surface the current subscription so the admin panel can show
+    # the status + expiry date next to the new "Grant Premium 1 yr" button
+    user_doc = await db.users.find_one({"_id": ObjectId(user_id)}, {"subscription": 1, "phoneNumber": 1}) or {}
+
     def ser(doc):
         d = {}
         for k, v in doc.items():
@@ -216,6 +220,72 @@ async def admin_user_detail(user_id: str, request: Request):
         "sales": [ser(s) for s in sales],
         "expenses": [ser(e) for e in expenses],
         "debts": [ser(d) for d in debts],
+        "subscription": user_doc.get("subscription") or {},
+        "phone": user_doc.get("phoneNumber") or "",
+    }
+
+
+@router.post("/admin/user/{user_id}/grant-premium")
+async def admin_grant_premium(user_id: str, request: Request):
+    """
+    Manually grant a Premium subscription to a user — used to bypass the
+    free-trial expiry for the Google Play / App Store review test account.
+
+    Body: { password, days?: int (default 365), plan?: str (default 'yearly') }
+
+    The subscription is set so that:
+      - status == 'active'
+      - expiresAt = NOW + days
+      - provider = 'admin_grant'   (audit trail — never overlaps stripe/ambassador)
+
+    Mirrors the schema used by stripe_api.py + ambassador_api.py so the
+    rest of the app reads it transparently as a real paid sub.
+    """
+    body = await request.json()
+    if body.get("password") != ADMIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="Accès refusé")
+    try:
+        days = int(body.get("days", 365))
+    except (TypeError, ValueError):
+        days = 365
+    if days < 1 or days > 3650:
+        raise HTTPException(status_code=400, detail="days doit être entre 1 et 3650")
+    plan = str(body.get("plan", "yearly"))
+
+    try:
+        oid = ObjectId(user_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="user_id invalide")
+
+    now = datetime.utcnow()
+    end_date = now + timedelta(days=days)
+
+    result = await db.users.update_one(
+        {"_id": oid},
+        {"$set": {
+            "subscription": {
+                "plan": plan,
+                "status": "active",
+                "startedAt": now.isoformat() + "Z",
+                "expiresAt": end_date.isoformat() + "Z",
+                "provider": "admin_grant",
+            },
+            "updatedAt": now.isoformat() + "Z",
+        }},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+
+    logger.info(
+        "ADMIN_GRANT_PREMIUM user_id=%s days=%s plan=%s expiresAt=%s",
+        user_id, days, plan, end_date.isoformat(),
+    )
+
+    return {
+        "status": "ok",
+        "message": f"Abonnement {plan} activé pendant {days} jours",
+        "expiresAt": end_date.isoformat() + "Z",
+        "plan": plan,
     }
 
 
@@ -395,11 +465,40 @@ async function loadDashboard(){
 async function showUser(id){
   const r=await post(API+'/admin/user/'+id);
   const d=await r.json();
+  const sub=d.subscription||{};
+  const subStatus=sub.status||'trial';
+  const subExpiry=sub.expiresAt||sub.expiryDate||'';
+  const expiryShort=subExpiry?subExpiry.slice(0,10):'—';
+  const phone=d.phone||'';
   let html='<button onclick="loadDashboard()" style="background:#334155;border:none;color:#60a5fa;padding:10px 20px;border-radius:10px;cursor:pointer;margin-bottom:16px;font-size:14px">← Retour</button>';
+  html+=`<div class="section" style="background:#1e293b;border:2px solid #f59e0b"><h2><span>⭐</span> Abonnement de ${phone||'cet utilisateur'}</h2>`;
+  html+=`<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:10px">`;
+  html+=`<div><span style="color:#94a3b8;font-size:12px">Plan</span><br><span style="font-size:16px;font-weight:700;color:#f1f5f9">${sub.plan||'Aucun'}</span></div>`;
+  html+=`<div><span style="color:#94a3b8;font-size:12px">Statut</span><br><span class="badge ${subStatus}">${subStatus}</span></div>`;
+  html+=`<div><span style="color:#94a3b8;font-size:12px">Expire le</span><br><span style="font-size:14px;font-weight:600;color:#f1f5f9">${expiryShort}</span></div>`;
+  html+=`<div><span style="color:#94a3b8;font-size:12px">Source</span><br><span style="font-size:13px;color:#94a3b8">${sub.provider||'—'}</span></div>`;
+  html+=`<div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">`;
+  html+=`<button onclick="grantPremium('${id}',365,'yearly')" style="background:#16a34a;color:#fff;border:none;padding:10px 16px;border-radius:8px;font-weight:700;cursor:pointer">Activer 1 an</button>`;
+  html+=`<button onclick="grantPremium('${id}',30,'monthly')" style="background:#2563eb;color:#fff;border:none;padding:10px 16px;border-radius:8px;font-weight:700;cursor:pointer">+30 jours</button>`;
+  html+=`<button onclick="grantPremium('${id}',90,'quarterly')" style="background:#7c3aed;color:#fff;border:none;padding:10px 16px;border-radius:8px;font-weight:700;cursor:pointer">+90 jours</button>`;
+  html+=`</div></div></div>`;
   html+=`<div class="section"><h2><span>📦</span> Produits (${d.products.length})</h2><table><thead><tr><th>Nom</th><th>Prix Achat</th><th>Prix Vente</th><th>Stock</th></tr></thead><tbody>${d.products.map(p=>`<tr><td>${p.name}</td><td>${p.purchasePrice}</td><td>${p.salePrice}</td><td style="color:${p.stock<5?'#ef4444':'#10b981'};font-weight:700">${p.stock}</td></tr>`).join('')}</tbody></table></div>`;
   html+=`<div class="section"><h2><span>💰</span> Dernières Ventes (${d.sales.length})</h2><table><thead><tr><th>Produit</th><th>Qté</th><th>Total</th><th>Date</th></tr></thead><tbody>${d.sales.slice(0,20).map(s=>`<tr><td>${s.productName}</td><td>${s.quantity}</td><td style="color:#10b981;font-weight:700">${s.total} ${s.currency||''}</td><td style="color:#64748b;font-size:12px">${(s.createdAt||'').slice(0,16)}</td></tr>`).join('')}</tbody></table></div>`;
   html+=`<div class="section"><h2><span>👥</span> Dettes (${d.debts.filter(dd=>!dd.isPaid).length} impayées)</h2><table><thead><tr><th>Débiteur</th><th>Montant</th><th>Statut</th></tr></thead><tbody>${d.debts.map(dd=>`<tr><td>${dd.debtorName}</td><td style="font-weight:700">${dd.amount} ${dd.currency||''}</td><td><span class="badge ${dd.isPaid?'active':'expired'}">${dd.isPaid?'Payée':'Impayée'}</span></td></tr>`).join('')}</tbody></table></div>`;
   document.getElementById('content').innerHTML=html;
+  // remember which user we are looking at so grantPremium() can refresh
+  window.__currentUserId=id;
+}
+async function grantPremium(userId,days,plan){
+  const label=days===365?'1 an':(days+' jours');
+  if(!confirm('Activer un abonnement '+plan+' de '+label+' pour cet utilisateur ?\n\nCette action écrase tout abonnement existant.')) return;
+  try{
+    const r=await fetch(API+'/admin/user/'+userId+'/grant-premium',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:adminPass,days:days,plan:plan})});
+    const j=await r.json();
+    if(!r.ok){alert('Erreur : '+(j.detail||r.status));return;}
+    alert('✅ '+(j.message||'Abonnement activé')+'\nExpire : '+(j.expiresAt||'').slice(0,10));
+    showUser(userId);
+  }catch(e){alert('Erreur réseau : '+e.message);}
 }
 function fmt(n){return new Intl.NumberFormat('fr-FR',{minimumFractionDigits:0,maximumFractionDigits:2}).format(n||0)}
 </script>
