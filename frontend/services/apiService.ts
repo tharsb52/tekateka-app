@@ -172,6 +172,18 @@ export const authAPI = {
     return apiFetch('/auth/profile');
   },
 
+  // Silent token refresh — no SMS, no Firebase, no user action.
+  // Called every app start to renew the 1-year JWT so returning users
+  // effectively stay signed in forever as long as they keep opening
+  // the app once a year.
+  refreshToken: async () => {
+    const res = await apiFetch('/auth/refresh', { method: 'POST' });
+    if (res?.token) {
+      await saveToken(res.token);
+    }
+    return res;
+  },
+
   updateProfile: async (updates: Record<string, any>) => {
     return apiFetch('/auth/profile', {
       method: 'PUT',

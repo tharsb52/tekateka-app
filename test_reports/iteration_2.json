@@ -1,0 +1,53 @@
+{
+  "summary": "Tested the persistent-auth changes in data_api.py end-to-end through the public preview URL. 12/12 pytest tests passed. Verified: (1) POST /api/auth/phone-login JWT now carries an exp claim ~365 days in the future (regression — previously 7); (2) POST /api/auth/refresh returns 401 on missing/invalid/malformed/empty Bearer header; (3) Happy-path refresh returns 200 with the exact spec shape {success:true, token, user, expiresInDays:365}, a NEW token (≠ old) re-signed at refresh time with a fresh ~365d exp claim; (4) the refreshed token works against GET /api/auth/profile; (5) old token remains usable after refresh (no blacklist — documented as accepted behavior, not a bug); (6) when the user is deleted (via /api/account/me) but the JWT is still cryptographically valid, /api/auth/refresh returns 404 'Utilisateur introuvable' as specified; (7) Regression: /auth/profile, /data/notes, /data/products all still work with the long-lived 365-day JWT. No issues found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/auth/refresh",
+        "issue": "JWT exp is integer-second precision, so two refresh calls within the same wall-clock second produce IDENTICAL tokens (sub+phone+exp all match → HS256 deterministic). Tests work around this with a 1.1s sleep before refresh. Realistic mobile usage (refresh-on-boot) won't hit this, but it's worth knowing if the frontend ever loops refresh in tight succession. Reference: data_api.py:140-143."
+      },
+      {
+        "endpoint": "POST /api/auth/refresh",
+        "issue": "Uses deprecated datetime.utcnow() (data_api.py:141). Works on Python 3.11 (the runtime) but emits DeprecationWarning on 3.12+. Cosmetic only — same pattern as the rest of the file."
+      },
+      {
+        "endpoint": "POST /api/auth/refresh",
+        "issue": "No server-side blacklist on the previous token — both the old and new JWT remain valid until their `exp`. This is by design per the file's docstring ('Security is enforced by the local PIN + server-side token blacklist on logout'), but worth noting: a leaked old token stays valid for 365 days even after the user has refreshed. Not in scope of this change."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_auth_refresh.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "No blocking issues — ship as-is. The refresh endpoint matches the spec exactly.",
+    "Optional: if you ever want refresh to be idempotent-safe within a single second, add a `iat` or `jti` claim (uuid) to create_access_token so two refreshes in the same second yield different tokens.",
+    "Optional (already noted in iteration_1): migrate datetime.utcnow() -> datetime.now(timezone.utc) across data_api.py for Python 3.12+ readiness."
+  ],
+  "critical_code_review_comments": [
+    "The new POST /api/auth/refresh handler (data_api.py:274-294) is 20 lines, single responsibility, and uses the same get_current_user dependency as every other protected endpoint — consistent with the rest of the file.",
+    "Returning 404 (not 401) when the user is deleted is the right call here — the JWT signature is cryptographically valid, only the row is gone. The response shape mirrors /auth/profile's behavior on the same condition.",
+    "expiresInDays in the response lets the frontend display 'session valid for X days' without decoding the JWT — good API ergonomics.",
+    "ACCESS_TOKEN_EXPIRE_DAYS=365 is a big surface-area change but tested OK against the protected endpoints we exercised (profile, notes, products). The token is still HS256-signed with JWT_SECRET so no signing-algo regressions."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_auth_refresh.py (created)"
+  ],
+  "success_rate": {
+    "backend": "100% (12/12 pytest cases)",
+    "frontend": "N/A — backend-only test request"
+  },
+  "seed_data_creation": "Each test that needs auth creates a fresh user via /api/auth/phone-login with a unique +243* phone (millisecond-timestamp suffix). The module-scoped shared user is purged via DELETE /api/account/me in a teardown fixture. The deleted-user test creates and deletes its own throwaway user inline. No persistent residue.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Test file: /app/backend/tests/test_auth_refresh.py. Run with: EXPO_PUBLIC_BACKEND_URL=<public_url> pytest backend/tests/test_auth_refresh.py -v. Tests are safe to re-run (unique phones per run, autouse cleanup fixture). NOTE: the happy-path refresh test sleeps 1.1s before calling /auth/refresh — this is required because JWT exp is integer-second precision; without the sleep the test would fail because new token == old token. If you ever modify the test, keep that sleep or add a `jti` claim server-side.",
+  "rca_of_issue": "No bugs found. Persistent-auth implementation matches the review spec: 365-day JWT exp, new POST /api/auth/refresh endpoint behaves correctly for all 7 specified scenarios (no auth header → 401, invalid bearer → 401, valid bearer → 200 with correct shape & new token & working profile call, deleted user → 404)."
+}

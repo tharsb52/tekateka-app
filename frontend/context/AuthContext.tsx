@@ -90,14 +90,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       const token = await getToken();
       if (token) {
-        // We have a saved token, try to fetch profile from backend
+        // Silently refresh the JWT so the user effectively stays signed
+        // in forever as long as they open the app once a year — this
+        // is what lets us avoid burning Firebase SMS quota on every
+        // app launch. If the token is too old, refreshToken throws and
+        // we fall back to the login screen.
         try {
-          const result = await authAPI.getProfile();
-          if (result.user) {
+          const result = await authAPI.refreshToken();
+          if (result?.user) {
             const mappedUser = mapBackendUser(result.user);
             setUser(mappedUser);
             await changeLocale(mappedUser.language);
-            // Check PIN
             const savedPin = await AsyncStorage.getItem(`@tekateka:${mappedUser.id}:pin`);
             setHasPin(!!savedPin);
           }

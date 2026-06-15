@@ -36,7 +36,7 @@ db = client[DB_NAME]
 # Auth config
 SECRET_KEY = os.getenv("JWT_SECRET", "tekateka-secret-key-2025-change-in-production")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_DAYS = 7
+ACCESS_TOKEN_EXPIRE_DAYS = 365  # 1 year — keeps users signed in long-term so we don't burn Firebase SMS quota on every reconnect. Security is enforced by the local PIN + server-side token blacklist on logout.
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -269,6 +269,29 @@ async def get_profile(user_id: str = Depends(get_current_user)):
     if not user:
         raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
     return {"success": True, "user": serialize_user(user)}
+
+
+@router.post("/auth/refresh")
+async def refresh_token(user_id: str = Depends(get_current_user)):
+    """
+    Silent token refresh — issued without any SMS round-trip.
+
+    The mobile app calls this every time it boots with a still-valid JWT.
+    We re-issue a brand-new 365-day token so the user effectively stays
+    signed in forever, as long as they keep opening the app at least once
+    a year. This is what eliminates the Firebase SMS quota for returning
+    users.
+    """
+    user = await db.users.find_one({"_id": ObjectId(user_id)})
+    if not user:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    new_token = create_access_token(user_id, user.get("phoneNumber", ""))
+    return {
+        "success": True,
+        "token": new_token,
+        "user": serialize_user(user),
+        "expiresInDays": ACCESS_TOKEN_EXPIRE_DAYS,
+    }
 
 @router.put("/auth/profile")
 async def update_profile(req: UpdateProfileRequest, user_id: str = Depends(get_current_user)):
