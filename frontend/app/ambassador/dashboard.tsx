@@ -2,7 +2,7 @@ import { API_BASE_URL } from '../../services/constants';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  ActivityIndicator, Alert, RefreshControl, Image,
+  ActivityIndicator, Alert, RefreshControl, Image, Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,6 +12,7 @@ import { formatLocal } from '../../utils/dateUtils';
 import {
   convertAmount, formatAmount, normalizeCurrency,
 } from '../../services/currencyConverter';
+import { CURRENCIES } from '../../utils/currencies';
 
 const BG = '#0f172a';
 const ACCENT = '#f59e0b';
@@ -27,6 +28,8 @@ export default function AmbassadorDashboard() {
   const [dashboard, setDashboard] = useState<any>(null);
   const [sales, setSales] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'stats' | 'sales'>('stats');
+  const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
+  const [savingCurrency, setSavingCurrency] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -73,6 +76,39 @@ export default function AmbassadorDashboard() {
     router.replace('/ambassador');
   };
 
+  /**
+   * Change the ambassador's preferred display currency.
+   * The actual commission amounts are ALWAYS stored in EUR on the backend —
+   * this only changes how they are formatted on this dashboard. Conversion
+   * is done client-side using the shared rates table so every screen stays
+   * consistent.
+   */
+  const handleChangeCurrency = async (code: string) => {
+    setSavingCurrency(true);
+    try {
+      const token = await AsyncStorage.getItem('ambassador_token');
+      if (!token) { router.replace('/ambassador'); return; }
+      const backendUrl = API_BASE_URL;
+      const res = await fetch(`${backendUrl}/api/ambassador/profile/currency`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, currency: code }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        Alert.alert('Erreur', data.detail || 'Impossible de changer la devise');
+      } else {
+        // Reload dashboard so the new preferredCurrency shows up immediately.
+        await fetchData();
+        setShowCurrencyPicker(false);
+      }
+    } catch (e: any) {
+      Alert.alert('Erreur', e.message || 'Erreur réseau');
+    } finally {
+      setSavingCurrency(false);
+    }
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
@@ -99,6 +135,9 @@ export default function AmbassadorDashboard() {
             <Text style={styles.name}>{ambassador.name}</Text>
           </View>
         </View>
+        <TouchableOpacity onPress={() => setShowCurrencyPicker(true)} style={[styles.logoutBtn, { backgroundColor: 'rgba(245,158,11,0.15)' }]}>
+          <Text style={{ color: ACCENT, fontWeight: '800', fontSize: 13 }}>{preferredCurrency}</Text>
+        </TouchableOpacity>
         <TouchableOpacity onPress={() => router.push('/ambassador/change-password')} style={styles.logoutBtn}>
           <Ionicons name="key" size={20} color="#60a5fa" />
         </TouchableOpacity>
@@ -280,6 +319,48 @@ export default function AmbassadorDashboard() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Currency picker modal */}
+      <Modal visible={showCurrencyPicker} animationType="fade" transparent onRequestClose={() => setShowCurrencyPicker(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.currencyModal}>
+            <View style={styles.currencyHeader}>
+              <Text style={styles.currencyTitle}>Devise d'affichage</Text>
+              <TouchableOpacity onPress={() => setShowCurrencyPicker(false)} disabled={savingCurrency}>
+                <Ionicons name="close" size={24} color="#94a3b8" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.currencyHelp}>
+              Vos commissions sont stockées en EUR et converties à l'affichage selon la devise choisie.
+            </Text>
+            <ScrollView style={{ maxHeight: 380 }}>
+              {CURRENCIES.map((c) => {
+                const isSelected = c.code === preferredCurrency;
+                return (
+                  <TouchableOpacity
+                    key={c.code}
+                    style={[styles.currencyRow, isSelected && styles.currencyRowActive]}
+                    onPress={() => handleChangeCurrency(c.code)}
+                    disabled={savingCurrency}
+                    activeOpacity={0.7}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.currencyCode, isSelected && { color: ACCENT }]}>{c.code} <Text style={styles.currencySymbol}>· {c.symbol}</Text></Text>
+                      <Text style={styles.currencyName}>{c.name}</Text>
+                    </View>
+                    {isSelected && <Ionicons name="checkmark-circle" size={22} color={ACCENT} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            {savingCurrency && (
+              <View style={{ paddingVertical: 12, alignItems: 'center' }}>
+                <ActivityIndicator color={ACCENT} />
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -348,4 +429,15 @@ const styles = StyleSheet.create({
     borderRadius: 12, gap: 10, borderLeftWidth: 3, borderLeftColor: ACCENT,
   },
   commissionsBtnText: { color: '#fff', fontWeight: '700', fontSize: 14, flex: 1 },
+  // Currency picker modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  currencyModal: { width: '100%', maxWidth: 380, backgroundColor: CARD, borderRadius: 18, padding: 18 },
+  currencyHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  currencyTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  currencyHelp: { color: '#94a3b8', fontSize: 12, marginBottom: 14, lineHeight: 17 },
+  currencyRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 12, borderRadius: 10, marginBottom: 6, backgroundColor: '#0f172a' },
+  currencyRowActive: { backgroundColor: 'rgba(245,158,11,0.12)', borderWidth: 1, borderColor: ACCENT },
+  currencyCode: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  currencySymbol: { color: '#64748b', fontWeight: '500' },
+  currencyName: { color: '#94a3b8', fontSize: 12, marginTop: 2 },
 });

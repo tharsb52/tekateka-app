@@ -179,7 +179,7 @@ export const authAPI = {
   refreshToken: async () => {
     const res = await apiFetch('/auth/refresh', { method: 'POST' });
     if (res?.token) {
-      await saveToken(res.token);
+      await setToken(res.token);
     }
     return res;
   },

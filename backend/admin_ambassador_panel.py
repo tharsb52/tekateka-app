@@ -93,7 +93,8 @@ td{padding:10px 12px;border-bottom:1px solid #1e293b}
 </div>
 
 <script>
-let adminPassword = '';
+const SESSION_KEY='tk_amb_admin_pw';
+let adminPassword = sessionStorage.getItem(SESSION_KEY) || '';
 let ambassadors = [];
 let sales = [];
 let pricingInfo = {};
@@ -112,6 +113,7 @@ async function doLogin() {
       return;
     }
     adminPassword = pwd;
+    sessionStorage.setItem(SESSION_KEY, pwd);
     ambassadors = await res.json();
     document.getElementById('loginSection').style.display='none';
     document.getElementById('appSection').style.display='block';
@@ -122,8 +124,34 @@ async function doLogin() {
   }
 }
 
+/**
+ * Restore session on page load / F5 by re-validating the cached password
+ * against the ambassadors list endpoint. If the validation succeeds we go
+ * straight to the dashboard, otherwise we wipe the stale password and
+ * show the login form.
+ */
+async function tryRestoreSession(){
+  if(!adminPassword) return;
+  try{
+    const res = await fetch('/api/admin/ambassadors/list', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({adminPassword})
+    });
+    if(res.ok){
+      ambassadors = await res.json();
+      document.getElementById('loginSection').style.display='none';
+      document.getElementById('appSection').style.display='block';
+      showTab('dashboard');
+      return;
+    }
+  }catch(e){}
+  sessionStorage.removeItem(SESSION_KEY);
+  adminPassword='';
+}
+
 function doLogout(){
   adminPassword='';
+  sessionStorage.removeItem(SESSION_KEY);
   document.getElementById('loginSection').style.display='flex';
   document.getElementById('appSection').style.display='none';
 }
@@ -404,6 +432,8 @@ async function loadSales(){
     `).join('')}</tbody></table>`}
   </div>`;
 }
+// Auto-restore session on page load / F5 refresh
+window.addEventListener('DOMContentLoaded',()=>{tryRestoreSession();});
 </script>
 </body>
 </html>"""

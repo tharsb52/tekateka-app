@@ -114,7 +114,10 @@ export default function SubscriptionScreen() {
               const outcome = await buySubscription(selectedPlan);
               if (outcome.status === 'completed') {
                 // Refresh user profile so subscription.expiresAt is up to date
-                try { await (subscribe as any)?.(selectedPlan, 'card'); } catch {}
+                // — refreshUser pulls the latest from the backend (Stripe
+                // webhook has already updated MongoDB), which guarantees the
+                // new expiry date is visible immediately.
+                try { await refreshUser(); } catch {}
                 Alert.alert(
                   'Abonnement activé !',
                   `Plan ${plan.name} activé avec succès.`,
@@ -168,6 +171,10 @@ export default function SubscriptionScreen() {
       } else {
         setPaymentMethodModal(false);
         setActivationCode('');
+        // Refresh AuthContext IMMEDIATELY so the new expiry date is visible
+        // without restarting the app. Without this, the user sees "Expired"
+        // until the next app launch.
+        try { await refreshUser(); } catch {}
         Alert.alert(
           'Abonnement activé !',
           data.message,
@@ -200,6 +207,9 @@ export default function SubscriptionScreen() {
         const confirmResult = await paymentsAPI.subscriptionConfirm(paymentResult.txRef);
         
         if (confirmResult.success) {
+          // Refresh user state so the new subscription end-date shows up
+          // immediately on the dashboard.
+          try { await refreshUser(); } catch {}
           Alert.alert(
             'Abonnement activé !',
             `Plan ${plan?.name} activé avec succès.\n${paymentResult.sandbox ? '(Mode test - paiement simulé)' : `Transaction: ${paymentResult.txRef}`}\n\n${method === 'mobile_money' ? 'Mobile Money' : 'Carte bancaire'}`,

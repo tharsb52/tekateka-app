@@ -403,7 +403,8 @@ tr:hover td{background:#1e293b}
 <div id="content"><div class="loading">Chargement des données...</div></div>
 </div>
 <script>
-let adminPass='';
+const SESSION_KEY='tk_admin_pw';
+let adminPass=sessionStorage.getItem(SESSION_KEY)||'';
 const API=window.location.origin+'/api';
 const post=(url,extra={})=>fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:adminPass,...extra})});
 function togglePw(inputId,btn){
@@ -411,6 +412,28 @@ function togglePw(inputId,btn){
   if(!input)return;
   if(input.type==='password'){input.type='text';btn.textContent='🙈';}
   else{input.type='password';btn.textContent='👁️';}
+}
+/**
+ * On page load / F5 refresh, try to restore the session from sessionStorage
+ * by re-validating the saved password against /admin/login. This way the
+ * admin doesn't have to retype their password every time they accidentally
+ * press F5 (very common UX complaint).
+ */
+async function tryRestoreSession(){
+  if(!adminPass) return false;
+  try{
+    const r=await fetch(API+'/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:adminPass})});
+    if(r.ok){
+      document.getElementById('loginPage').style.display='none';
+      document.getElementById('dashboard').style.display='block';
+      loadDashboard();
+      return true;
+    }
+  }catch(e){}
+  // Cached password is stale -> wipe and show login form
+  sessionStorage.removeItem(SESSION_KEY);
+  adminPass='';
+  return false;
 }
 async function doLogin(){
   const p=document.getElementById('adminPass').value;
@@ -422,6 +445,7 @@ async function doLogin(){
     if(r.status===401){errEl.textContent='Mot de passe incorrect';errEl.style.display='block';return}
     if(!r.ok){errEl.textContent='Erreur serveur ('+r.status+'). Réessayez.';errEl.style.display='block';return}
     adminPass=p;
+    sessionStorage.setItem(SESSION_KEY,p);
     document.getElementById('loginPage').style.display='none';
     document.getElementById('dashboard').style.display='block';
     loadDashboard();
@@ -430,7 +454,7 @@ async function doLogin(){
     errEl.style.display='block';
   }
 }
-function doLogout(){adminPass='';document.getElementById('loginPage').style.display='flex';document.getElementById('dashboard').style.display='none';document.getElementById('adminPass').value=''}
+function doLogout(){adminPass='';sessionStorage.removeItem(SESSION_KEY);document.getElementById('loginPage').style.display='flex';document.getElementById('dashboard').style.display='none';document.getElementById('adminPass').value=''}
 function showPwModal(){document.getElementById('pwModal').classList.add('show');document.getElementById('pwCurrent').value='';document.getElementById('pwNew').value='';document.getElementById('pwConfirm').value='';document.getElementById('pwMsg').style.display='none'}
 function hidePwModal(){document.getElementById('pwModal').classList.remove('show')}
 async function changePw(){
@@ -530,6 +554,8 @@ async function grantPremium(userId,days,plan){
   }catch(e){alert('Erreur réseau : '+e.message);}
 }
 function fmt(n){return new Intl.NumberFormat('fr-FR',{minimumFractionDigits:0,maximumFractionDigits:2}).format(n||0)}
+// Auto-restore session on page load / F5 refresh
+window.addEventListener('DOMContentLoaded',()=>{tryRestoreSession();});
 </script>
 </body>
 </html>"""

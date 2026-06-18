@@ -13,7 +13,7 @@ import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import i18n from '../../utils/i18n';
 import { Ionicons } from '@expo/vector-icons';
-import { formatCurrency } from '../../utils/currencies';
+import { formatCurrency, convertCurrency } from '../../utils/currencies';
 import { format } from 'date-fns';
 import { formatLocal } from '../../utils/dateUtils';
 
@@ -34,7 +34,14 @@ export default function PurchasesScreen() {
     notes: '',
   });
 
-  const totalPurchases = purchases.reduce((sum, p) => sum + p.totalCost, 0);
+  const userCurrency = user?.currency || 'USD';
+  // Convert each purchase total to the user's preferred currency so the
+  // displayed grand total is correct even when purchases use different
+  // currencies (CDF, USD, EUR, etc.).
+  const totalPurchases = purchases.reduce(
+    (sum, p) => sum + convertCurrency(p.totalCost, p.currency || userCurrency, userCurrency),
+    0,
+  );
 
   const openAddModal = () => {
     setEditingPurchase(null);

@@ -8,7 +8,7 @@ import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import i18n from '../../utils/i18n';
 import { Ionicons } from '@expo/vector-icons';
-import { formatCurrency } from '../../utils/currencies';
+import { formatCurrency, convertCurrency } from '../../utils/currencies';
 import { ExpenseCategoryType } from '../../types';
 import { format } from 'date-fns';
 import { formatLocal } from '../../utils/dateUtils';
@@ -35,7 +35,12 @@ export default function ExpensesScreen() {
   const [formCurrency, setFormCurrency] = useState(user?.currency || 'USD');
 
   const currency = user?.currency || 'USD';
-  const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
+  // Convert each expense amount to the user's preferred currency before
+  // summing so multi-currency totals are accurate.
+  const totalExpenses = expenses.reduce(
+    (s, e) => s + convertCurrency(e.amount, e.currency || currency, currency),
+    0,
+  );
 
   const openAddModal = () => {
     setEditingExpense(null);

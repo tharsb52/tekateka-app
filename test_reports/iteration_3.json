@@ -1,0 +1,54 @@
+{
+  "summary": "Validated the 6 backend areas requested after the sessionStorage / subscription-refresh changes. 13/13 pytest cases pass against the public preview URL. Verified: (1) POST /api/auth/subscribe (yearly) and POST /api/subscription/activate-code both update subscription.expiresAt and an IMMEDIATE GET /api/auth/profile reflects the new value (no DB lag, no caching) — confirming the new authAPI.getProfile() call works; (2) POST /api/ambassador/profile/currency persists USD/EUR/CDF and POST /api/ambassador/dashboard returns the value at ambassador.preferredCurrency; rejects 'ZZZ' with 400; (3) POST /api/admin/login still validates against ADMIN_PASSWORD (200 for correct, 401 for wrong); (4) POST /api/admin/ambassadors/list still accepts adminPassword body field and returns a list of ambassador dicts (id/name/email/country/status); (5) GET /api/admin and GET /api/admin/ambassador-panel return 200 HTML containing both 'sessionStorage' and 'tryRestoreSession' — the F5-persistence JS is wired up; (6) POST /api/auth/refresh with a valid JWT returns success:true + new token (≠ old) + user + expiresInDays:365. No issues found, no backend signatures broken by the change. Test ambassador credentials in the request body (jfellykap@gmail.com / Felly2025) returned 401 on the live system so the test now creates a throwaway ambassador via /api/admin/ambassadors/create — see action_items.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/ambassador/login",
+        "issue": "The credentials documented in the review request (jfellykap@gmail.com / Felly2025) return 401 'Email ou mot de passe incorrect' against the live preview backend. The ambassador document exists (listed by /api/admin/ambassadors/list), so either the password was changed or never matched what was documented. Also: the seeded test ambassador in /app/memory/test_credentials.md (ambassador@tekateka.com / Ambassador2025) returns 403 'Compte bloqué' so it's currently blocked. Workaround in tests: create a throwaway ambassador via /api/admin/ambassadors/create then delete it in teardown."
+      },
+      {
+        "endpoint": "POST /api/admin/ambassadors/toggle-status",
+        "issue": "Handler returns None implicitly (no return statement) at ambassador_api.py:855 after updating the status. FastAPI will serialise that to 'null' with 200 OK — fine, but inconsistent with the rest of the admin endpoints which return {success:true,...}. Not in scope of this review but worth noting."
+      },
+      {
+        "endpoint": "general",
+        "issue": "passlib bcrypt backend logs 'AttributeError: module bcrypt has no attribute __about__' warning on every ambassador login (passlib 1.7.x vs bcrypt 4.x incompatibility). Logins still work because passlib falls back to a different version probe, but the noise pollutes the error log. Suggestion: pin bcrypt<4 or upgrade passlib."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_subscription_and_admin.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Update /app/memory/test_credentials.md or reset jfellykap@gmail.com's password — the credential 'Felly2025' no longer authenticates. The seeded ambassador@tekateka.com is also blocked, so neither documented credential currently works for direct ambassador login. The test now seeds & tears down its own ambassador to remain hermetic, but human testers will trip over this.",
+    "Optional: make /api/admin/ambassadors/toggle-status return {success:true} for consistency.",
+    "Optional: silence passlib/bcrypt warning by pinning bcrypt<4 or upgrading passlib."
+  ],
+  "critical_code_review_comments": [
+    "POST /api/auth/subscribe (data_api.py:769) and POST /api/subscription/activate-code (ambassador_api.py:602) both correctly write to user.subscription.expiresAt — GET /api/auth/profile (data_api.py:266) reads the same field directly from MongoDB, so the immediate-refresh contract holds without any cache invalidation logic. Good.",
+    "ambassador_api.py:280 reads ambassador.get('preferredCurrency', 'EUR') as the default — matches the whitelist default and means a new ambassador without the field set returns 'EUR' rather than crashing. Good.",
+    "_ALLOWED_CURRENCIES in ambassador_api.py:303 correctly whitelists currency input — uppercase normalisation happens before the check (line 317). Reject of 'ZZZ' returns 400, confirmed by test.",
+    "admin_api.py:558 wires tryRestoreSession() to DOMContentLoaded — so the F5 refresh path is correct. Both pages use the same SESSION_KEY pattern and re-validate against /admin/login on restore (admin_api.py:425, admin_ambassador_panel.py:138-ish). Good — no plaintext-password persistence beyond sessionStorage's tab lifetime.",
+    "POST /api/auth/refresh (data_api.py:274) is unchanged from iteration_2 and still behaves correctly (200/401/404). No regression."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_subscription_and_admin.py (created)"
+  ],
+  "success_rate": {
+    "backend": "100% (13/13 pytest cases)",
+    "frontend": "N/A — backend-only test request per review"
+  },
+  "seed_data_creation": "Each test creates its own throwaway data and cleans up: (1) phone-login user with a unique +243* phone, deleted via DELETE /api/account/me at module teardown; (2) the activate-code test creates a second throwaway phone-login user inline and deletes it in a finally block; (3) a throwaway ambassador (email test-amb-<ts>-<rand>@tekateka-test.local, password TestAmb2025!) is seeded via POST /api/admin/ambassadors/create and deleted via POST /api/admin/ambassadors/delete at module teardown — the latter also wipes any unused codes generated by the activate-code test. No persistent residue, safe to re-run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Test file: /app/backend/tests/test_subscription_and_admin.py. Run with: cd /app && EXPO_PUBLIC_BACKEND_URL=https://low-data-shop.preview.emergentagent.com ADMIN_PASSWORD='Ndinemakutamillions82@' python -m pytest backend/tests/test_subscription_and_admin.py -v. The module seeds its own ambassador via /api/admin/ambassadors/create rather than relying on the documented jfellykap@gmail.com credentials (which currently 401). The activate-code test (line ~280) sleeps 1.1s before refresh of token only — no other timing dependencies. Earlier test file /app/backend/tests/test_auth_refresh.py from iteration_2 is independent and still passing.",
+  "rca_of_issue": "No bug found in the change set under review. The sessionStorage F5-persistence JS is correctly served on both admin pages, and the new authAPI.getProfile() pattern on the mobile side will receive a fully-updated subscription.expiresAt because /api/auth/profile reads it directly from MongoDB after activate-code/subscribe have committed."
+}

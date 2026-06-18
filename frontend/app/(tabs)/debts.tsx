@@ -18,7 +18,7 @@ import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import i18n from '../../utils/i18n';
 import { Ionicons } from '@expo/vector-icons';
-import { formatCurrency } from '../../utils/currencies';
+import { formatCurrency, convertCurrency } from '../../utils/currencies';
 import { format } from 'date-fns';
 import { formatLocal } from '../../utils/dateUtils';
 import AppHeader from '../../components/AppHeader';
@@ -47,7 +47,13 @@ export default function DebtsScreen() {
 
   const unpaidDebts = debts.filter(d => !d.isPaid);
   const paidDebts = debts.filter(d => d.isPaid);
-  const totalUnpaidAmount = unpaidDebts.reduce((sum, debt) => sum + debt.amount, 0);
+  const userCurrency = user?.currency || 'USD';
+  // Convert each debt amount to the user's preferred currency before summing
+  // so multi-currency totals are accurate.
+  const totalUnpaidAmount = unpaidDebts.reduce(
+    (sum, debt) => sum + convertCurrency(debt.amount, debt.currency || userCurrency, userCurrency),
+    0,
+  );
 
   const openAddModal = () => {
     setEditingDebt(null);

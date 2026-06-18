@@ -50,6 +50,7 @@ interface AuthContextType {
   needsSubscription: () => boolean;
   showExpiryReminder: () => boolean;
   hasAccess: () => boolean;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -376,6 +377,32 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return !isTrialExpired();
   };
 
+  /**
+   * Pull the latest user document from the backend and update the local
+   * AuthContext state. Used after any action that changes subscription
+   * status (activation code, Stripe checkout, ambassador stacking…) so the
+   * UI reflects the new expiry date IMMEDIATELY without requiring an app
+   * restart. Safe to call from anywhere — silently fails if offline.
+   */
+  const refreshUser = async (): Promise<void> => {
+    try {
+      const data = await authAPI.getProfile();
+      if (data?.user) {
+        const mappedUser = mapBackendUser(data.user);
+        setUser(mappedUser);
+        if (mappedUser.isSubscribed && mappedUser.subscriptionEndDate) {
+          scheduleExpiryReminders(mappedUser.subscriptionEndDate, false).catch(() => {});
+        }
+      } else if (data?.id) {
+        // Some endpoints return the user directly (no wrapper).
+        const mappedUser = mapBackendUser(data);
+        setUser(mappedUser);
+      }
+    } catch (e) {
+      console.warn('refreshUser failed (non-blocking):', e);
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -401,6 +428,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         needsSubscription,
         showExpiryReminder,
         hasAccess,
+        refreshUser,
       }}
     >
       {children}

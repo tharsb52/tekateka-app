@@ -8,7 +8,7 @@ import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import i18n from '../../utils/i18n';
 import { Ionicons } from '@expo/vector-icons';
-import { formatCurrency } from '../../utils/currencies';
+import { formatCurrency, convertCurrency } from '../../utils/currencies';
 import { CategoryType } from '../../types';
 import { cardShadow } from '../../utils/shadows';
 import AppHeader from '../../components/AppHeader';
@@ -83,7 +83,10 @@ export default function ProductsScreen() {
   }, [products, searchQuery, stockFilter, sortMode]);
 
   const currency = user?.currency || 'USD';
-  const totalInventoryValue = products.reduce((s, p) => s + (p.purchasePrice || 0) * p.stock, 0);
+  const totalInventoryValue = products.reduce((s, p) => {
+    const value = (p.purchasePrice || 0) * p.stock;
+    return s + convertCurrency(value, (p as any).currency || (user?.currency || 'USD'), user?.currency || 'USD');
+  }, 0);
 
   const openAddModal = () => {
     setEditingProduct(null);
