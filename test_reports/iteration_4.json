@@ -1,0 +1,33 @@
+{
+  "summary": "Tested product currency persistence in TekaTeka backend after the fix. All 6 tests passed (3 currency tests + 3 regression tests). Created /app/backend/tests/test_product_currency.py using pytest against EXPO_PUBLIC_BACKEND_URL. Verified: (1) POST /api/data/products with explicit currency='EUR' persists and returns EUR (verified via GET); (2) POST without currency correctly falls back to user profile currency (set profile to USD, created product, got USD back); (3) PUT /api/data/products/{id} with currency='USD' updates the field and persists (verified via GET); (4) Regression: PUT /api/auth/profile updates currency/language, GET /api/data/products returns list with currency field on each item, POST /api/data/sales creates sale and decrements stock correctly.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/auth/profile", "issue": "Review request mentioned POST /api/auth/profile, but the implementation only exposes PUT /api/auth/profile. Test was adapted to use PUT and it works. Either update review request wording or add a POST alias if needed."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_product_currency.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "data_api.py add_product fallback (line 461-463) uses ObjectId(user_id) which assumes user_id is always a valid ObjectId from JWT — safe given get_current_user returns the JWT 'sub' (Mongo _id), but defensive try/except around the lookup would prevent any future auth path that uses a non-ObjectId id from breaking product creation.",
+    "data_api.py PUT /data/products/{id} accepts an arbitrary dict and only pops a few reserved keys — currency goes through unvalidated. Acceptable for now, but consider validating against a known set of currencies (USD/EUR/CDF/...) to avoid garbage values from buggy clients."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_product_currency.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "N/A (not requested)"},
+  "seed_data_creation": "Throwaway user created via /api/auth/phone-login with a unique +324710XXXXXXX phone per test run. Test products are prefixed with TEST_ for easy identification.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Use EXPO_PUBLIC_BACKEND_URL from /app/frontend/.env. /api/auth/phone-login takes only phoneNumber (no OTP required at endpoint level — Africa's Talking OTP is verified client-side). User profile currency is the fallback for product currency when omitted. ProductModel now has Optional currency field. Tests are idempotent: each run creates a new user.",
+  "rca_of_issue": "N/A — this iteration verified a fix, no new bug. Fix confirmed working: ProductModel.currency optional field + fallback to db.users.currency in add_product."
+}

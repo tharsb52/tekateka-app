@@ -151,6 +151,10 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         unit: (data as any).unit,
         customUnit: (data as any).customUnit,
         lowStockThreshold: (data as any).lowStockThreshold,
+        // Persist the currency the user entered the prices in. The backend
+        // falls back to the user's profile currency if missing, so older app
+        // versions still work.
+        currency: (data as any).currency || user.currency,
       });
       // Backend signals duplicate detection via { duplicate: true, existing, samePrice }
       // — we surface that to the caller without inserting into local state.

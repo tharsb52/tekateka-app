@@ -98,6 +98,7 @@ class ProductModel(BaseModel):
     unit: Optional[str] = None          # one of UNIT_PRESETS or any custom string
     customUnit: Optional[str] = None    # used when unit == "autre"; final stored unit becomes this
     lowStockThreshold: int = 5          # per-product threshold; default 5
+    currency: Optional[str] = None      # native currency the prices were entered in (CDF/USD/EUR/...)
 
 class RestockRequest(BaseModel):
     quantityAdded: int
@@ -453,6 +454,13 @@ async def add_product(product: ProductModel, user_id: str = Depends(get_current_
     doc["userId"] = user_id
     doc["createdAt"] = utc_now_iso()
     doc["lowStockThreshold"] = max(0, int(product.lowStockThreshold or 5))
+    # Persist the native currency the prices were typed in. If the client
+    # didn't send one (older app versions), fall back to the user's preferred
+    # currency. Without this, the sell screen would later re-convert the
+    # stored price assuming the wrong base currency.
+    if not doc.get("currency"):
+        u = await db.users.find_one({"_id": ObjectId(user_id)})
+        doc["currency"] = (u or {}).get("currency") or "USD"
 
     result = await db.products.insert_one(doc)
     doc["_id"] = result.inserted_id

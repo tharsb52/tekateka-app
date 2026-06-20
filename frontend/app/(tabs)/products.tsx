@@ -107,6 +107,11 @@ export default function ProductsScreen() {
     // picker shows that preset; otherwise we show "autre" + the custom value.
     const storedUnit: string = product.unit || '';
     const isPreset = (UNIT_OPTIONS as readonly string[]).includes(storedUnit) && storedUnit !== 'autre';
+    // CRITICAL: preset the form's currency picker to the product's native
+    // currency. Without this the picker would keep whatever currency was
+    // last opened, and saving would silently rewrite the product's
+    // currency — which is exactly the "25€ becomes 23,15€" bug we just fixed.
+    setFormCurrency(product.currency || user?.currency || 'USD');
     setFormData({
       name: product.name,
       purchasePrice: (product.purchasePrice || 0).toString(),
@@ -194,6 +199,7 @@ export default function ProductsScreen() {
           category: formData.category,
           unit: resolvedUnit as any,
           lowStockThreshold,
+          currency: formCurrency,
         });
         setModalVisible(false);
         return;
@@ -206,6 +212,7 @@ export default function ProductsScreen() {
         unit: resolvedUnit as any,
         customUnit: undefined as any,
         lowStockThreshold,
+        currency: formCurrency,
       } as any);
 
       if (result?.duplicate && result.existing) {
