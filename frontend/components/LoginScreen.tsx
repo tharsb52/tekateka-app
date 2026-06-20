@@ -73,6 +73,43 @@ export default function LoginScreen() {
   // We .confirm(otp) on it to complete sign-in.
   const confirmationRef = useRef<ConfirmationResult | null>(null);
 
+  // True while we're in the middle of a phone-auth flow (between sending the
+  // SMS and either the user typing the code or Firebase auto-retrieving it).
+  // Used by the onAuthStateChanged listener below to decide whether a silent
+  // auto-sign-in (instant verification on Android) should immediately push the
+  // user to the backend login step.
+  const phoneFlowActiveRef = useRef<boolean>(false);
+
+  // CRITICAL FIX (June 2026): On Android, Firebase auto-verifies the SMS via
+  // the SMS Retriever API and silently signs the user in BEFORE they type the
+  // code. The manual `confirm(otp)` then fails with `code-expired` because
+  // the verificationId was already consumed internally.
+  //
+  // We listen to onAuthStateChanged here and, if a phone-auth flow is active
+  // when a user becomes signed in, we proceed directly to the backend login
+  // instead of waiting for the manual code entry.
+  useEffect(() => {
+    if (!nativeAuth) return;
+    let unsubscribe: (() => void) | null = null;
+    try {
+      unsubscribe = nativeAuth().onAuthStateChanged((fbUser: any) => {
+        if (fbUser && phoneFlowActiveRef.current) {
+          console.log('[Firebase Native] auto-sign-in detected, completing login', fbUser.uid);
+          phoneFlowActiveRef.current = false;
+          // Clear the manual confirmation -- it would now fail with code-expired
+          confirmationRef.current = null;
+          setOtp('');
+          // Proceed to backend login
+          attemptBackendLogin();
+        }
+      });
+    } catch (e) {
+      console.warn('onAuthStateChanged setup failed', e);
+    }
+    return () => { try { unsubscribe?.(); } catch {} };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // QUICK LOGIN — returning user enters a 4-digit PIN, no SMS at all.
   // Used ONLY after at least one successful Firebase sign-in on this device.
   // A new user / new device must still go through the full Firebase phone flow.
@@ -236,11 +273,20 @@ export default function LoginScreen() {
 
     try {
       console.log('[Firebase Native] signInWithPhoneNumber', fullPhoneNumber);
+      phoneFlowActiveRef.current = true;
       const confirmation = await nativeAuth().signInWithPhoneNumber(fullPhoneNumber);
       confirmationRef.current = confirmation;
+      // If Firebase already auto-signed-in (instant verification on Android),
+      // currentUser will be set and the listener already kicked the flow.
+      const cu = nativeAuth().currentUser;
+      if (cu && phoneFlowActiveRef.current === false) {
+        // Listener already handled — nothing to do.
+        return;
+      }
       setOtpSent(true);
       setLoading(false);
     } catch (error: any) {
+      phoneFlowActiveRef.current = false;
       console.error('[Firebase Native] signInWithPhoneNumber error', error);
       setLoading(false);
       setLoginError(friendlyFirebaseError(error));
@@ -254,6 +300,16 @@ export default function LoginScreen() {
     }
     const conf = confirmationRef.current;
     if (!conf) {
+      // No confirmation object — but maybe auto-sign-in already happened.
+      // Check Firebase currentUser before failing.
+      try {
+        const cu = nativeAuth().currentUser;
+        if (cu) {
+          phoneFlowActiveRef.current = false;
+          await attemptBackendLogin();
+          return;
+        }
+      } catch {}
       setLoginError('Session expirée. Renvoyez le code SMS.');
       setOtpSent(false);
       return;
@@ -262,11 +318,26 @@ export default function LoginScreen() {
     setLoginError('');
     try {
       await conf.confirm(otp);
+      phoneFlowActiveRef.current = false;
       // Firebase succeeded — now hit the backend
       await attemptBackendLogin();
     } catch (error: any) {
       console.error('[Firebase Native] confirm error', error);
       const code = (error?.code || '').toString();
+      // CRITICAL: if confirm fails with code-expired but Firebase already
+      // has a currentUser, that means SMS Retriever API auto-verified silently
+      // and consumed our verificationId. In that case we are actually signed
+      // in — proceed to the backend login instead of asking the user to
+      // restart the flow.
+      try {
+        const cu = nativeAuth().currentUser;
+        if (cu && (code.includes('session-expired') || code.includes('code-expired') || code.includes('invalid-verification-id'))) {
+          console.log('[Firebase Native] confirm failed BUT user already signed in (auto-retrieval) -> continuing', cu.uid);
+          phoneFlowActiveRef.current = false;
+          await attemptBackendLogin();
+          return;
+        }
+      } catch {}
       if (code.includes('invalid-verification-code') || code.includes('invalid-code')) {
         setLoginError('Code incorrect. Vérifiez et réessayez.');
       } else if (code.includes('session-expired') || code.includes('code-expired')) {
