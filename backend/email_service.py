@@ -1,26 +1,24 @@
 """
-Resend email service for TekaTeka.
+Email service for TekaTeka.
 
-Centralises all transactional email sending:
-- password / PIN reset codes
-- welcome emails
+PRIMARY: Gmail SMTP (free, ~500 emails/day, works with any recipient)
+FALLBACK: Resend HTTP API (if SMTP fails for some reason)
 
-Following the Resend HTTP API requirements:
-- HTTPS only
-- Authorization: Bearer <api_key>
-- User-Agent header is REQUIRED to avoid 403 / error 1010
-- Idempotency-Key prevents duplicate sends on retry
-
-Sender uses `onboarding@resend.dev` by default (no domain verification needed)
-which works out of the box but emails will land in the recipient's spam folder
-on some providers. To improve deliverability in production, the user must
-verify their own domain in Resend dashboard and update `RESEND_FROM`.
+This dual-provider strategy means:
+1. Day-to-day emails go through Gmail SMTP — no domain verification needed
+2. If Gmail is down or rate-limited, we automatically fall back to Resend
+3. The user doesn't need to do ANYTHING differently — same templates, same flow
 """
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
+import smtplib
 import uuid
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from html import escape
 from typing import Optional, Tuple
 
@@ -29,51 +27,100 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# ---- Gmail SMTP config (primary) ----
+SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_EMAIL = os.getenv("SMTP_EMAIL", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "").replace(" ", "")  # Gmail app passwords come with spaces; strip them
+SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "TekaTeka")
+
+# ---- Resend config (fallback) ----
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 RESEND_FROM = os.getenv("RESEND_FROM", "TekaTeka <onboarding@resend.dev>")
 RESEND_BASE_URL = "https://api.resend.com"
 
+logger = logging.getLogger("email_service")
+
 
 class ResendError(RuntimeError):
-    """Raised when the Resend API returns an error."""
+    """Raised when both SMTP AND Resend fail to deliver."""
+
+
+def _send_smtp_sync(to: str, subject: str, html: str, text: Optional[str]) -> None:
+    """
+    Blocking SMTP send via Gmail. We run it through asyncio.to_thread() from
+    the async wrapper below to avoid blocking the event loop.
+
+    Gmail requires:
+    - smtp.gmail.com:587 with STARTTLS
+    - 2FA enabled on the account
+    - An "app password" (NOT the regular Gmail password)
+    """
+    if not SMTP_EMAIL or not SMTP_PASSWORD:
+        raise RuntimeError("SMTP not configured (SMTP_EMAIL / SMTP_PASSWORD missing)")
+
+    msg = MIMEMultipart("alternative")
+    msg["From"] = f"{SMTP_FROM_NAME} <{SMTP_EMAIL}>"
+    msg["To"] = to
+    msg["Subject"] = subject
+    if text:
+        msg.attach(MIMEText(text, "plain", "utf-8"))
+    msg.attach(MIMEText(html, "html", "utf-8"))
+
+    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=15) as server:
+        server.starttls()
+        server.login(SMTP_EMAIL, SMTP_PASSWORD)
+        server.sendmail(SMTP_EMAIL, [to], msg.as_string())
+
+
+async def _send_resend(to: str, subject: str, html: str, text: Optional[str]) -> dict:
+    """Resend fallback. Same signature as the primary."""
+    if not RESEND_API_KEY:
+        raise RuntimeError("RESEND_API_KEY not configured")
+    headers = {
+        "Authorization": f"Bearer {RESEND_API_KEY}",
+        "Content-Type": "application/json",
+        "User-Agent": "tekateka-backend/1.0",
+        "Idempotency-Key": str(uuid.uuid4()),
+    }
+    payload = {"from": RESEND_FROM, "to": [to], "subject": subject, "html": html}
+    if text:
+        payload["text"] = text
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.post(f"{RESEND_BASE_URL}/emails", json=payload, headers=headers)
+        if r.status_code >= 400:
+            raise ResendError(f"Resend HTTP {r.status_code}: {r.text}")
+        return r.json()
 
 
 async def send_email(to: str, subject: str, html: str, text: Optional[str] = None) -> dict:
     """
-    Send a transactional email via the Resend HTTP API.
+    Send a transactional email.
 
-    Returns the parsed JSON response on success (contains the email id).
-    Raises ResendError if the API responds with a non-2xx status.
-    Raises RuntimeError if RESEND_API_KEY is not configured.
+    Tries Gmail SMTP first. If that fails (timeout, auth error, rate limit…)
+    AND Resend is configured, automatically falls back to Resend. The caller
+    only sees a single dict result either way.
     """
-    if not RESEND_API_KEY:
-        raise RuntimeError("RESEND_API_KEY not configured in backend/.env")
-
-    headers = {
-        "Authorization": f"Bearer {RESEND_API_KEY}",
-        "Content-Type": "application/json",
-        # User-Agent is REQUIRED per Resend docs — missing it causes 403/1010 errors
-        "User-Agent": "tekateka-backend/1.0",
-        # Idempotency-Key prevents duplicate sends if the request is retried
-        "Idempotency-Key": str(uuid.uuid4()),
-    }
-    payload = {
-        "from": RESEND_FROM,
-        "to": [to],
-        "subject": subject,
-        "html": html,
-    }
-    if text:
-        payload["text"] = text
-
-    async with httpx.AsyncClient(timeout=15) as client:
+    # 1) Try Gmail SMTP (primary)
+    if SMTP_EMAIL and SMTP_PASSWORD:
         try:
-            r = await client.post(f"{RESEND_BASE_URL}/emails", json=payload, headers=headers)
-        except httpx.RequestError as e:
-            raise ResendError(f"Network error contacting Resend: {e}") from e
-        if r.status_code >= 400:
-            raise ResendError(f"Resend HTTP {r.status_code}: {r.text}")
-        return r.json()
+            await asyncio.to_thread(_send_smtp_sync, to, subject, html, text)
+            logger.info("Email sent via Gmail SMTP to %s", to)
+            return {"provider": "gmail_smtp", "to": to, "ok": True}
+        except Exception as e:
+            logger.warning("Gmail SMTP failed for %s: %s — trying Resend fallback", to, e)
+
+    # 2) Resend fallback
+    if RESEND_API_KEY:
+        try:
+            res = await _send_resend(to, subject, html, text)
+            res["provider"] = "resend"
+            return res
+        except Exception as e:
+            logger.error("Resend fallback also failed for %s: %s", to, e)
+            raise ResendError(f"Both SMTP and Resend failed: {e}") from e
+
+    raise RuntimeError("No email provider configured (set SMTP_EMAIL/SMTP_PASSWORD or RESEND_API_KEY)")
 
 
 # ---------- French email templates ----------
