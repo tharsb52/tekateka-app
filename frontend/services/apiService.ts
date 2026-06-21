@@ -168,6 +168,62 @@ export const authAPI = {
     });
   },
 
+  // === NEW June 2026: Email + PIN authentication ===
+  // These endpoints replace the Firebase Phone Auth flow and work globally
+  // without SMS dependency.
+
+  /** Sign up a brand-new account with email + password (no SMS). */
+  emailSignup: async (email: string, password: string, name?: string, phone?: string) => {
+    const data = await apiFetch('/auth/email-signup', {
+      method: 'POST',
+      body: JSON.stringify({ email, password, name, phone }),
+    });
+    if (data.token) await setToken(data.token);
+    return data;
+  },
+
+  /** Set or replace the user's 4-6 digit PIN. Requires JWT auth. */
+  setupPin: async (pin: string) => {
+    return apiFetch('/auth/setup-pin', {
+      method: 'POST',
+      body: JSON.stringify({ pin }),
+    });
+  },
+
+  /** Login with identifier (email/phone) + PIN. No password needed. */
+  loginPin: async (identifier: string, pin: string) => {
+    const data = await apiFetch('/auth/login-pin', {
+      method: 'POST',
+      body: JSON.stringify({ identifier, pin }),
+    });
+    if (data.token) await setToken(data.token);
+    return data;
+  },
+
+  /** Change PIN. Requires the old PIN if one is already set. */
+  changePin: async (oldPin: string | null, newPin: string) => {
+    return apiFetch('/auth/change-pin', {
+      method: 'POST',
+      body: JSON.stringify({ oldPin, newPin }),
+    });
+  },
+
+  /** Send a 6-digit reset code by email. Always returns success (generic). */
+  forgotPassword: async (email: string) => {
+    return apiFetch('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  /** Verify the 6-digit code and set a new password. Wipes existing PIN. */
+  resetPassword: async (email: string, code: string, newPassword: string) => {
+    return apiFetch('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ email, code, newPassword }),
+    });
+  },
+
   getProfile: async () => {
     return apiFetch('/auth/profile');
   },

@@ -26,6 +26,10 @@ from admin_ambassador_panel import router as amb_panel_router
 from firebase_auth_page import router as firebase_page_router
 from account_api import router as account_router
 from legal_pages import router as legal_router
+# NEW June 2026 — Email + PIN authentication (replaces Firebase Phone Auth).
+# This router already has `/api` prefix built-in so we do NOT wrap it again
+# in include_router below.
+from auth_email_pin import router as auth_email_pin_router
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -202,6 +206,10 @@ app.include_router(firebase_page_router, prefix="/api", tags=["firebase-auth"])
 
 # Include account API router (GDPR account deletion)
 app.include_router(account_router, prefix="/api", tags=["account"])
+
+# NEW June 2026 — Email + PIN authentication router (replaces Firebase Phone Auth).
+# The router has `/api` prefix built-in so we mount it WITHOUT a prefix here.
+app.include_router(auth_email_pin_router, tags=["auth-email-pin"])
 
 # Include legal pages router (public privacy policy for Play Store / RGPD)
 app.include_router(legal_router, prefix="/api", tags=["legal"])

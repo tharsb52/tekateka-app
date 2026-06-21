@@ -36,6 +36,12 @@ interface AuthContextType {
   loginWithCredentials: (identifier: string, password: string) => Promise<void>;
   quickLogin: (phoneNumber: string) => Promise<void>;
   setupCredentials: (email?: string, username?: string, password?: string) => Promise<void>;
+  // === NEW June 2026 — Email + PIN auth ===
+  signupWithEmail: (email: string, password: string, name?: string) => Promise<void>;
+  loginWithPin: (identifier: string, pin: string) => Promise<void>;
+  setupServerPin: (pin: string) => Promise<void>;
+  forgotPassword: (email: string) => Promise<any>;
+  resetPassword: (email: string, code: string, newPassword: string) => Promise<any>;
   updateProfilePhoto: (photoBase64: string) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (updates: Partial<User>) => Promise<void>;
@@ -226,6 +232,61 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  // === NEW June 2026 — Email + PIN authentication helpers ===
+  // These wrap the new authAPI endpoints AND update the AuthContext state so
+  // the rest of the app reacts to the new user immediately.
+
+  const signupWithEmail = async (email: string, password: string, name?: string) => {
+    try {
+      const result = await authAPI.emailSignup(email, password, name);
+      if (result.user) {
+        const mapped = mapBackendUser(result.user);
+        setUser(mapped);
+        await changeLocale(mapped.language);
+      }
+    } catch (e: any) {
+      console.error('Email signup error:', e);
+      throw new Error(e.message || "Échec de l'inscription");
+    }
+  };
+
+  const loginWithPin = async (identifier: string, pin: string) => {
+    try {
+      const result = await authAPI.loginPin(identifier, pin);
+      if (result.user) {
+        const mapped = mapBackendUser(result.user);
+        setUser(mapped);
+        await changeLocale(mapped.language);
+      }
+    } catch (e: any) {
+      console.error('PIN login error:', e);
+      throw new Error(e.message || 'Identifiant ou PIN incorrect');
+    }
+  };
+
+  const setupServerPin = async (pin: string) => {
+    try {
+      const result = await authAPI.setupPin(pin);
+      if (result.user) {
+        const mapped = mapBackendUser(result.user);
+        setUser(mapped);
+      }
+      setHasPin(true);
+      setPinVerified(true);
+    } catch (e: any) {
+      console.error('Setup PIN error:', e);
+      throw new Error(e.message || 'Erreur lors de la création du PIN');
+    }
+  };
+
+  const forgotPassword = async (email: string) => {
+    return authAPI.forgotPassword(email);
+  };
+
+  const resetPassword = async (email: string, code: string, newPassword: string) => {
+    return authAPI.resetPassword(email, code, newPassword);
+  };
+
   // Update profile photo
   const updateProfilePhoto = async (photoBase64: string) => {
     try {
@@ -414,6 +475,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         loginWithCredentials,
         quickLogin,
         setupCredentials,
+        signupWithEmail,
+        loginWithPin,
+        setupServerPin,
+        forgotPassword,
+        resetPassword,
         updateProfilePhoto,
         logout,
         updateUser,

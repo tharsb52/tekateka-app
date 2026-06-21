@@ -55,9 +55,23 @@ const BG = '#fef3e7';
 type LoginTab = 'phone' | 'credentials';
 
 export default function LoginScreen() {
-  const { login, loginWithCredentials, quickLogin } = useAuth();
+  const { login, loginWithCredentials, quickLogin, signupWithEmail, forgotPassword, resetPassword } = useAuth();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<LoginTab>('phone');
+  // June 2026: default to the EMAIL/PASSWORD tab. Firebase Phone Auth is now
+  // optional (legacy) — too many SMS bugs in Africa/India + reCAPTCHA issues.
+  // Users can still toggle to the phone tab if they prefer.
+  const [activeTab, setActiveTab] = useState<LoginTab>('credentials');
+  // Sub-mode of the credentials tab: 'login' | 'signup' | 'forgot' | 'reset'
+  const [credMode, setCredMode] = useState<'login' | 'signup' | 'forgot' | 'reset'>('login');
+  // Signup-only fields
+  const [signupEmail, setSignupEmail] = useState('');
+  const [signupName, setSignupName] = useState('');
+  const [signupPassword, setSignupPassword] = useState('');
+  // Forgot/reset fields
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [resetCode, setResetCode] = useState('');
+  const [resetNewPassword, setResetNewPassword] = useState('');
+  const [credInfo, setCredInfo] = useState<string>('');
 
   // Phone login state
   const [localNumber, setLocalNumber] = useState('');
@@ -549,18 +563,18 @@ export default function LoginScreen() {
             </View>
           )}
 
-          {activeTab === 'credentials' && (
+          {activeTab === 'credentials' && credMode === 'login' && (
             <View style={styles.form}>
               <View style={styles.credInfoBox}>
                 <Ionicons name="information-circle" size={20} color="#2563eb" />
                 <Text style={styles.credInfoText}>
-                  Connectez-vous avec les identifiants fournis par le propriétaire du compte.
+                  Connectez-vous avec votre email et mot de passe — universel, sans SMS.
                 </Text>
               </View>
-              <Text style={styles.label}>Email ou nom d'utilisateur</Text>
+              <Text style={styles.label}>Email</Text>
               <TextInput
                 style={styles.input}
-                placeholder="ex: collegue@email.com"
+                placeholder="votre@email.com"
                 placeholderTextColor="#94a3b8"
                 value={identifier}
                 onChangeText={(t) => { setIdentifier(t); setCredError(''); }}
@@ -589,6 +603,134 @@ export default function LoginScreen() {
               ) : null}
               <TouchableOpacity style={[styles.button, loading && styles.buttonDisabled]} onPress={handleCredentialLogin} disabled={loading}>
                 {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Se connecter</Text>}
+              </TouchableOpacity>
+
+              {/* Sign up + forgot password links */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 16 }}>
+                <TouchableOpacity onPress={() => { setCredMode('signup'); setCredError(''); setCredInfo(''); }}>
+                  <Text style={{ color: '#2563eb', fontWeight: '600' }}>Créer un compte</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => { setCredMode('forgot'); setCredError(''); setCredInfo(''); setForgotEmail(identifier); }}>
+                  <Text style={{ color: '#2563eb', fontWeight: '600' }}>Mot de passe oublié ?</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {activeTab === 'credentials' && credMode === 'signup' && (
+            <View style={styles.form}>
+              <View style={styles.credInfoBox}>
+                <Ionicons name="person-add" size={20} color="#2563eb" />
+                <Text style={styles.credInfoText}>Créez votre compte TekaTeka en 10 secondes.</Text>
+              </View>
+              <Text style={styles.label}>Nom (optionnel)</Text>
+              <TextInput style={styles.input} placeholder="Votre nom" placeholderTextColor="#94a3b8" value={signupName} onChangeText={setSignupName} />
+              <Text style={[styles.label, { marginTop: 12 }]}>Email</Text>
+              <TextInput style={styles.input} placeholder="votre@email.com" placeholderTextColor="#94a3b8" value={signupEmail} onChangeText={setSignupEmail} autoCapitalize="none" keyboardType="email-address" />
+              <Text style={[styles.label, { marginTop: 12 }]}>Mot de passe (min. 6 caractères)</Text>
+              <View style={styles.passwordRow}>
+                <TextInput style={styles.passwordInput} placeholder="Mot de passe" placeholderTextColor="#94a3b8" value={signupPassword} onChangeText={setSignupPassword} secureTextEntry={!showPassword} />
+                <TouchableOpacity style={styles.eyeButton} onPress={() => setShowPassword(!showPassword)}>
+                  <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={22} color="#64748b" />
+                </TouchableOpacity>
+              </View>
+              {credError ? <View style={styles.errorBox}><Ionicons name="alert-circle" size={16} color="#dc2626" /><Text style={styles.errorText}>{credError}</Text></View> : null}
+              <TouchableOpacity
+                style={[styles.button, loading && styles.buttonDisabled]}
+                disabled={loading}
+                onPress={async () => {
+                  setCredError('');
+                  if (!signupEmail.includes('@')) { setCredError('Email invalide'); return; }
+                  if (signupPassword.length < 6) { setCredError('Mot de passe trop court (min. 6 caractères)'); return; }
+                  setLoading(true);
+                  try {
+                    await signupWithEmail(signupEmail.trim().toLowerCase(), signupPassword, signupName.trim() || undefined);
+                    // AuthContext will navigate to dashboard automatically
+                  } catch (e: any) {
+                    setCredError(e.message || 'Échec de l\'inscription');
+                  } finally { setLoading(false); }
+                }}
+              >
+                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Créer mon compte</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { setCredMode('login'); setCredError(''); }} style={{ marginTop: 14, alignItems: 'center' }}>
+                <Text style={{ color: '#64748b' }}>← Retour à la connexion</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {activeTab === 'credentials' && credMode === 'forgot' && (
+            <View style={styles.form}>
+              <View style={styles.credInfoBox}>
+                <Ionicons name="key" size={20} color="#2563eb" />
+                <Text style={styles.credInfoText}>Nous vous enverrons un code à 6 chiffres par email.</Text>
+              </View>
+              <Text style={styles.label}>Email du compte</Text>
+              <TextInput style={styles.input} placeholder="votre@email.com" placeholderTextColor="#94a3b8" value={forgotEmail} onChangeText={setForgotEmail} autoCapitalize="none" keyboardType="email-address" />
+              {credInfo ? <View style={[styles.errorBox, { backgroundColor: '#dcfce7', borderColor: '#86efac' }]}><Ionicons name="checkmark-circle" size={16} color="#16a34a" /><Text style={[styles.errorText, { color: '#15803d' }]}>{credInfo}</Text></View> : null}
+              {credError ? <View style={styles.errorBox}><Ionicons name="alert-circle" size={16} color="#dc2626" /><Text style={styles.errorText}>{credError}</Text></View> : null}
+              <TouchableOpacity
+                style={[styles.button, loading && styles.buttonDisabled]}
+                disabled={loading}
+                onPress={async () => {
+                  setCredError(''); setCredInfo('');
+                  if (!forgotEmail.includes('@')) { setCredError('Email invalide'); return; }
+                  setLoading(true);
+                  try {
+                    await forgotPassword(forgotEmail.trim().toLowerCase());
+                    setCredInfo('Si un compte existe pour cet email, un code vient d\'être envoyé. Vérifiez votre boîte (et les spams).');
+                    setCredMode('reset');
+                  } catch (e: any) {
+                    setCredError(e.message || 'Erreur');
+                  } finally { setLoading(false); }
+                }}
+              >
+                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Envoyer le code</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { setCredMode('login'); setCredError(''); setCredInfo(''); }} style={{ marginTop: 14, alignItems: 'center' }}>
+                <Text style={{ color: '#64748b' }}>← Retour à la connexion</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {activeTab === 'credentials' && credMode === 'reset' && (
+            <View style={styles.form}>
+              <View style={styles.credInfoBox}>
+                <Ionicons name="lock-closed" size={20} color="#2563eb" />
+                <Text style={styles.credInfoText}>Entrez le code reçu par email et choisissez un nouveau mot de passe.</Text>
+              </View>
+              <Text style={styles.label}>Email</Text>
+              <TextInput style={styles.input} value={forgotEmail} onChangeText={setForgotEmail} autoCapitalize="none" keyboardType="email-address" />
+              <Text style={[styles.label, { marginTop: 12 }]}>Code à 6 chiffres</Text>
+              <TextInput style={styles.input} placeholder="123456" placeholderTextColor="#94a3b8" value={resetCode} onChangeText={setResetCode} keyboardType="number-pad" maxLength={6} />
+              <Text style={[styles.label, { marginTop: 12 }]}>Nouveau mot de passe (min. 6)</Text>
+              <TextInput style={styles.input} placeholder="Nouveau mot de passe" placeholderTextColor="#94a3b8" value={resetNewPassword} onChangeText={setResetNewPassword} secureTextEntry />
+              {credInfo ? <View style={[styles.errorBox, { backgroundColor: '#dcfce7', borderColor: '#86efac' }]}><Ionicons name="checkmark-circle" size={16} color="#16a34a" /><Text style={[styles.errorText, { color: '#15803d' }]}>{credInfo}</Text></View> : null}
+              {credError ? <View style={styles.errorBox}><Ionicons name="alert-circle" size={16} color="#dc2626" /><Text style={styles.errorText}>{credError}</Text></View> : null}
+              <TouchableOpacity
+                style={[styles.button, loading && styles.buttonDisabled]}
+                disabled={loading}
+                onPress={async () => {
+                  setCredError(''); setCredInfo('');
+                  if (resetCode.length < 4) { setCredError('Code invalide'); return; }
+                  if (resetNewPassword.length < 6) { setCredError('Mot de passe trop court'); return; }
+                  setLoading(true);
+                  try {
+                    await resetPassword(forgotEmail.trim().toLowerCase(), resetCode.trim(), resetNewPassword);
+                    setCredInfo('Mot de passe mis à jour ! Connectez-vous avec votre nouveau mot de passe.');
+                    setPassword(resetNewPassword);
+                    setIdentifier(forgotEmail.trim().toLowerCase());
+                    setResetCode(''); setResetNewPassword('');
+                    setTimeout(() => setCredMode('login'), 1500);
+                  } catch (e: any) {
+                    setCredError(e.message || 'Code invalide ou expiré');
+                  } finally { setLoading(false); }
+                }}
+              >
+                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Réinitialiser</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { setCredMode('login'); setCredError(''); setCredInfo(''); }} style={{ marginTop: 14, alignItems: 'center' }}>
+                <Text style={{ color: '#64748b' }}>← Retour à la connexion</Text>
               </TouchableOpacity>
             </View>
           )}
