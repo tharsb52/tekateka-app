@@ -9,7 +9,7 @@ import i18n from '../../utils/i18n';
 const BG = '#fef3e7';
 
 export default function TabLayout() {
-  const { user, loading, hasAccess, hasPin, pinVerified } = useAuth();
+  const { user, loading, hasPin, pinVerified } = useAuth();
   const insets = useSafeAreaInsets();
 
   if (loading) {
@@ -30,10 +30,9 @@ export default function TabLayout() {
     return <Redirect href="/" />;
   }
 
-  // Si pas d'accès (essai expiré + pas d'abonnement), forcer vers abonnement
-  if (!hasAccess()) {
-    return <Redirect href="/subscription" />;
-  }
+  // Pas d'accès (abonnement expiré > 48h ou essai terminé) : les onglets
+  // restent consultables en lecture seule, les écritures sont bloquées
+  // (bandeau rouge dans AppHeader + refus serveur 402).
 
   // Bottom safe area for tab bar (respects phone's navigation bar)
   // Extra generous padding to ensure visibility above phone footer

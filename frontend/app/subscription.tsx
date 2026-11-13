@@ -21,7 +21,6 @@ import { formatCurrency, convertCurrency } from '../utils/currencies';
 import { processPayment, getPaymentProviderInfo } from '../services/paymentService';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AppHeader from '../components/AppHeader';
-import { paymentsAPI } from '../services/apiService';
 import { buySubscription } from '../services/stripeCheckout';
 import { formatLocal } from '../utils/dateUtils';
 
@@ -29,7 +28,7 @@ const BG = '#fef3e7';
 
 export default function SubscriptionScreen() {
   const router = useRouter();
-  const { user, subscribe, isSubscriptionActive, getSubscriptionDaysRemaining, getDaysRemaining, showExpiryReminder, hasAccess, logout, refreshUser } = useAuth();
+  const { user, isSubscriptionActive, getSubscriptionDaysRemaining, getDaysRemaining, showExpiryReminder, hasAccess, logout, refreshUser } = useAuth();
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan>('yearly');
   const [loading, setLoading] = useState(false);
 
@@ -40,7 +39,6 @@ export default function SubscriptionScreen() {
   const needsRenewal = showExpiryReminder();
   const paymentProviderInfo = getPaymentProviderInfo();
   const userHasAccess = hasAccess();
-  const trialExpired = !isActive && !user?.isSubscribed && trialDays === 0;
 
   // Direct user prices in EUR (canonical — must match backend/.env). When the
   // user's display currency is different, we convert at the runtime exchange
@@ -188,42 +186,6 @@ export default function SubscriptionScreen() {
     }
   };
 
-  const processSubscriptionPayment = async (method: 'card') => {
-    setPaymentMethodModal(false);
-    setLoading(true);
-    const plan = plans.find(p => p.id === selectedPlan);
-    
-    try {
-      // 1. Initiate payment
-      const paymentResult = await paymentsAPI.subscriptionPay({
-        plan: selectedPlan,
-        method,
-        currency,
-        phone: user?.phoneNumber || '',
-      });
-
-      if (paymentResult.success) {
-        // 2. Confirm payment (sandbox auto-confirms)
-        const confirmResult = await paymentsAPI.subscriptionConfirm(paymentResult.txRef);
-        
-        if (confirmResult.success) {
-          // Refresh user state so the new subscription end-date shows up
-          // immediately on the dashboard.
-          try { await refreshUser(); } catch {}
-          Alert.alert(
-            'Abonnement activé !',
-            `Plan ${plan?.name} activé avec succès.\n${paymentResult.sandbox ? '(Mode test - paiement simulé)' : `Transaction: ${paymentResult.txRef}`}\n\n${method === 'mobile_money' ? 'Mobile Money' : 'Carte bancaire'}`,
-            [{ text: 'Continuer', onPress: () => router.replace('/(tabs)/dashboard') }]
-          );
-        }
-      }
-    } catch (error: any) {
-      Alert.alert('Erreur', error.message || 'Échec du paiement. Veuillez réessayer.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <AppHeader />
@@ -234,27 +196,31 @@ export default function SubscriptionScreen() {
       >
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         {/* Navigation Header */}
-        {trialExpired ? (
-          <TouchableOpacity
-            style={styles.logoutButton}
-            onPress={async () => {
-              await logout();
-              router.replace('/');
-            }}
-          >
-            <Ionicons name="log-out-outline" size={20} color="#dc2626" />
-            <Text style={styles.logoutButtonText}>Déconnexion</Text>
-          </TouchableOpacity>
+        {!userHasAccess ? (
+          <View style={styles.lockedNavRow}>
+            <TouchableOpacity
+              style={styles.logoutButton}
+              onPress={async () => {
+                await logout();
+                router.replace('/');
+              }}
+            >
+              <Ionicons name="log-out-outline" size={20} color="#dc2626" />
+              <Text style={styles.logoutButtonText}>Déconnexion</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="consult-readonly-btn"
+              style={styles.consultButton}
+              onPress={() => router.replace('/(tabs)/dashboard')}
+            >
+              <Ionicons name="eye-outline" size={20} color="#475569" />
+              <Text style={styles.consultButtonText}>Consulter mes données</Text>
+            </TouchableOpacity>
+          </View>
         ) : (
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => {
-              if (userHasAccess) {
-                router.replace('/(tabs)/dashboard');
-              } else {
-                router.back();
-              }
-            }}
+            onPress={() => router.replace('/(tabs)/dashboard')}
           >
             <Ionicons name="arrow-back" size={20} color="#2563eb" />
             <Text style={{ fontSize: 15, color: '#2563eb', fontWeight: '700' }}>Retour</Text>
@@ -557,6 +523,29 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#dc2626',
+  },
+  lockedNavRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+  },
+  consultButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    padding: 10,
+    minHeight: 44,
+    marginBottom: 8,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+  },
+  consultButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#475569',
   },
   header: {
     alignItems: 'center',

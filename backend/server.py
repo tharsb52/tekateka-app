@@ -18,6 +18,10 @@ from collections import defaultdict
 from reporting import router as reporting_router
 from otp_service import send_otp, verify_otp
 from data_api import router as data_router
+from data_api import db as data_db, SECRET_KEY as DATA_SECRET_KEY, ALGORITHM as DATA_ALGORITHM
+from subscription_guard import has_write_access
+from jose import jwt as jose_jwt, JWTError
+from bson import ObjectId
 from admin_api import router as admin_router
 from payment_api import router as payment_router
 from stripe_api import router as stripe_router
@@ -89,6 +93,34 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         return response
 
 app.add_middleware(SecurityMiddleware)
+
+
+# Read-only mode: once a paid subscription is expired for more than 48h (or the
+# free trial is over), merchants can still log in and READ their data, but any
+# write on /api/data/* is refused with 402 until they renew.
+@app.middleware("http")
+async def subscription_write_guard(request: Request, call_next):
+    if request.method in ("POST", "PUT", "PATCH", "DELETE") and request.url.path.startswith("/api/data/"):
+        auth = request.headers.get("authorization", "")
+        if auth.startswith("Bearer "):
+            try:
+                user_id = jose_jwt.decode(auth[7:], DATA_SECRET_KEY, algorithms=[DATA_ALGORITHM]).get("sub")
+            except JWTError:
+                user_id = None
+            if user_id and ObjectId.is_valid(user_id):
+                guard_user = await data_db.users.find_one(
+                    {"_id": ObjectId(user_id)}, {"subscription": 1, "createdAt": 1}
+                )
+                if guard_user and not has_write_access(guard_user):
+                    return JSONResponse(
+                        status_code=402,
+                        content={
+                            "detail": "Abonnement expiré : mode consultation seulement. Activez votre abonnement pour ajouter ou modifier vos données.",
+                            "code": "SUBSCRIPTION_EXPIRED",
+                        },
+                    )
+    return await call_next(request)
+
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")

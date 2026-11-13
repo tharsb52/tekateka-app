@@ -144,7 +144,10 @@ async def initiate_subscription_payment(request: Request, user_id: str = Depends
 
 @router.post("/payments/subscribe/confirm")
 async def confirm_subscription(request: Request, user_id: str = Depends(get_current_user)):
-    """Confirm a subscription payment (sandbox auto-confirms)."""
+    """Confirm a subscription payment."""
+    # Disabled until real Mobile Money is wired with server-side verification:
+    # without it any user could create + confirm a payment and get a free plan.
+    raise HTTPException(status_code=410, detail="Paiement Mobile Money pas encore disponible. Utilisez la carte ou un code d'activation.")
     body = await request.json()
     tx_ref = body.get("txRef")
     if not tx_ref:

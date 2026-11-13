@@ -2,13 +2,22 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User } from '../types';
 import { changeLocale } from '../utils/i18n';
-import { SubscriptionPlan } from '../types/subscription';
 import { scheduleExpiryReminders, cancelAllReminders } from '../services/notificationService';
-import { authAPI, getToken, clearToken } from '../services/apiService';
+import { authAPI, getToken, clearToken, setReadOnlyMode } from '../services/apiService';
 
-// Map backend user response to frontend User type
+// Map backend user response to frontend User type.
+// Access rules mirror backend/subscription_guard.py.
+export const GRACE_PERIOD_HOURS = 48;
+const TRIAL_DAYS = 7;
+
 function mapBackendUser(data: any): User {
   const sub = data.subscription || {};
+  const createdAt = data.createdAt || new Date().toISOString();
+  const expiry = sub.expiresAt || sub.expiryDate || undefined;
+  const trialEnd =
+    sub.trialEndsAt ||
+    (sub.status === 'trial' ? expiry : undefined) ||
+    new Date(new Date(createdAt).getTime() + TRIAL_DAYS * 86400000).toISOString();
   return {
     id: data.id || '',
     phoneNumber: (data.phoneNumber || '').replace(/^\+/, ''),
@@ -16,12 +25,13 @@ function mapBackendUser(data: any): User {
     username: data.username || undefined,
     hasPassword: data.hasPassword || false,
     profilePhoto: data.profilePhoto || undefined,
-    createdAt: data.createdAt || new Date().toISOString(),
-    trialStartDate: data.createdAt || new Date().toISOString(),
-    isSubscribed: sub.status === 'active' || (!!sub.plan && sub.plan !== null),
+    createdAt,
+    trialStartDate: createdAt,
+    trialEndDate: trialEnd,
+    isSubscribed: sub.status === 'active' && !!sub.plan && sub.plan !== 'trial',
     subscriptionPlan: sub.plan || undefined,
-    subscriptionStartDate: sub.startedAt || undefined,
-    subscriptionEndDate: sub.expiresAt || undefined,
+    subscriptionStartDate: sub.startedAt || sub.startDate || undefined,
+    subscriptionEndDate: expiry,
     currency: data.currency || 'USD',
     language: data.language || 'fr',
   };
@@ -52,10 +62,11 @@ interface AuthContextType {
   getDaysRemaining: () => number;
   isSubscriptionActive: () => boolean;
   getSubscriptionDaysRemaining: () => number;
-  subscribe: (plan: SubscriptionPlan) => Promise<void>;
   needsSubscription: () => boolean;
   showExpiryReminder: () => boolean;
   hasAccess: () => boolean;
+  getGraceHoursRemaining: () => number;
+  isReadOnly: () => boolean;
   refreshUser: () => Promise<void>;
 }
 
@@ -339,16 +350,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  // Trial: 7 days free
+  // Trial: 7 days free (no grace period)
   const isTrialExpired = (): boolean => {
     if (!user) return false;
     if (user.isSubscribed) return false;
-    
-    const trialStart = new Date(user.trialStartDate);
-    const now = new Date();
-    const daysPassed = Math.floor((now.getTime() - trialStart.getTime()) / (1000 * 60 * 60 * 24));
-    
-    return daysPassed > 7;
+    return new Date() >= new Date(user.trialEndDate);
   };
 
   const getDaysRemaining = (): number => {
@@ -358,11 +364,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return getSubscriptionDaysRemaining();
     }
     
-    const trialStart = new Date(user.trialStartDate);
-    const now = new Date();
-    const daysPassed = Math.floor((now.getTime() - trialStart.getTime()) / (1000 * 60 * 60 * 24));
-    
-    return Math.max(0, 7 - daysPassed);
+    const diff = new Date(user.trialEndDate).getTime() - Date.now();
+    return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
   };
 
   const isSubscriptionActive = (): boolean => {
@@ -385,41 +388,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
   };
 
-  const subscribe = async (plan: SubscriptionPlan) => {
-    if (!user) return;
-
-    try {
-      const result = await authAPI.subscribe(plan);
-      if (result.user) {
-        const mappedUser = mapBackendUser(result.user);
-        setUser(mappedUser);
-        
-        if (mappedUser.subscriptionEndDate) {
-          scheduleExpiryReminders(mappedUser.subscriptionEndDate, false).catch(() => {});
-        }
-      }
-    } catch (error) {
-      console.error('Subscribe error:', error);
-      // Fallback: compute locally
-      const now = new Date();
-      const endDate = new Date();
-      switch (plan) {
-        case 'monthly': endDate.setMonth(now.getMonth() + 1); break;
-        case 'quarterly': endDate.setMonth(now.getMonth() + 3); break;
-        case 'yearly': endDate.setFullYear(now.getFullYear() + 1); break;
-      }
-      const updatedUser = {
-        ...user,
-        isSubscribed: true,
-        subscriptionPlan: plan,
-        subscriptionStartDate: now.toISOString(),
-        subscriptionEndDate: endDate.toISOString(),
-      };
-      setUser(updatedUser);
-      scheduleExpiryReminders(endDate.toISOString(), false).catch(() => {});
-    }
-  };
-
   const needsSubscription = (): boolean => {
     if (!user) return false;
     if (isSubscriptionActive()) return false;
@@ -432,11 +400,30 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return daysRemaining > 0 && daysRemaining <= 14;
   };
 
+  // Paid plan expired less than 48h ago → hours left before read-only mode
+  const getGraceHoursRemaining = (): number => {
+    if (!user || !user.isSubscribed || !user.subscriptionEndDate) return 0;
+    const end = new Date(user.subscriptionEndDate).getTime();
+    const now = Date.now();
+    if (now < end) return 0;
+    const left = end + GRACE_PERIOD_HOURS * 3600000 - now;
+    return left > 0 ? Math.ceil(left / 3600000) : 0;
+  };
+
   const hasAccess = (): boolean => {
     if (!user) return false;
     if (isSubscriptionActive()) return true;
+    if (getGraceHoursRemaining() > 0) return true;
+    if (user.isSubscribed) return false;
     return !isTrialExpired();
   };
+
+  // Logged in but no access → can only consult data
+  const isReadOnly = (): boolean => !!user && !hasAccess();
+
+  useEffect(() => {
+    setReadOnlyMode(isReadOnly());
+  }, [user]);
 
   /**
    * Pull the latest user document from the backend and update the local
@@ -490,10 +477,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         getDaysRemaining,
         isSubscriptionActive,
         getSubscriptionDaysRemaining,
-        subscribe,
         needsSubscription,
         showExpiryReminder,
         hasAccess,
+        getGraceHoursRemaining,
+        isReadOnly,
         refreshUser,
       }}
     >

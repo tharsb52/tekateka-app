@@ -41,3 +41,10 @@ The user builds locally with `eas build` (package `com.tekateka.app`). Download 
   - Remove the hardcoded fallback values in `auth_email_pin.py`.
   - Fix "Passez a" → "Passez à".
   - Remove the duplicate trial banner.
+
+## Nov 2026 — Subscription lock (48h grace)
+- Paid plan expired: full access + red banner "accès bloqué dans X h" for 48h, then read-only.
+- Trial: read-only immediately at createdAt+7d (no grace).
+- Read-only: login → /subscription first ("Consulter mes données" button), tabs viewable, writes blocked client-side (apiService) + server-side (server.py middleware → 402 on /api/data/* writes, rules in backend/subscription_guard.py).
+- Security: disabled free self-activation endpoints /api/auth/subscribe and /api/payments/subscribe/confirm (410). Plans only via Stripe, activation codes, admin.
+- Frontend now reads expiry from expiresAt OR expiryDate (activation-code users had no expiry before → never blocked).

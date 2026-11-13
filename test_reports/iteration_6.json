@@ -1,0 +1,44 @@
+{
+  "summary": "I tested the subscription lock: 48h grace for paid plans, then read-only mode. Backend: 14/14 pytest pass. Six of them are unit tests of has_write_access: paid plan in grace, paid plan past grace, naive expiryDate, trial with no grace, and the createdAt+7d fallback. The API tests check expired@: GET on all /api/data/* returns 200; POST, PUT and DELETE on products, sales, expenses, debts, notes and purchases return 402 SUBSCRIPTION_EXPIRED with CORS headers; auth/profile, auth/refresh, activate-code and the stripe config/checkout endpoints are not blocked. grace@ and test@ can still write. Frontend (390x844): expired@ lands on /subscription with Déconnexion and 'Consulter mes données'. The dashboard and tabs show the red banner 'Abonnement expiré — consultation seulement / Activer'. Adding a product or an expense sends no request and nothing is saved. Tapping the banner opens /subscription. grace@ goes straight to the dashboard with the banner 'accès bloqué dans 18 h / Renouveler' and can add a product. test@ sees no banner and the card shows Annuel until 15 juin 2027. A TEST_ trial user whose trial ended 1h ago is locked at once (no grace) and sees 'Essai terminé'. CRITICAL: POST /api/auth/subscribe still activates a paid plan for free, so any locked user can unlock themselves.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/auth/subscribe (data_api.py:777)", "issue": "Any logged-in user can set subscription {plan:'monthly',status:'active',expiresAt:+30d} without paying. Confirmed with a TEST_ user whose trial had ended: write returned 402, then POST /api/auth/subscribe {plan:'monthly'} returned 200, then writes returned 200. This bypasses both the lock and payments. The endpoint is exposed through authAPI.subscribe (apiService.ts:296, AuthContext.subscribe).", "priority": "CRITICAL"}
+    ],
+    "minor": [
+      {"endpoint": "subscription_guard.has_write_access", "issue": "Only plans in {'monthly','quarterly','yearly'} count as paid. POST /api/admin/grant-premium accepts any 'plan' string (admin_api.py ~254). An active grant with another plan name falls into the trial branch (createdAt+7d), so a paying account gets read-only. Fix: validate the plan in grant-premium, or treat status=='active' plus an expiry as paid. The frontend mirror (AuthContext PAID_PLANS) has the same rule."},
+      {"endpoint": "POST /api/payments/subscribe/confirm (payment_api.py:145-186)", "issue": "Not re-checked in this run. Make sure it verifies the payment with the provider before it activates the subscription. Same bypass class as /auth/subscribe."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "SubscriptionStatusCard", "issue": "A paid plan that has expired (expired@ and grace@, plan monthly) is labelled 'Essai gratuit' because planKey falls back to 'trial' when !isActive. The date is correct ('Expiré le 10/12 nov. 2026'). It should read 'Mensuel · Expiré'. For grace users it also says 'Aucun jour restant' while the banner says 18h of access are left. Reference: components/SubscriptionStatusCard.tsx:44-45", "testID": "n/a (card has no testID)", "priority": "MEDIUM"},
+      {"component": "Read-only write attempt on web", "issue": "On web, Alert.alert does nothing. So in read-only mode, tapping Enregistrer in the Product or Expense modal gives no feedback: the modal stays open silently. Native shows the alert. Consider an inline message or toast for web.", "testID": "product-save-button, expenses-save-button", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "subscription (locked)", "issues": ["The Déconnexion button has no testID.", "For a trial that has ended, the banner says 'Abonnement expiré' even though the user never had a subscription. 'Essai terminé — consultation seulement' would be clearer."]},
+      {"screen": "monthly-report / best-sellers / stock-alerts", "issues": ["No AppHeader, so the red lock banner is missing on these stack screens. Writes are still blocked."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_subscription_lock.py", "/app/backend/tests/check_subscribe_bypass.py", "/app/test_reports/pytest/pytest_subscription_lock.xml"],
+  "action_items": [
+    "CRITICAL: remove or protect POST /api/auth/subscribe (data_api.py:777). Only Stripe webhook/session confirmation, activation codes and admin grant should activate a paid plan. Remove the authAPI.subscribe fallback in AuthContext (it also sets isSubscribed locally on error).",
+    "Fix the SubscriptionStatusCard plan label for expired paid plans: use user.subscriptionPlan when isSubscribed, show 'Expiré', and show a grace-hours hint.",
+    "Validate the plan in admin grant-premium against PAID_PLANS, or have has_write_access treat any status=='active' subscription with an expiry as paid (backend and AuthContext).",
+    "Optional: add testID to the Déconnexion button on /subscription, give web users feedback for blocked writes, and use different banner wording for an ended trial."
+  ],
+  "critical_code_review_comments": [
+    "The guard middleware decodes the JWT and reads the DB on every write to /api/data/*. That is fine. CORS is added last, so it is the outermost middleware and 402 responses carry CORS headers (verified).",
+    "apiService pre-blocks writes on the client when readOnlyMode is set, and the server 402 is a second safety net. Wrapping Alert.alert globally to suppress follow-up alerts for 2s is a hack, but it works.",
+    "app/subscription.tsx is 958 lines (over 700); consider splitting it.",
+    "Tabs _layout no longer redirects users without access, which is intended for read-only consultation."
+  ],
+  "updated_files": ["/app/backend/tests/test_subscription_lock.py (new)", "/app/backend/tests/check_subscribe_bypass.py (new, manual check, cleans up after itself)"],
+  "success_rate": {"backend": "100% of lock tests (14/14); 1 critical security bypass found in a related endpoint", "frontend": "100% of requested flows pass; 1 medium label bug"},
+  "seed_data_creation": "No seed data. Temporary TEST_ users (test_lock_*@example.com, test_trial_*@example.com) were created and deleted by id. TEST_ products created for grace@ and test@ were deleted by id. One pending Stripe payment created for expired@ by an early test run was deleted by id; the test now uses an invalid plan, so no record is created.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The server clock is around Nov 13 2026 20:50 UTC. grace@ (expiresAt 2026-11-12T14:41Z) loses grace around Nov 14 14:41Z; re-seed if needed. Credential-login is rate-limited to 5 attempts per 5 minutes per IP, so space out logins between pytest and browser runs. In read-only mode on web, blocked writes produce no network request (client pre-block) and no visible alert.",
+  "rca_of_issue": "Bypass: data_api.subscribe sets status 'active' for whichever plan is requested, with no payment check. The new guard trusts subscription.status/plan, so this endpoint unlocks the account. Card label: SubscriptionStatusCard derives planKey from isSubscriptionActive(), which is false after expiry, so it falls back to 'trial'."
+}

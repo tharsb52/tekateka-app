@@ -3,11 +3,44 @@
  * All data flows through MongoDB for multi-device real-time sync.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Alert } from 'react-native';
+import { router } from 'expo-router';
 
 import { API_BASE_URL } from './constants';
 
 const BACKEND_URL = API_BASE_URL;
 const TOKEN_KEY = '@tekateka:auth_token';
+
+// ==========================================
+// Read-only mode (subscription expired > 48h or trial over)
+// ==========================================
+const READ_ONLY_TITLE = 'Abonnement expiré';
+export const READ_ONLY_MESSAGE =
+  'Mode consultation seulement. Activez votre abonnement pour ajouter ou modifier vos données.';
+let readOnlyMode = false;
+let lastReadOnlyAlertAt = 0;
+
+export const setReadOnlyMode = (value: boolean) => {
+  readOnlyMode = value;
+};
+
+// Screens show their own generic "Echec" alert when a write throws. While the
+// read-only alert is on screen we drop those so the merchant only sees one
+// clear message with the "Activer" action.
+const originalAlert = Alert.alert;
+Alert.alert = (...args: Parameters<typeof Alert.alert>) => {
+  if (args[0] !== READ_ONLY_TITLE && Date.now() - lastReadOnlyAlertAt < 2000) return;
+  originalAlert(...args);
+};
+
+function notifyReadOnly(): never {
+  lastReadOnlyAlertAt = Date.now();
+  originalAlert(READ_ONLY_TITLE, READ_ONLY_MESSAGE, [
+    { text: 'Plus tard', style: 'cancel' },
+    { text: 'Activer', onPress: () => router.push('/subscription') },
+  ]);
+  throw new Error(READ_ONLY_MESSAGE);
+}
 
 // ==========================================
 // Token Management
@@ -36,6 +69,10 @@ export const clearToken = async () => {
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function apiFetch(path: string, options: RequestInit = {}, retries = 3): Promise<any> {
+  const method = (options.method || 'GET').toUpperCase();
+  if (readOnlyMode && method !== 'GET' && path.startsWith('/data/')) {
+    notifyReadOnly();
+  }
   const token = await getToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -102,6 +139,10 @@ async function apiFetchWithHeaders(
       }
 
       if (!response.ok) {
+        if (response.status === 402 && data?.code === 'SUBSCRIPTION_EXPIRED') {
+          readOnlyMode = true;
+          notifyReadOnly();
+        }
         // 5xx → retry; 4xx → throw immediately (client error)
         if (response.status >= 500 && attempt < retries) {
           console.warn(`[API] ${response.status} for ${path}, retrying (${attempt + 1}/${retries})...`);
@@ -249,13 +290,6 @@ export const authAPI = {
 
   logout: async () => {
     await clearToken();
-  },
-
-  subscribe: async (plan: string) => {
-    return apiFetch('/auth/subscribe', {
-      method: 'POST',
-      body: JSON.stringify({ plan }),
-    });
   },
 
   updateProfilePhoto: async (photoBase64: string) => {
@@ -411,16 +445,6 @@ export const notesAPI = {
 // Payments API
 // ==========================================
 export const paymentsAPI = {
-  subscriptionPay: (data: any) => apiFetch('/payments/subscribe', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  }),
-
-  subscriptionConfirm: (txRef: string) => apiFetch('/payments/subscribe/confirm', {
-    method: 'POST',
-    body: JSON.stringify({ txRef }),
-  }),
-
   collect: (data: any) => apiFetch('/payments/collect', {
     method: 'POST',
     body: JSON.stringify(data),

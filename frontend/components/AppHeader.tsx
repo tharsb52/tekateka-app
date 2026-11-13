@@ -17,14 +17,18 @@ interface AppHeaderProps {
 }
 
 export default function AppHeader({ showSubscription = false }: AppHeaderProps) {
-  const { user, isSubscriptionActive, getSubscriptionDaysRemaining, getDaysRemaining, showExpiryReminder } = useAuth();
+  const { user, getGraceHoursRemaining, isReadOnly } = useAuth();
+  const expiredLabel = user?.isSubscribed ? 'Abonnement expiré' : 'Essai terminé';
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const country = getCountryFromPhone(user?.phoneNumber || '');
-  const isSubActive = isSubscriptionActive();
-  const subDaysLeft = getSubscriptionDaysRemaining();
-  const daysRemaining = getDaysRemaining();
-  const expiryReminder = showExpiryReminder();
+  const graceHours = getGraceHoursRemaining();
+  const readOnly = isReadOnly();
+  const lockMessage = readOnly
+    ? `${expiredLabel} — consultation seulement`
+    : graceHours > 0
+      ? `Abonnement expiré — accès bloqué dans ${graceHours} h`
+      : '';
 
   return (
     <>
@@ -42,11 +46,48 @@ export default function AppHeader({ showSubscription = false }: AppHeaderProps) 
             ces infos (plan + jours restants + date d'expiration).
             Évite le doublon visuel demandé par l'utilisateur. */}
       </View>
+      {lockMessage !== '' && (
+        <TouchableOpacity
+          testID="subscription-lock-banner"
+          style={styles.lockBanner}
+          onPress={() => router.push('/subscription')}
+          activeOpacity={0.85}
+        >
+          <Ionicons name={readOnly ? 'lock-closed' : 'alarm'} size={18} color="#fff" />
+          <Text style={styles.lockBannerText}>{lockMessage}</Text>
+          <Text style={styles.lockBannerCta}>{readOnly ? 'Activer' : 'Renouveler'}</Text>
+        </TouchableOpacity>
+      )}
     </>
   );
 }
 
 const styles = StyleSheet.create({
+  lockBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#dc2626',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    minHeight: 44,
+  },
+  lockBannerText: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  lockBannerCta: {
+    color: '#dc2626',
+    backgroundColor: '#fff',
+    fontSize: 12,
+    fontWeight: '800',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
   header: {
     backgroundColor: HEADER_BG,
     paddingHorizontal: 16,

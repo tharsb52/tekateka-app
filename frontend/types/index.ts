@@ -7,6 +7,7 @@ export interface User {
   profilePhoto?: string;
   createdAt: string;
   trialStartDate: string;
+  trialEndDate: string;
   isSubscribed: boolean;
   subscriptionPlan?: 'monthly' | 'quarterly' | 'yearly';
   subscriptionStartDate?: string;

@@ -34,26 +34,22 @@ function urgencyStyles(daysLeft: number, isTrial: boolean) {
 
 export default function SubscriptionStatusCard({ compact = false }: { compact?: boolean }) {
   const router = useRouter();
-  const { user, isSubscriptionActive, getSubscriptionDaysRemaining, getDaysRemaining } = useAuth();
+  const { user, isSubscriptionActive, getSubscriptionDaysRemaining, getDaysRemaining, getGraceHoursRemaining } = useAuth();
 
   if (!user) return null;
 
   const isActive = isSubscriptionActive();
   const isTrial = !isActive && !!user.trialStartDate;
   const daysLeft = isActive ? getSubscriptionDaysRemaining() : getDaysRemaining();
-  const planKey = isActive ? (user.subscriptionPlan || 'monthly') : 'trial';
+  const planKey = user.isSubscribed ? (user.subscriptionPlan || 'monthly') : 'trial';
   const planLabel = PLAN_LABELS[planKey] || PLAN_LABELS.monthly;
   // Compute expiry date for both active subs AND ongoing/expired trials so the
   // user always sees "jusqu'au DD MMM YYYY" — not just an opaque "X jours".
   let endDateIso: string | null = null;
-  if (isActive && user.subscriptionEndDate) {
+  if (user.isSubscribed && user.subscriptionEndDate) {
     endDateIso = user.subscriptionEndDate;
-  } else if (user.trialStartDate) {
-    try {
-      const trialEnd = new Date(user.trialStartDate);
-      trialEnd.setDate(trialEnd.getDate() + 14); // default trial = 14 days
-      endDateIso = trialEnd.toISOString();
-    } catch {}
+  } else if (user.trialEndDate) {
+    endDateIso = user.trialEndDate;
   }
   const colors = urgencyStyles(daysLeft, isTrial);
 
@@ -78,7 +74,9 @@ export default function SubscriptionStatusCard({ compact = false }: { compact?: 
           <Text style={[styles.subLabel, { color: colors.text }]}>
             {daysLeft > 0
               ? `${daysLeft} jour${daysLeft > 1 ? 's' : ''} restant${daysLeft > 1 ? 's' : ''}`
-              : "Aucun jour restant"}
+              : getGraceHoursRemaining() > 0
+                ? `Accès bloqué dans ${getGraceHoursRemaining()} h`
+                : "Aucun jour restant"}
             {endDateLabel ? `  ·  ${daysLeft > 0 ? 'Jusqu\'au' : 'Expiré le'} ${endDateLabel}` : ''}
           </Text>
         </View>

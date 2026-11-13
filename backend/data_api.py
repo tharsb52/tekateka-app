@@ -776,31 +776,9 @@ async def delete_note(note_id: str, user_id: str = Depends(get_current_user)):
 # ==========================================
 @router.post("/auth/subscribe")
 async def subscribe(req: SubscribeRequest, user_id: str = Depends(get_current_user)):
-    """Subscribe to a plan."""
-    now = datetime.utcnow()
-    if req.plan == "monthly":
-        end_date = now + timedelta(days=30)
-    elif req.plan == "quarterly":
-        end_date = now + timedelta(days=90)
-    elif req.plan == "yearly":
-        end_date = now + timedelta(days=365)
-    else:
-        raise HTTPException(status_code=400, detail="Plan invalide")
-    
-    subscription = {
-        "plan": req.plan,
-        "status": "active",
-        "startedAt": now.isoformat(),
-        "expiresAt": end_date.isoformat(),
-    }
-    
-    await db.users.update_one(
-        {"_id": ObjectId(user_id)},
-        {"$set": {"subscription": subscription, "updatedAt": now.isoformat()}}
-    )
-    
-    user = await db.users.find_one({"_id": ObjectId(user_id)})
-    return {"success": True, "user": serialize_user(user)}
+    """Disabled: activated a plan without any payment. Subscriptions are only
+    granted by Stripe webhooks, activation codes or the admin panel."""
+    raise HTTPException(status_code=410, detail="Utilisez le paiement par carte ou un code d'activation.")
 
 # ==========================================
 # Helpers
