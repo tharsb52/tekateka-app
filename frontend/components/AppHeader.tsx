@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, Image, StyleSheet, TouchableOpacity, StatusBar, Platform } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from "@react-native-vector-icons/ionicons";
 import { useAuth } from '../context/AuthContext';
 import { useRouter } from 'expo-router';
 import { getCountryFromPhone } from '../utils/countryFlags';
@@ -28,7 +28,7 @@ export default function AppHeader({ showSubscription = false }: AppHeaderProps) 
 
   return (
     <>
-      <StatusBar barStyle="light-content" backgroundColor={HEADER_BG} />
+      <StatusBar barStyle="light-content" />
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 8) + 8 }]}>
         <View style={styles.logoRow}>
           <Image source={require('../assets/images/tk-logo-transparent.png')} style={styles.logoImage} />

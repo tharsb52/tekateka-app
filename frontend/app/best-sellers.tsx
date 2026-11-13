@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from "@react-native-vector-icons/ionicons";
 import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { formatCurrency, convertCurrency } from '../utils/currencies';

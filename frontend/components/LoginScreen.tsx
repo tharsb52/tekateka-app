@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,58 +9,23 @@ import {
   Platform,
   ActivityIndicator,
   Image,
-  Modal,
   ScrollView,
   StatusBar,
-  Keyboard,
-  EmitterSubscription,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../context/AuthContext';
 import { useRouter } from 'expo-router';
 import i18n from '../utils/i18n';
-import { Ionicons } from '@expo/vector-icons';
-import { ALL_COUNTRIES, searchCountries, getFlagUrl, Country } from '../utils/countries';
-
-// ===========================================================================
-// NATIVE FIREBASE AUTH (no WebView, no visible reCAPTCHA)
-// ---------------------------------------------------------------------------
-// We use @react-native-firebase/auth + Play Integrity (configured in the
-// Firebase Console). On Android, this triggers a silent device-attestation
-// challenge that is INVISIBLE to the user. No image puzzle. No "I'm not a
-// robot" checkbox. No WebView.
-//
-// IMPORTANT: This module is ONLY available in a custom EAS build (it requires
-// native code). It does NOT work in Expo Go, nor on web. We require() it
-// behind a Platform guard so the web bundle keeps compiling.
-// ===========================================================================
-type ConfirmationResult = {
-  confirm: (code: string) => Promise<any>;
-  verificationId?: string;
-};
-
-let nativeAuth: any = null;
-if (Platform.OS !== 'web') {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    nativeAuth = require('@react-native-firebase/auth').default;
-  } catch (e) {
-    console.warn('[Firebase] native auth not available:', e);
-  }
-}
+import Ionicons from "@react-native-vector-icons/ionicons";
+import { ALL_COUNTRIES, getFlagUrl, Country } from '../utils/countries';
 
 const BG = '#fef3e7';
 
-type LoginTab = 'phone' | 'credentials';
 
 export default function LoginScreen() {
-  const { login, loginWithCredentials, quickLogin, signupWithEmail, forgotPassword, resetPassword } = useAuth();
+  const { loginWithCredentials, quickLogin, signupWithEmail, forgotPassword, resetPassword } = useAuth();
   const router = useRouter();
-  // June 2026: default to the EMAIL/PASSWORD tab. Firebase Phone Auth is now
-  // optional (legacy) — too many SMS bugs in Africa/India + reCAPTCHA issues.
-  // Users can still toggle to the phone tab if they prefer.
-  const [activeTab, setActiveTab] = useState<LoginTab>('credentials');
   // Sub-mode of the credentials tab: 'login' | 'signup' | 'forgot' | 'reset'
   const [credMode, setCredMode] = useState<'login' | 'signup' | 'forgot' | 'reset'>('login');
   // Signup-only fields
@@ -73,56 +38,8 @@ export default function LoginScreen() {
   const [resetNewPassword, setResetNewPassword] = useState('');
   const [credInfo, setCredInfo] = useState<string>('');
 
-  // Phone login state
-  const [localNumber, setLocalNumber] = useState('');
   const [selectedCountry, setSelectedCountry] = useState<Country>(ALL_COUNTRIES[0]);
-  const [otp, setOtp] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [showCountryPicker, setShowCountryPicker] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [verifiedNeedsRetry, setVerifiedNeedsRetry] = useState(false);
-
-  // Holds the Firebase confirmation object returned by signInWithPhoneNumber.
-  // We .confirm(otp) on it to complete sign-in.
-  const confirmationRef = useRef<ConfirmationResult | null>(null);
-
-  // True while we're in the middle of a phone-auth flow (between sending the
-  // SMS and either the user typing the code or Firebase auto-retrieving it).
-  // Used by the onAuthStateChanged listener below to decide whether a silent
-  // auto-sign-in (instant verification on Android) should immediately push the
-  // user to the backend login step.
-  const phoneFlowActiveRef = useRef<boolean>(false);
-
-  // CRITICAL FIX (June 2026): On Android, Firebase auto-verifies the SMS via
-  // the SMS Retriever API and silently signs the user in BEFORE they type the
-  // code. The manual `confirm(otp)` then fails with `code-expired` because
-  // the verificationId was already consumed internally.
-  //
-  // We listen to onAuthStateChanged here and, if a phone-auth flow is active
-  // when a user becomes signed in, we proceed directly to the backend login
-  // instead of waiting for the manual code entry.
-  useEffect(() => {
-    if (!nativeAuth) return;
-    let unsubscribe: (() => void) | null = null;
-    try {
-      unsubscribe = nativeAuth().onAuthStateChanged((fbUser: any) => {
-        if (fbUser && phoneFlowActiveRef.current) {
-          console.log('[Firebase Native] auto-sign-in detected, completing login', fbUser.uid);
-          phoneFlowActiveRef.current = false;
-          // Clear the manual confirmation -- it would now fail with code-expired
-          confirmationRef.current = null;
-          setOtp('');
-          // Proceed to backend login
-          attemptBackendLogin();
-        }
-      });
-    } catch (e) {
-      console.warn('onAuthStateChanged setup failed', e);
-    }
-    return () => { try { unsubscribe?.(); } catch {} };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // QUICK LOGIN — returning user enters a 4-digit PIN, no SMS at all.
   // Used ONLY after at least one successful Firebase sign-in on this device.
@@ -149,10 +66,7 @@ export default function LoginScreen() {
             setSavedUserId(uid);
             setSavedUserName(name || '');
             const cc = ALL_COUNTRIES.find(c => phone.startsWith('+' + c.code));
-            if (cc) {
-              setSelectedCountry(cc);
-              setLocalNumber(phone.replace('+' + cc.code, ''));
-            }
+            if (cc) setSelectedCountry(cc);
           }
         }
       } catch (e) {
@@ -199,181 +113,11 @@ export default function LoginScreen() {
 
   const showQuickLogin = savedPhone && savedUserId && !showFullLogin;
 
-  // Track keyboard height (used for the country picker modal)
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-
-    const showSub: EmitterSubscription = Keyboard.addListener(showEvent, (e) => {
-      setKeyboardHeight(e.endCoordinates.height);
-    });
-    const hideSub: EmitterSubscription = Keyboard.addListener(hideEvent, () => {
-      setKeyboardHeight(0);
-    });
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
-
   // Credential login state
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [credError, setCredError] = useState('');
-  const [loginError, setLoginError] = useState('');
-
-  const fullPhoneNumber = '+' + selectedCountry.code + localNumber.replace(/^0+/, '');
-
-  // Translate a Firebase auth error code into a friendly French message.
-  const friendlyFirebaseError = (err: any): string => {
-    const code = (err?.code || '').toString();
-    const msg = (err?.message || '').toString();
-    if (code.includes('too-many-requests') || msg.toLowerCase().includes('too-many')) {
-      return "Trop d'essais consécutifs. Attendez 60 secondes et réessayez — vous n'êtes pas bloqué.";
-    }
-    if (code.includes('invalid-phone-number')) {
-      return 'Numéro de téléphone invalide. Vérifiez l\'indicatif et le num\u00e9ro.';
-    }
-    if (code.includes('quota-exceeded')) {
-      return 'Quota SMS dépassé pour aujourd\'hui. Réessayez demain.';
-    }
-    if (code.includes('network')) {
-      return 'Erreur réseau. Vérifiez votre connexion 4G/WiFi.';
-    }
-    if (code.includes('app-not-authorized') || code.includes('missing-client-identifier')) {
-      return 'Configuration Firebase manquante. Une nouvelle version de l\'app est requise.';
-    }
-    return msg || 'Erreur lors de la vérification.';
-  };
-
-  // Attempt backend login with retry — keeps Firebase verification intact on failure
-  const attemptBackendLogin = async () => {
-    setLoading(true);
-    setLoginError('');
-    setVerifiedNeedsRetry(false);
-    try {
-      await login(fullPhoneNumber, 'firebase-verified');
-      // AuthContext will navigate to dashboard
-    } catch (error: any) {
-      console.error('Backend login error:', error);
-      setLoginError(
-        (error.message || 'Connexion serveur instable.') +
-        ' Cliquez sur "Réessayer" — votre vérification reste valide.'
-      );
-      setVerifiedNeedsRetry(true);
-      setLoading(false);
-    }
-  };
-
-  const handleSendOTP = async () => {
-    if (localNumber.length < 6) {
-      setLoginError('Veuillez entrer un numéro valide');
-      return;
-    }
-    if (!nativeAuth) {
-      setLoginError(
-        "Module d'authentification non disponible. Vous utilisez une ancienne version de l'app — une mise à jour est requise."
-      );
-      return;
-    }
-    setLoginError('');
-    setOtp('');
-    setOtpSent(false);
-    setVerifiedNeedsRetry(false);
-    setLoading(true);
-
-    try {
-      console.log('[Firebase Native] signInWithPhoneNumber', fullPhoneNumber);
-      phoneFlowActiveRef.current = true;
-      const confirmation = await nativeAuth().signInWithPhoneNumber(fullPhoneNumber);
-      confirmationRef.current = confirmation;
-      // If Firebase already auto-signed-in (instant verification on Android),
-      // currentUser will be set and the listener already kicked the flow.
-      const cu = nativeAuth().currentUser;
-      if (cu && phoneFlowActiveRef.current === false) {
-        // Listener already handled — nothing to do.
-        return;
-      }
-      setOtpSent(true);
-      setLoading(false);
-    } catch (error: any) {
-      phoneFlowActiveRef.current = false;
-      console.error('[Firebase Native] signInWithPhoneNumber error', error);
-      setLoading(false);
-      setLoginError(friendlyFirebaseError(error));
-    }
-  };
-
-  const handleVerifyOTP = async () => {
-    if (otp.length < 4) {
-      setLoginError('Entrez le code reçu par SMS');
-      return;
-    }
-    const conf = confirmationRef.current;
-    if (!conf) {
-      // No confirmation object — but maybe auto-sign-in already happened.
-      // Check Firebase currentUser before failing.
-      try {
-        const cu = nativeAuth().currentUser;
-        if (cu) {
-          phoneFlowActiveRef.current = false;
-          await attemptBackendLogin();
-          return;
-        }
-      } catch {}
-      setLoginError('Session expirée. Renvoyez le code SMS.');
-      setOtpSent(false);
-      return;
-    }
-    setLoading(true);
-    setLoginError('');
-    try {
-      await conf.confirm(otp);
-      phoneFlowActiveRef.current = false;
-      // Firebase succeeded — now hit the backend
-      await attemptBackendLogin();
-    } catch (error: any) {
-      console.error('[Firebase Native] confirm error', error);
-      const code = (error?.code || '').toString();
-      // CRITICAL: if confirm fails with code-expired but Firebase already
-      // has a currentUser, that means SMS Retriever API auto-verified silently
-      // and consumed our verificationId. In that case we are actually signed
-      // in — proceed to the backend login instead of asking the user to
-      // restart the flow.
-      try {
-        const cu = nativeAuth().currentUser;
-        if (cu && (code.includes('session-expired') || code.includes('code-expired') || code.includes('invalid-verification-id'))) {
-          console.log('[Firebase Native] confirm failed BUT user already signed in (auto-retrieval) -> continuing', cu.uid);
-          phoneFlowActiveRef.current = false;
-          await attemptBackendLogin();
-          return;
-        }
-      } catch {}
-      if (code.includes('invalid-verification-code') || code.includes('invalid-code')) {
-        setLoginError('Code incorrect. Vérifiez et réessayez.');
-      } else if (code.includes('session-expired') || code.includes('code-expired')) {
-        setLoginError('Code expiré. Renvoi automatique du SMS...');
-        setOtp('');
-        setOtpSent(false);
-        setTimeout(() => { handleSendOTP(); }, 600);
-      } else {
-        setLoginError(friendlyFirebaseError(error));
-      }
-      setLoading(false);
-    }
-  };
-
-  const handleResetPhone = () => {
-    confirmationRef.current = null;
-    setLoading(false);
-    setOtpSent(false);
-    setOtp('');
-    setLoginError('');
-    setVerifiedNeedsRetry(false);
-  };
 
   const handleCredentialLogin = async () => {
     setCredError('');
@@ -397,7 +141,7 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={BG} />
+      <StatusBar barStyle="dark-content" />
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -485,85 +229,7 @@ export default function LoginScreen() {
             </ScrollView>
           </View>
 
-          <View style={styles.tabContainer}>
-            <TouchableOpacity style={[styles.tab, activeTab === 'phone' && styles.tabActive]} onPress={() => setActiveTab('phone')}>
-              <Ionicons name="call" size={18} color={activeTab === 'phone' ? '#2563eb' : '#94a3b8'} />
-              <Text style={[styles.tabText, activeTab === 'phone' && styles.tabTextActive]}>Connexion Téléphone</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.tab, activeTab === 'credentials' && styles.tabActive]} onPress={() => setActiveTab('credentials')}>
-              <Ionicons name="mail" size={18} color={activeTab === 'credentials' ? '#2563eb' : '#94a3b8'} />
-              <Text style={[styles.tabText, activeTab === 'credentials' && styles.tabTextActive]}>Connexion Mail</Text>
-            </TouchableOpacity>
-          </View>
-
-          {activeTab === 'phone' && (
-            <View style={styles.form}>
-              <Text style={styles.label}>{i18n.t('phoneNumber')}</Text>
-              <View style={styles.phoneRow}>
-                <TouchableOpacity style={styles.countryButton} onPress={() => setShowCountryPicker(true)} disabled={otpSent}>
-                  <Image source={{ uri: getFlagUrl(selectedCountry.iso) }} style={styles.countryFlagImg} />
-                  <Text style={styles.countryCode}>+{selectedCountry.code}</Text>
-                  <Ionicons name="chevron-down" size={14} color="#64748b" />
-                </TouchableOpacity>
-                <TextInput
-                  style={styles.phoneInput}
-                  placeholder="Numéro local"
-                  placeholderTextColor="#94a3b8"
-                  value={localNumber}
-                  onChangeText={setLocalNumber}
-                  keyboardType="phone-pad"
-                  maxLength={12}
-                  editable={!otpSent}
-                  autoFocus
-                />
-              </View>
-              {localNumber.length > 3 && (
-                <Text style={styles.previewNumber}>{fullPhoneNumber}</Text>
-              )}
-              {loginError ? (
-                <View style={{ backgroundColor: '#fee2e2', borderRadius: 10, padding: 12, marginBottom: 8 }}>
-                  <Text style={{ color: '#dc2626', fontSize: 14, textAlign: 'center' }}>{loginError}</Text>
-                </View>
-              ) : null}
-              {!otpSent && (
-                <TouchableOpacity style={[styles.button, loading && styles.buttonDisabled]} onPress={handleSendOTP} disabled={loading}>
-                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{i18n.t('sendOTP')}</Text>}
-                </TouchableOpacity>
-              )}
-
-              {otpSent && (
-                <View style={{ marginTop: 16 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12, backgroundColor: '#eff6ff', padding: 10, borderRadius: 10 }}>
-                    <Ionicons name="checkmark-circle" size={20} color="#2563eb" />
-                    <Text style={{ color: '#2563eb', fontSize: 13, flex: 1 }}>SMS envoyé au {fullPhoneNumber}</Text>
-                  </View>
-                  <TextInput
-                    style={styles.otpInput}
-                    placeholder="------"
-                    placeholderTextColor="#d1d5db"
-                    value={otp}
-                    onChangeText={(t) => { setOtp(t.replace(/\D/g, '').slice(0, 6)); setLoginError(''); }}
-                    keyboardType="number-pad"
-                    maxLength={6}
-                    autoFocus
-                  />
-                  <TouchableOpacity style={[styles.button, { marginTop: 12 }, loading && styles.buttonDisabled]} onPress={verifiedNeedsRetry ? attemptBackendLogin : handleVerifyOTP} disabled={loading}>
-                    {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{verifiedNeedsRetry ? 'Réessayer la connexion' : 'Vérifier le code'}</Text>}
-                  </TouchableOpacity>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
-                    <TouchableOpacity onPress={() => { setOtpSent(false); setOtp(''); handleSendOTP(); }} style={{ padding: 8 }}>
-                      <Text style={{ color: '#2563eb', fontSize: 13, fontWeight: '600' }}>Renvoyer le code</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={handleResetPhone} style={{ padding: 8 }}>
-                      <Text style={{ color: '#64748b', fontSize: 13 }}>Changer de numéro</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-            </View>
-          )}
-
-          {activeTab === 'credentials' && credMode === 'login' && (
+          {credMode === 'login' && (
             <View style={styles.form}>
               <View style={styles.credInfoBox}>
                 <Ionicons name="information-circle" size={20} color="#2563eb" />
@@ -617,7 +283,7 @@ export default function LoginScreen() {
             </View>
           )}
 
-          {activeTab === 'credentials' && credMode === 'signup' && (
+          {credMode === 'signup' && (
             <View style={styles.form}>
               <View style={styles.credInfoBox}>
                 <Ionicons name="person-add" size={20} color="#2563eb" />
@@ -659,7 +325,7 @@ export default function LoginScreen() {
             </View>
           )}
 
-          {activeTab === 'credentials' && credMode === 'forgot' && (
+          {credMode === 'forgot' && (
             <View style={styles.form}>
               <View style={styles.credInfoBox}>
                 <Ionicons name="key" size={20} color="#2563eb" />
@@ -693,7 +359,7 @@ export default function LoginScreen() {
             </View>
           )}
 
-          {activeTab === 'credentials' && credMode === 'reset' && (
+          {credMode === 'reset' && (
             <View style={styles.form}>
               <View style={styles.credInfoBox}>
                 <Ionicons name="lock-closed" size={20} color="#2563eb" />
@@ -744,81 +410,6 @@ export default function LoginScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
-
-      {/* Country Picker Modal */}
-      <Modal visible={showCountryPicker} animationType="slide" transparent onRequestClose={() => { setShowCountryPicker(false); setSearchQuery(''); }}>
-        <View style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.modalContent,
-              { maxHeight: '85%', paddingBottom: keyboardHeight > 0 ? keyboardHeight : 0 },
-            ]}
-          >
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Choisir le pays</Text>
-              <TouchableOpacity onPress={() => { setShowCountryPicker(false); setSearchQuery(''); Keyboard.dismiss(); }}>
-                <Ionicons name="close" size={28} color="#64748b" />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.searchBar}>
-              <Ionicons name="search" size={20} color="#94a3b8" />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Rechercher un pays ou indicatif..."
-                placeholderTextColor="#94a3b8"
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                autoCorrect={false}
-                returnKeyType="search"
-              />
-              {searchQuery.length > 0 && (
-                <TouchableOpacity onPress={() => setSearchQuery('')}>
-                  <Ionicons name="close-circle" size={20} color="#94a3b8" />
-                </TouchableOpacity>
-              )}
-            </View>
-            <ScrollView style={styles.countryList} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ paddingBottom: 12 }}>
-              {searchCountries(searchQuery).map((country, index) => (
-                <TouchableOpacity
-                  key={`${country.iso}-${index}`}
-                  style={[
-                    styles.countryItem,
-                    selectedCountry.iso === country.iso && selectedCountry.code === country.code && styles.countryItemSelected,
-                  ]}
-                  onPress={() => {
-                    setSelectedCountry(country);
-                    setShowCountryPicker(false);
-                    setSearchQuery('');
-                    Keyboard.dismiss();
-                  }}
-                >
-                  <Image source={{ uri: getFlagUrl(country.iso) }} style={styles.countryItemFlagImg} />
-                  <View style={{ flex: 1 }}>
-                    <Text
-                      style={[
-                        styles.countryItemName,
-                        selectedCountry.iso === country.iso && selectedCountry.code === country.code && styles.countryItemNameSelected,
-                      ]}
-                    >
-                      {country.name}
-                    </Text>
-                    <Text style={styles.countryItemCode}>+{country.code}</Text>
-                  </View>
-                  {selectedCountry.iso === country.iso && selectedCountry.code === country.code && (
-                    <Ionicons name="checkmark-circle" size={22} color="#2563eb" />
-                  )}
-                </TouchableOpacity>
-              ))}
-              {searchCountries(searchQuery).length === 0 && (
-                <View style={{ padding: 24, alignItems: 'center' }}>
-                  <Ionicons name="globe-outline" size={48} color="#cbd5e1" />
-                  <Text style={{ color: '#94a3b8', fontSize: 16, marginTop: 12 }}>Aucun resultat</Text>
-                </View>
-              )}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }

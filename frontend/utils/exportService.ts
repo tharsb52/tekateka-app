@@ -136,9 +136,12 @@ export async function exportSalesToExcel(sales: Sale[], currency: string, userNa
     }
 
     // Mobile: write file and share
-    const FileSystem = require('expo-file-system');
-    const fileUri = `${FileSystem.cacheDirectory}${filename}`;
-    await FileSystem.writeAsStringAsync(fileUri, csv, { encoding: FileSystem.EncodingType?.UTF8 || 'utf8' });
+    const { File, Paths } = require('expo-file-system');
+    const file = new File(Paths.cache, filename);
+    if (file.exists) file.delete();
+    file.create();
+    await file.write(csv);
+    const fileUri = file.uri;
 
     if (await Sharing.isAvailableAsync()) {
       await Sharing.shareAsync(fileUri, {

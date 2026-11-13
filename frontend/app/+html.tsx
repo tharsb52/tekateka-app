@@ -1,11 +1,13 @@
 // @ts-nocheck
-import { ScrollViewStyleReset } from "expo-router/html";
+import { ScrollViewStyleReset, useServerDocumentContext } from "expo-router/html";
 import type { PropsWithChildren } from "react";
 
 export default function Root({ children }: PropsWithChildren) {
+  const { htmlAttributes, bodyAttributes, headNodes, bodyNodes } = useServerDocumentContext();
   return (
-    <html lang="en" style={{ height: "100%" }}>
+    <html {...htmlAttributes} lang="en" style={{ height: "100%" }}>
       <head>
+        {headNodes}
         <meta charSet="utf-8" />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
         <meta
@@ -29,6 +31,7 @@ export default function Root({ children }: PropsWithChildren) {
         />
       </head>
       <body
+        {...bodyAttributes}
         style={{
           margin: 0,
           height: "100%",
@@ -38,6 +41,7 @@ export default function Root({ children }: PropsWithChildren) {
         }}
       >
         {children}
+        {bodyNodes}
       </body>
     </html>
   );

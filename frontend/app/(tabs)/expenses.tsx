@@ -7,7 +7,7 @@ import {
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import i18n from '../../utils/i18n';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from "@react-native-vector-icons/ionicons";
 import { formatCurrency, convertCurrency } from '../../utils/currencies';
 import { ExpenseCategoryType } from '../../types';
 import { format } from 'date-fns';
@@ -113,7 +113,7 @@ export default function ExpensesScreen() {
           <Text style={styles.title}>{i18n.t('expenses')}</Text>
           <Text style={styles.totalText}>{formatCurrency(totalExpenses, currency)}</Text>
         </View>
-        <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
+        <TouchableOpacity testID="expenses-add-button" style={styles.addButton} onPress={openAddModal}>
           <Ionicons name="add" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
@@ -238,7 +238,7 @@ export default function ExpensesScreen() {
               <TouchableOpacity style={styles.cancelButton} onPress={() => setModalVisible(false)}>
                 <Text style={styles.cancelButtonText}>{i18n.t('cancel')}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+              <TouchableOpacity testID="expenses-save-button" style={styles.saveButton} onPress={handleSave}>
                 <Text style={styles.saveButtonText}>{i18n.t('save')}</Text>
               </TouchableOpacity>
             </View>

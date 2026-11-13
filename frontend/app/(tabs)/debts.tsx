@@ -17,7 +17,7 @@ import CalendarPicker from '../../components/CalendarPicker';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import i18n from '../../utils/i18n';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from "@react-native-vector-icons/ionicons";
 import { formatCurrency, convertCurrency } from '../../utils/currencies';
 import { format } from 'date-fns';
 import { formatLocal } from '../../utils/dateUtils';
@@ -172,7 +172,7 @@ export default function DebtsScreen() {
             </Text>
           </View>
         </View>
-        <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
+        <TouchableOpacity testID="debts-add-button" style={styles.addButton} onPress={openAddModal}>
           <Ionicons name="add" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
@@ -367,7 +367,7 @@ export default function DebtsScreen() {
               >
                 <Text style={styles.cancelButtonText}>{i18n.t('cancel')}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+              <TouchableOpacity testID="debts-save-button" style={styles.saveButton} onPress={handleSave}>
                 <Text style={styles.saveButtonText}>{i18n.t('save')}</Text>
               </TouchableOpacity>
             </View>

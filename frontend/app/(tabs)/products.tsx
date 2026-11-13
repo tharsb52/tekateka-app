@@ -7,7 +7,7 @@ import {
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import i18n from '../../utils/i18n';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from "@react-native-vector-icons/ionicons";
 import { formatCurrency, convertCurrency } from '../../utils/currencies';
 import { CategoryType } from '../../types';
 import { cardShadow } from '../../utils/shadows';
@@ -287,7 +287,7 @@ export default function ProductsScreen() {
           <Text style={styles.title}>{i18n.t('products')}</Text>
           <Text style={styles.totalText}>Inventaire: {formatCurrency(totalInventoryValue, currency)}</Text>
         </View>
-        <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
+        <TouchableOpacity testID="products-add-button" style={styles.addButton} onPress={openAddModal}>
           <Ionicons name="add" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
@@ -373,6 +373,7 @@ export default function ProductsScreen() {
             const effectivePrice = getEffectivePrice(product);
             const margin = getMargin(product);
             const totalCost = (product.purchasePrice || 0) * product.stock;
+            const pc = (product as any).currency || currency;
             return (
               <TouchableOpacity key={product.id} style={styles.productCard} onPress={() => openEditModal(product)} activeOpacity={0.7}>
                 {/* Row 1: Table-like columns */}
@@ -391,24 +392,24 @@ export default function ProductsScreen() {
                       ) : null}
                     </View>
                   </View>
-                  <Text style={[styles.cellText, { flex: 1.5 }]}>{formatCurrency(product.purchasePrice || 0, currency)}</Text>
+                  <Text style={[styles.cellText, { flex: 1.5 }]}>{formatCurrency(product.purchasePrice || 0, pc)}</Text>
                   <Text style={[styles.cellText, { flex: 1, textAlign: 'center' }]}>{product.stock}</Text>
-                  <Text style={[styles.cellTextBold, { flex: 1.5, textAlign: 'right' }]}>{formatCurrency(totalCost, currency)}</Text>
+                  <Text style={[styles.cellTextBold, { flex: 1.5, textAlign: 'right' }]}>{formatCurrency(totalCost, pc)}</Text>
                 </View>
                 {/* Row 2: Prix vente + marge + stock alert */}
                 <View style={styles.priceRow}>
                   <View style={styles.priceTag}>
                     <Ionicons name="pricetag" size={12} color="#2563eb" />
-                    <Text style={styles.salePriceText}>Vente: {formatCurrency(product.salePrice || 0, currency)}</Text>
+                    <Text style={styles.salePriceText}>Vente: {formatCurrency(product.salePrice || 0, pc)}</Text>
                   </View>
                   {product.promotionPrice && product.promotionPrice > 0 ? (
                     <View style={styles.promoBadge}>
-                      <Text style={styles.promoText}>Promo: {formatCurrency(product.promotionPrice, currency)}</Text>
+                      <Text style={styles.promoText}>Promo: {formatCurrency(product.promotionPrice, pc)}</Text>
                     </View>
                   ) : null}
                   {margin > 0 ? (
                     <View style={styles.marginBadge}>
-                      <Text style={styles.marginText}>+{formatCurrency(margin, currency)}/u</Text>
+                      <Text style={styles.marginText}>+{formatCurrency(margin, pc)}/u</Text>
                     </View>
                   ) : null}
                   {/* Stock-state badge. Recomputed from live product fields so
@@ -493,6 +494,7 @@ export default function ProductsScreen() {
               {/* Unit picker (predefined + 'autre' free text) */}
               <Text style={styles.label}>Unité de vente</Text>
               <TouchableOpacity
+                testID="product-unit-picker-trigger"
                 style={[styles.input, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
                 onPress={() => { Keyboard.dismiss(); setUnitPickerVisible(true); }}
               >
@@ -530,7 +532,7 @@ export default function ProductsScreen() {
               {totalCostPreview > 0 && (
                 <View style={styles.totalPreview}>
                   <Text style={styles.totalPreviewLabel}>Montant total (achat)</Text>
-                  <Text style={styles.totalPreviewValue}>{formatCurrency(totalCostPreview, currency)}</Text>
+                  <Text style={styles.totalPreviewValue}>{formatCurrency(totalCostPreview, formCurrency)}</Text>
                 </View>
               )}
 
@@ -574,7 +576,7 @@ export default function ProductsScreen() {
               <TouchableOpacity style={styles.cancelButton} onPress={() => setModalVisible(false)}>
                 <Text style={styles.cancelButtonText}>{i18n.t('cancel')}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+              <TouchableOpacity testID="product-save-button" style={styles.saveButton} onPress={handleSave}>
                 <Text style={styles.saveButtonText}>{i18n.t('save')}</Text>
               </TouchableOpacity>
             </View>
@@ -755,7 +757,7 @@ const styles = StyleSheet.create({
   stockBadgeLowText: { fontSize: 11, color: '#92400e', fontWeight: '700' },
   helpText: { fontSize: 12, color: '#64748b', marginTop: 4, fontStyle: 'italic' },
   // Unit picker bottom sheet
-  pickerBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
+  pickerBackdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.5)' },
   pickerSheet: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 16, paddingBottom: 32 },
   pickerHandle: { width: 36, height: 4, backgroundColor: '#cbd5e1', borderRadius: 2, alignSelf: 'center', marginBottom: 8 },
   pickerTitle: { fontSize: 16, fontWeight: '700', color: '#1e293b', marginBottom: 8, textAlign: 'center' },

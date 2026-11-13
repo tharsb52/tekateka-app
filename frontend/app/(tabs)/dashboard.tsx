@@ -15,7 +15,7 @@ import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'expo-router';
 import i18n from '../../utils/i18n';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from "@react-native-vector-icons/ionicons";
 import { formatCurrency, convertCurrency } from '../../utils/currencies';
 import { getUrgencyLevel, getUrgencyColor, shouldShowInAppAlert, markAlertShown } from '../../services/notificationService';
 import { getCountryFromPhone } from '../../utils/countryFlags';

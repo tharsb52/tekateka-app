@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from "@react-native-vector-icons/ionicons";
 import { SUBSCRIPTION_PRICES, SubscriptionPlan } from '../types/subscription';
 import { formatCurrency, convertCurrency } from '../utils/currencies';
 import { processPayment, getPaymentProviderInfo } from '../services/paymentService';
@@ -29,7 +29,7 @@ const BG = '#fef3e7';
 
 export default function SubscriptionScreen() {
   const router = useRouter();
-  const { user, subscribe, isSubscriptionActive, getSubscriptionDaysRemaining, getDaysRemaining, showExpiryReminder, hasAccess, logout } = useAuth();
+  const { user, subscribe, isSubscriptionActive, getSubscriptionDaysRemaining, getDaysRemaining, showExpiryReminder, hasAccess, logout, refreshUser } = useAuth();
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan>('yearly');
   const [loading, setLoading] = useState(false);
 

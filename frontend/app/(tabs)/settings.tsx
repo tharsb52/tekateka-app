@@ -18,10 +18,9 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'expo-router';
 import i18n from '../../utils/i18n';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from "@react-native-vector-icons/ionicons";
 import { CURRENCIES } from '../../utils/currencies';
 import { formatLocal } from '../../utils/dateUtils';
-import { getOTPProviderInfo } from '../../services/otpService';
 import { getPaymentProviderInfo } from '../../services/paymentService';
 import AppHeader from '../../components/AppHeader';
 import SubscriptionStatusCard from '../../components/SubscriptionStatusCard';
@@ -29,18 +28,6 @@ import PinScreen from '../../components/PinScreen';
 import ErrorBoundary from '../../components/ErrorBoundary';
 import { authAPI } from '../../services/apiService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-// Native Firebase Auth — used only to delete the user's OWN credential
-// during account deletion (GDPR). require()'d lazily so the web bundle
-// keeps compiling without the native module.
-let nativeFirebaseAuth: any = null;
-if (Platform.OS !== 'web') {
-  try {
-    nativeFirebaseAuth = require('@react-native-firebase/auth').default;
-  } catch (e) {
-    // OK — only matters for the delete-account flow.
-  }
-}
 
 // Lazy-load expo-image-picker to avoid crash if native module fails
 let ImagePicker: any = null;
@@ -100,14 +87,7 @@ function SettingsScreenInner() {
   const [showCredPassword, setShowCredPassword] = useState(false);
 
   // Safe defaults in case provider services fail to load (prevents crash)
-  let otpInfo: any = { name: 'Firebase Phone Auth', isMock: false };
   let paymentInfo: any = { name: 'Mode Test', isMock: true, provider: 'mock' };
-  try {
-    const o = getOTPProviderInfo();
-    if (o) otpInfo = o;
-  } catch (e) {
-    console.warn('getOTPProviderInfo failed', e);
-  }
   try {
     const p = getPaymentProviderInfo();
     if (p) paymentInfo = p;
@@ -140,8 +120,7 @@ function SettingsScreenInner() {
   // 1) User taps "Supprimer mon compte"  → confirmation modal opens.
   // 2) User must type SUPPRIMER (irreversible action confirmation).
   // 3) Backend purges all user-owned MongoDB documents.
-  // 4) Client deletes the Firebase Auth user (if signed in via phone).
-  // 5) Local AsyncStorage is wiped, then logout() returns to login screen.
+  // 4) Local AsyncStorage is wiped, then logout() returns to login screen.
   // ====================================================================
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
@@ -159,9 +138,7 @@ function SettingsScreenInner() {
     setDeleting(true);
     setDeleteResult(null);
     try {
-      // 1) Backend purge — must succeed BEFORE we drop the Firebase
-      //    credential, otherwise the user would lose the only thing that
-      //    lets them re-authenticate to finish the deletion.
+      // 1) Backend purge — must succeed BEFORE we wipe local data.
       const res = await authAPI.deleteAccount();
       const counts = res?.deleted_counts || {};
       const totalDocs = Object.values(counts).reduce(
@@ -169,23 +146,7 @@ function SettingsScreenInner() {
         0,
       );
 
-      // 2) Firebase Auth user — best-effort. If it fails (eg. requires
-      //    recent re-auth) we still continue with local cleanup because
-      //    the backend has already wiped everything.
-      if (nativeFirebaseAuth) {
-        try {
-          const fbUser = nativeFirebaseAuth().currentUser;
-          if (fbUser) {
-            await fbUser.delete();
-          }
-        } catch (fbErr: any) {
-          console.warn('[GDPR] Firebase user.delete() failed:', fbErr?.code, fbErr?.message);
-          // Carry on — backend data is gone, Firebase credential will
-          // age out / can be removed manually by the user re-signing in.
-        }
-      }
-
-      // 3) Wipe every TekaTeka-prefixed key in AsyncStorage so a fresh
+      // 2) Wipe every TekaTeka-prefixed key in AsyncStorage so a fresh
       //    install on the same device starts truly empty.
       try {
         const allKeys = await AsyncStorage.getAllKeys();
@@ -868,7 +829,7 @@ function SettingsScreenInner() {
         visible={deleteModalVisible}
         animationType="fade"
         transparent
-        onRequestClose={() => !deleting && setDeleteModalVisible(false)}
+        onRequestClose={() => { if (!deleting) setDeleteModalVisible(false); }}
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { paddingHorizontal: 22, paddingVertical: 22, maxHeight: '90%' }]}>
@@ -883,7 +844,7 @@ function SettingsScreenInner() {
             </Text>
             <View style={{ backgroundColor: '#fef3c7', borderRadius: 10, padding: 12, marginTop: 14 }}>
               <Text style={{ fontSize: 12, color: '#78350f', fontWeight: '600' }}>
-                Conformité RGPD : votre numéro de téléphone est aussi supprimé de Firebase. Les données comptables liées à un éventuel rôle d'ambassadeur sont conservées séparément selon les obligations légales.
+                Conformité RGPD : toutes vos données personnelles sont effacées. Les données comptables liées à un éventuel rôle d'ambassadeur sont conservées séparément selon les obligations légales.
               </Text>
             </View>
             <Text style={{ fontSize: 13, fontWeight: '600', color: '#334155', marginTop: 18, marginBottom: 6 }}>Pour confirmer, tapez <Text style={{ color: '#dc2626', fontWeight: '800' }}>SUPPRIMER</Text> ci-dessous :</Text>

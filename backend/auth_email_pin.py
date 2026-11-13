@@ -70,7 +70,7 @@ load_dotenv()
 # ---------- DB & helpers ----------
 MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
 DB_NAME = os.getenv("DB_NAME", "tekateka_db")
-_client = AsyncIOMotorClient(MONGO_URL)
+_client = AsyncIOMotorClient(MONGO_URL, tz_aware=True)  # aware datetimes: avoids naive/aware TypeError in reset-code expiry/throttle
 db = _client[DB_NAME]
 
 # Use the SAME bcrypt configuration as the existing `data_api.py` so PINs and

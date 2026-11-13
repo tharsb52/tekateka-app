@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, ScrollView,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from "@react-native-vector-icons/ionicons";
 import { CURRENCIES, getCurrencySymbol } from '../utils/currencies';
 
 interface CurrencyAmountInputProps {
@@ -55,7 +55,7 @@ export default function CurrencyAmountInput({
       </View>
 
       {/* Preview formatted amount */}
-      {value && parseFloat(value.replace(',', '.')) > 0 && (
+      {!!value && parseFloat(value.replace(',', '.')) > 0 && (
         <Text style={styles.previewText}>
           {formatPreview(value, currency)}
         </Text>

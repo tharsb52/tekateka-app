@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import {
   TouchableOpacity, Text, StyleSheet, View, ActivityIndicator, Platform,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from "@react-native-vector-icons/ionicons";
 import { useVoiceInput } from '../hooks/useVoiceInput';
 
 interface VoiceInputButtonProps {

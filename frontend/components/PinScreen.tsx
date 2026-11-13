@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Image, Animated, Platform, StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from "@react-native-vector-icons/ionicons";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const BG = '#fef3e7';
@@ -150,7 +150,7 @@ export default function PinScreen({ userId, mode, onSuccess, onLogout, onCancel 
   if (successMsg) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor={BG} />
+        <StatusBar barStyle="dark-content" />
         <View style={styles.successCircle}>
           <Ionicons name="checkmark-circle" size={64} color="#10b981" />
         </View>
@@ -161,7 +161,7 @@ export default function PinScreen({ userId, mode, onSuccess, onLogout, onCancel 
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={BG} />
+      <StatusBar barStyle="dark-content" />
       {/* Logo & Title */}
       <Image source={require('../assets/images/tk-logo-transparent.png')} style={styles.logo} />
       <Text style={styles.appName}>TekaTeka</Text>

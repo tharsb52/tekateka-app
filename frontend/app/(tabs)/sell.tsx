@@ -7,7 +7,7 @@ import {
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import i18n from '../../utils/i18n';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from "@react-native-vector-icons/ionicons";
 import { formatCurrency, CURRENCIES, convertCurrency } from '../../utils/currencies';
 import { format, isToday, isYesterday, parseISO } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -342,7 +342,7 @@ export default function SellScreen() {
                       </View>
                     </ScrollView>
 
-                    <TouchableOpacity style={[styles.recordButton, { marginTop: 8 }]} onPress={async () => { await handleRecordSale(); setSelectedProduct(null); }}>
+                    <TouchableOpacity testID="sell-record-button" style={[styles.recordButton, { marginTop: 8 }]} onPress={async () => { await handleRecordSale(); setSelectedProduct(null); }}>
                       <Ionicons name="checkmark-circle" size={24} color="#fff" />
                       <Text style={styles.recordButtonText}>{i18n.t('recordSale')}</Text>
                     </TouchableOpacity>
@@ -379,7 +379,7 @@ export default function SellScreen() {
                     onChangeText={setEditQty} keyboardType="number-pad" />
                   <VoiceInputButton onTranscript={(t) => { const n = t.replace(/[^0-9]/g, ''); if (n) setEditQty(n); }} />
                 </View>
-                {editQty && (
+                {!!editQty && (
                   <Text style={styles.editTotal}>Nouveau total: {formatCurrency(editingSale.price * (parseInt(editQty) || 0), editingSale.currency)}</Text>
                 )}
               </ScrollView>

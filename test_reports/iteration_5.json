@@ -1,0 +1,58 @@
+{
+  "summary": "SDK 58 upgrade + Firebase removal regression. Backend: 54/54 pytest pass (new test_email_pin_auth.py 15/15 after fix + 39 existing). Found & FIXED a CRITICAL backend bug: POST /api/auth/reset-password always returned 500 whenever a reset code existed, and a 2nd POST /api/auth/forgot-password within 60s returned 500 (TypeError naive vs aware datetime – Motor client not tz_aware). Frontend (390x844 web preview): app loads, login screen shows ONLY email/password + 'Créer un compte' + 'Mot de passe oublié ?' + ambassador link; Ionicons font loaded and icons render; signup -> dashboard (no PIN prompt shown on signup); login test@tekateka.com works; all tabs (Accueil/Vendre/Stock/Charges/Dettes/Plus=settings) navigate with no crash or console errors; forgot-password sends request and shows reset form; product add with EUR + kg unit (unit picker bottom sheet opens) -> edit -> currency EUR kept (verified in POST/PUT payloads/responses); sale, expense, debt recorded and reflected on dashboard; settings loads; delete-account modal opens & cancels (no DELETE call); subscription screen loads; ambassador screen opens. Found & FIXED 'Unexpected text node' error (empty string rendered in View) in CurrencyAmountInput (would be a crash risk on native). No deprecated packages (expo-av/barcode-scanner/background-fetch) and no SafeAreaView-from-react-native imports found.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/auth/reset-password + POST /api/auth/forgot-password (throttle)", "issue": "FIXED BY TESTER: 500 'TypeError: can't compare/subtract offset-naive and offset-aware datetimes'. Motor returns naive datetimes; code compared with datetime.now(timezone.utc). Password reset was completely broken. Fix: AsyncIOMotorClient(MONGO_URL, tz_aware=True) in auth_email_pin.py:73.", "priority": "CRITICAL"}
+    ],
+    "minor": [
+      {"endpoint": "auth_email_pin.py:71-72,82", "issue": "MONGO_URL/DB_NAME/RESET_CODE_PEPPER have hardcoded default fallbacks (os.getenv(..., default)); should fail fast. Default pepper 'tekateka_default_pepper_replace_me' is insecure if env missing."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Products list rows", "issue": "Row ACHAT/U, TOTAL, 'Vente:', Promo and margin use formatCurrency(value, userCurrency) on the product's raw native-currency value with no conversion: a 2 EUR product shows '$2,00'/'$20,00' while header 'Inventaire' correctly converts to $21,60. Reference: app/(tabs)/products.tsx:394,396,402,406,411", "testID": "N/A", "priority": "HIGH"},
+      {"component": "Add/Edit Product modal - 'Montant total (achat)'", "issue": "Preview uses user currency instead of formCurrency: shows '$20,00' while picker is €. Reference: app/(tabs)/products.tsx:533", "testID": "N/A", "priority": "MEDIUM"},
+      {"component": "Products list row layout", "issue": "ACHAT/U value ('$2,00') visually collides with the SKU badge/name column at 390px width", "testID": "N/A", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard (trial user)", "issues": ["Two redundant trial banners ('Essai gratuit 7 jours restants' card + '7 jours restants Passez a un abonnement' card)", "Typo: 'Passez a' should be 'Passez à'"]},
+      {"screen": "Login", "issues": ["Password eye toggle has no accessibilityLabel (innerText is raw icon glyph)"]}
+    ],
+    "react_native_issues": [
+      {"component": "CurrencyAmountInput", "issue": "FIXED BY TESTER: `{value && ...}` rendered empty string inside <View> -> 'Unexpected text node' error on web, 'Text strings must be rendered within <Text>' crash risk on native. Changed to `!!value &&`. Reference: components/CurrencyAmountInput.tsx:58"},
+      {"component": "Sell edit-sale modal", "issue": "FIXED BY TESTER: same pattern `{editQty && ...}` -> `!!editQty`. Reference: app/(tabs)/sell.tsx:382"},
+      {"component": "testID coverage", "issue": "Almost no testIDs across app (LoginScreen, tabs, settings, subscription, ambassador). Tester added only: products-add-button, product-save-button, product-unit-picker-trigger, expenses-add-button, expenses-save-button, debts-add-button, debts-save-button, sell-record-button."}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_email_pin_auth.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Products list: display each product row in its native currency (product.currency) or convert to user currency like the Inventaire total (products.tsx:394-411); also check sell.tsx product cards/modal for the same issue",
+    "Products modal: use formCurrency for 'Montant total (achat)' preview (products.tsx:533)",
+    "Remove hardcoded env defaults in auth_email_pin.py (MONGO_URL, DB_NAME, RESET_CODE_PEPPER)",
+    "Audit other `{stringVar && (...)}` patterns (e.g. subscription.tsx:296 user?.subscriptionEndDate) and use `!!`",
+    "Add testIDs to LoginScreen inputs/buttons, tab bar, settings rows, delete modal buttons",
+    "Purchases tab is hidden (href:null) with no UI entry point; deep-link reload of /purchases (and any route) redirects to /dashboard via app/index.tsx - confirm intended",
+    "Optional: split files >700 lines (dashboard.tsx 1332, settings.tsx 1169, products.tsx 770)"
+  ],
+  "critical_code_review_comments": [
+    "auth_email_pin.py: datetime handling now relies on tz_aware client; any future code reading password_reset_codes from another Motor client must also be tz-aware",
+    "Signup does not prompt PIN setup - user lands directly on dashboard (PIN is optional via Settings)",
+    "Expo log shows recurring web WARN: 'Expo Router could not load the layout ./_layout.tsx to read unstable_settings.anchor' (harmless on web)"
+  ],
+  "updated_files": [
+    "/app/backend/auth_email_pin.py (tz_aware=True on Motor client)",
+    "/app/frontend/components/CurrencyAmountInput.tsx (!!value)",
+    "/app/frontend/app/(tabs)/sell.tsx (!!editQty, testID sell-record-button)",
+    "/app/frontend/app/(tabs)/products.tsx (testIDs)",
+    "/app/frontend/app/(tabs)/expenses.tsx (testIDs)",
+    "/app/frontend/app/(tabs)/debts.tsx (testIDs)",
+    "/app/backend/tests/test_email_pin_auth.py (new)"
+  ],
+  "success_rate": {"backend": "100% (54/54) after fix; 87% (13/15) before fix", "frontend": "100% of requested flows pass; 2 currency display bugs"},
+  "seed_data_creation": "5 throwaway UI signup users test_ui_*@example.com + pytest users test_*@example.com; all deleted via DELETE /api/account/me with their own tokens. Main account test@tekateka.com untouched except a forgot-password reset code was requested (password unchanged, code expires in 10 min).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Login via email/password placeholders 'votre@email.com' / 'Mot de passe', button text 'Se connecter'. Signup: 'Créer un compte' -> placeholders 'Votre nom','votre@email.com','Mot de passe' -> 'Créer mon compte'. Tabs by text: Accueil, Vendre, Stock, Charges, Dettes, Plus. Product modal amount inputs have placeholder '0' (nth 0 purchase price, 1 qty, 2 sale price); currency picker opens by clicking '$' symbol then 'EUR'. Run backend: export EXPO_PUBLIC_BACKEND_URL from frontend/.env then pytest /app/backend/tests.",
+  "rca_of_issue": "reset-password/forgot-password 500: AsyncIOMotorClient default tz_aware=False returns naive datetime for created_at/expires_at stored as aware UTC; `row['expires_at'] < datetime.now(timezone.utc)` and `datetime.now(timezone.utc) - created_at` raise TypeError. Repro: POST forgot-password twice for an existing email (2nd = 500), or POST reset-password with any code after forgot-password (500). Mitigation applied: tz_aware=True."
+}

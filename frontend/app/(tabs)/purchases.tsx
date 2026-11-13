@@ -12,7 +12,7 @@ import {
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import i18n from '../../utils/i18n';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from "@react-native-vector-icons/ionicons";
 import { formatCurrency, convertCurrency } from '../../utils/currencies';
 import { format } from 'date-fns';
 import { formatLocal } from '../../utils/dateUtils';
