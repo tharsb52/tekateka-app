@@ -1,0 +1,64 @@
+{
+  "summary": "Retest after iteration 7 (iteration_7.json was never written; this file is iteration 8). Backend: 42/43 pytest pass (new test_iter8_phone_lock_admin_email.py + iter7 PIN/ambassador + subscription lock). POST /api/auth/phone-login returns 410 and no token, and the frontend has no phone-login path left. Admin set-email API works: duplicate email gives 400, then credential-login works with the new password and the old one is refused. The toggle-status guard on a PENDING ambassador (400) works. forgot-password twice only stores one code. CRITICAL REGRESSION FOUND AND FIXED: the admin HTML panel (/api/admin) had a JS syntax error, so the admin could not log in at all. A '\\n' inside the Python non-raw ADMIN_HTML string became a real newline inside a JS string literal (setUserEmail alert). I fixed it in admin_api.py, then the UI flow (log in, open user, 'Connexion par email', Enregistrer) worked end to end. Frontend: PIN login (Code PIN tab) and the quick card after logout ('Welcome back', quick PIN) work. In French mode, adding a product and recording a sale work (stock 10->9, sales +$5); I deleted both through the API afterwards. For expired@, the read-only lock works: lands on /subscription, 'Consulter mes données' shown, red banner on the dashboard, writes are blocked client-side. English mode is mostly good (stock tab, debts, chart labels 'Nov 13', 'Renew - $59.40', $20.00 decimals, the picker still shows 'Français', delete modal keeps SUPPRIMER and the button enables). Four French leftovers remain: '0 charges', 'Plan Annuel • N days left', subscription page '208 jours', and the dashboard 'Until <date>' part is dropped in English. I set the language back to Français (DB language='fr'). No deprecated Expo packages found.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "GET /api/admin (admin HTML panel)", "issue": "FIXED BY TESTER. Inline JS failed to parse ('Invalid or unexpected token', so doLogin/showUser were undefined) and the admin could not log in. Cause: alert('...'+j.email+'\\nMot de passe provisoire...') in the non-raw Python string ADMIN_HTML became a literal newline in the JS. Now escaped as '\\\\n'. I added a regression test (node --check on both admin panels).", "priority": "CRITICAL"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/admin/user/{user_id}/set-email", "issue": "A malformed user_id (e.g. 'not-an-id') returns 500. ObjectId(user_id) is not wrapped in try/except, and it should return 400/404."},
+      {"endpoint": "POST /api/auth/phone-login", "issue": "An empty body returns 422 (pydantic) instead of 410. No token is issued, so this is cosmetic. Dead code after the raise should be removed. The server.py brute-force middleware still counts phone-login calls against the per-IP login quota."},
+      {"endpoint": "server.py SecurityMiddleware", "issue": "The login limit is 5 credential-login attempts per 5 min per IP, keyed on the whole X-Forwarded-For string and kept in memory. Merchants behind a shared/NAT IP (cybercafé, carrier NAT) can be blocked by each other, and the counter is per worker."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "SubscriptionStatusCard (dashboard / settings header)", "issue": "In English, the '· Until 15 Jun 2027' part is dropped and only '208 days left' shows. RCA: trChildren joins the children into '208 jours restants · Jusqu'au 15 juin 2027'. The pattern '{0} jour{1} restant{2}' is anchored ^...$ with lazy (.+?), so {2} swallows 's · Jusqu'au ...', and the override output '{0} day{1} left' drops {2}. Reference: components/SubscriptionStatusCard.tsx:80-87, utils/translate.ts:22,47,104-114", "testID": "n/a", "priority": "MEDIUM"},
+      {"component": "Settings > Mon abonnement subtitle", "issue": "In English it shows 'Plan Annuel • 208 days left'. The pattern 'Plan {0} • {1} jours restants' matches, but the captured {0}='Annuel' is not translated (it should read 'Annual plan • 208 days left'). Reference: app/(tabs)/settings.tsx:338", "testID": "n/a", "priority": "MEDIUM"},
+      {"component": "Subscription page 'Expires in'", "issue": "Shows '208 jours' in English. There is no '{0} jours' / 'jours' key in en-auto.json. Reference: app/subscription.tsx:257", "testID": "n/a", "priority": "MEDIUM"},
+      {"component": "Dashboard Total Expenses card", "issue": "Shows '0 charges' in English; it should be '0 expenses'. There is no '{0} charges' entry. Reference: app/(tabs)/dashboard.tsx:503", "testID": "n/a", "priority": "LOW"},
+      {"component": "Read-only alert on web preview", "issue": "On web, saving a product as expired@ shows nothing: the modal stays open and only a console error appears. The request itself is correctly blocked. RNAlert.alert is a no-op in react-native-web, so all Alert.alert feedback (read-only, validation errors) is invisible in the web preview. Native should be fine.", "testID": "product-save-button", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Quick login card (EN)", "issues": ["'Welcome back !' keeps the French space before '!'"]},
+      {"screen": "Add product modal", "issues": ["Placeholders ('Ex: Coca Cola 50cl', '0', '5') render in dark text and look like real values. Set placeholderTextColor (e.g. #94a3b8) on these TextInputs."]},
+      {"screen": "Admin panel user list", "issues": ["The list shows only the phone column, so email-only users have a blank identifier. Add an email column/search so the admin can find merchants."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter8_phone_lock_admin_email.py",
+    "/app/backend/tests/test_pin_login_and_ambassador_signup.py",
+    "/app/backend/tests/test_subscription_lock.py",
+    "/app/test_reports/pytest/pytest_iter8.xml"
+  ],
+  "action_items": [
+    "Review the tester fix in admin_api.py (setUserEmail alert '\\\\n'). Use r\"\"\" for ADMIN_HTML or avoid escape sequences so this cannot happen again.",
+    "translate.ts: make the '{0} jour{1} restant{2}' pattern not swallow trailing text (e.g. use (s?) for {1}/{2}, or render the 'Jusqu'au <date>' part in its own <Text>).",
+    "Translate interpolated plan names: settings.tsx:338 should use tr('Annuel'|'Mensuel'|'Trimestriel'), or translate captured groups in translateCore. Use English word order 'Annual plan • N days left'.",
+    "Add en-auto.json keys for '{0} jours' (subscription.tsx:257) and '{0} charges' -> '{0} expenses' (dashboard.tsx:503).",
+    "admin set-email: wrap ObjectId(user_id) in try/except and return 400 'ID invalide'.",
+    "Remove the hardcoded ADMIN_PASSWORD fallbacks ('TekaTeka@Admin2025!' in admin_api.py:28, 'TekaTeka2025' in ambassador_api.py:888) and fail fast if the env var is missing.",
+    "SECURITY: the admin panels build innerHTML from merchant-controlled data (product names, debtorName, email) without escaping. That is stored XSS that can exfiltrate adminPass. Escape HTML in showUser and the lists.",
+    "Optional: show the read-only/validation messages with a web fallback (window.alert) when Platform.OS === 'web'."
+  ],
+  "critical_code_review_comments": [
+    "admin_api.py ADMIN_HTML is a non-raw triple-quoted Python string with inline JS, so any '\\n' or '\\'' in the JS is silently changed. This caused a full admin outage.",
+    "Stored XSS in the admin HTML panel: ${p.name}, ${dd.debtorName}, ${d.email} etc. are interpolated into innerHTML without escaping.",
+    "admin_set_user_email creates a new CryptContext on every call (reuse the shared pwd_context), does not revoke existing sessions, and has no audit log of admin email/password changes.",
+    "Files over 700 lines: ambassador_api.py (1378), data_api.py (825), settings.tsx (1173), products.tsx (781). Split them.",
+    "translate.ts runtime regex translation is fragile for multi-part Text children (see the RCA). Explicit keys would be more reliable for dynamic strings.",
+    "OTP verify endpoints (/api/otp/verify, /api/firebase-otp/verify) do not issue tokens, so there is no remaining phone-only token path."
+  ],
+  "updated_files": [
+    "/app/backend/admin_api.py (escaped \\n in the setUserEmail alert to fix the admin JS syntax error)",
+    "/app/frontend/app/(tabs)/settings.tsx (added testIDs delete-confirm-input, delete-cancel-button, delete-confirm-button)",
+    "/app/backend/tests/test_iter8_phone_lock_admin_email.py (new)"
+  ],
+  "success_rate": {"backend": "98% (42/43; the one failure is the malformed-id 500)", "frontend": "~85% (all flows work; 4 English leftovers + web alert no-op)"},
+  "seed_data_creation": "Re-seeded subscription.expiresAt for grace@ (now-30h) and expired@ (now-72h), plan monthly, status active. All throwaway users/ambassadors and the TEST_Iter8Produit product + sale were deleted by id. test@ language restored to 'fr'. Pre-existing products 'AlertItem' and 'PostDelete' in test@ were left untouched; they look like leftovers from earlier test runs.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Use login-pin (test@ / 1234) in UI scripts: credential-login is limited to 5 attempts per 5 min per IP. page.goto() inside the app triggers the app-lock PIN pad, so navigate with tab-bar text (EN: Home/Sell/Stock/Expenses/Debts/More). The language preference is stored server-side (users.language). Admin panel login is #adminPass + Enter, and user detail is showUser(id). Re-seed grace@/expired@ expiresAt before test_subscription_lock.py.",
+  "rca_of_issue": "Admin panel outage: admin_api.py setUserEmail used alert('...'+j.email+'\\nMot de passe provisoire...'). ADMIN_HTML is a regular Python string, so Python converted \\n into a real newline. The browser hit an unterminated string literal, the whole <script> failed to parse, and doLogin was undefined, so the login button did nothing. Repro: open /api/admin and check the console ('Invalid or unexpected token'). Fix: escape as \\\\n (applied); verified with node --check and a UI flow."
+}

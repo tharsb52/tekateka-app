@@ -1,9 +1,16 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  TextInput, Alert, Modal, KeyboardAvoidingView, Platform,
-  Keyboard, TouchableWithoutFeedback,
+  View,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from 'react-native';
+import { Alert, Text, TextInput } from '../../components/AppText';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import i18n from '../../utils/i18n';

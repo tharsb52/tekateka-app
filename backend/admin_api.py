@@ -202,7 +202,7 @@ async def admin_user_detail(user_id: str, request: Request):
 
     # also surface the current subscription so the admin panel can show
     # the status + expiry date next to the new "Grant Premium 1 yr" button
-    user_doc = await db.users.find_one({"_id": ObjectId(user_id)}, {"subscription": 1, "phoneNumber": 1}) or {}
+    user_doc = await db.users.find_one({"_id": ObjectId(user_id)}, {"subscription": 1, "phoneNumber": 1, "email": 1}) or {}
 
     def ser(doc):
         d = {}
@@ -222,7 +222,37 @@ async def admin_user_detail(user_id: str, request: Request):
         "debts": [ser(d) for d in debts],
         "subscription": user_doc.get("subscription") or {},
         "phone": user_doc.get("phoneNumber") or "",
+        "email": user_doc.get("email") or "",
     }
+
+
+@router.post("/admin/user/{user_id}/set-email")
+async def admin_set_user_email(user_id: str, request: Request):
+    """Give a phone-only merchant an email + temporary password so they can
+    sign in again (phone login was removed for security)."""
+    import re as _re
+    from passlib.context import CryptContext
+    body = await request.json()
+    if body.get("password") != ADMIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="Accès refusé")
+    email = (body.get("email") or "").strip().lower()
+    new_password = (body.get("newPassword") or "").strip()
+    if not _re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        raise HTTPException(status_code=400, detail="Email invalide")
+    if len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="Le mot de passe doit faire au moins 6 caractères")
+    if not ObjectId.is_valid(user_id):
+        raise HTTPException(status_code=400, detail="ID utilisateur invalide")
+    other = await db.users.find_one({"email": email, "_id": {"$ne": ObjectId(user_id)}})
+    if other:
+        raise HTTPException(status_code=400, detail="Cet email est déjà utilisé par un autre compte")
+    res = await db.users.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {"email": email, "passwordHash": CryptContext(schemes=["bcrypt"]).hash(new_password)}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    return {"success": True, "email": email}
 
 
 @router.post("/admin/user/{user_id}/grant-premium")
@@ -497,7 +527,7 @@ async function loadDashboard(){
   <div class="section">
     <h2><span>👥</span> Qui me doit de l'argent ?</h2>
     ${d.users.flatMap(u=>u.debtors.map(dd=>({...dd,userPhone:u.phone}))).length===0?'<p style="color:#64748b">Aucune dette impayée</p>':''}
-    ${d.users.flatMap(u=>u.debtors.map(dd=>({...dd,userPhone:u.phone}))).map(dd=>`<div class="debtor-item"><span class="debtor-name">${dd.name} <span style="color:#64748b;font-size:12px">(${dd.userPhone})</span></span><span class="debtor-amount">${fmt(dd.amount)} ${dd.currency}</span></div>`).join('')}
+    ${d.users.flatMap(u=>u.debtors.map(dd=>({...dd,userPhone:u.phone}))).map(dd=>`<div class="debtor-item"><span class="debtor-name">${esc(dd.name)} <span style="color:#64748b;font-size:12px">(${esc(dd.userPhone)})</span></span><span class="debtor-amount">${fmt(dd.amount)} ${esc(dd.currency)}</span></div>`).join('')}
   </div>
 
   <div class="section">
@@ -508,7 +538,7 @@ async function loadDashboard(){
         ${d.users.map(u=>{
           const sub=u.subscription||{};
           const status=sub.plan?'active':sub.status||'trial';
-          return`<tr class="user-row" onclick="showUser('${u.id}')"><td>${u.phone}</td><td style="color:#10b981;font-weight:700">${fmt(u.revenue)}</td><td style="color:#ef4444">${fmt(u.expenses)}</td><td style="color:${u.profit>=0?'#10b981':'#ef4444'};font-weight:700">${fmt(Math.abs(u.profit))}</td><td>${u.productsCount}</td><td><span class="badge ${status}">${status}</span></td></tr>`;
+          return`<tr class="user-row" onclick="showUser('${u.id}')"><td>${esc(u.phone)}</td><td style="color:#10b981;font-weight:700">${fmt(u.revenue)}</td><td style="color:#ef4444">${fmt(u.expenses)}</td><td style="color:${u.profit>=0?'#10b981':'#ef4444'};font-weight:700">${fmt(Math.abs(u.profit))}</td><td>${u.productsCount}</td><td><span class="badge ${status}">${status}</span></td></tr>`;
         }).join('')}
       </tbody>
     </table>
@@ -524,7 +554,7 @@ async function showUser(id){
   const expiryShort=subExpiry?subExpiry.slice(0,10):'—';
   const phone=d.phone||'';
   let html='<button onclick="loadDashboard()" style="background:#334155;border:none;color:#60a5fa;padding:10px 20px;border-radius:10px;cursor:pointer;margin-bottom:16px;font-size:14px">← Retour</button>';
-  html+=`<div class="section" style="background:#1e293b;border:2px solid #f59e0b"><h2><span>⭐</span> Abonnement de ${phone||'cet utilisateur'}</h2>`;
+  html+=`<div class="section" style="background:#1e293b;border:2px solid #f59e0b"><h2><span>⭐</span> Abonnement de ${esc(phone)||'cet utilisateur'}</h2>`;
   html+=`<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:10px">`;
   html+=`<div><span style="color:#94a3b8;font-size:12px">Plan</span><br><span style="font-size:16px;font-weight:700;color:#f1f5f9">${sub.plan||'Aucun'}</span></div>`;
   html+=`<div><span style="color:#94a3b8;font-size:12px">Statut</span><br><span class="badge ${subStatus}">${subStatus}</span></div>`;
@@ -535,12 +565,28 @@ async function showUser(id){
   html+=`<button onclick="grantPremium('${id}',30,'monthly')" style="background:#2563eb;color:#fff;border:none;padding:10px 16px;border-radius:8px;font-weight:700;cursor:pointer">+30 jours</button>`;
   html+=`<button onclick="grantPremium('${id}',90,'quarterly')" style="background:#7c3aed;color:#fff;border:none;padding:10px 16px;border-radius:8px;font-weight:700;cursor:pointer">+90 jours</button>`;
   html+=`</div></div></div>`;
-  html+=`<div class="section"><h2><span>📦</span> Produits (${d.products.length})</h2><table><thead><tr><th>Nom</th><th>Prix Achat</th><th>Prix Vente</th><th>Stock</th></tr></thead><tbody>${d.products.map(p=>`<tr><td>${p.name}</td><td>${p.purchasePrice}</td><td>${p.salePrice}</td><td style="color:${p.stock<5?'#ef4444':'#10b981'};font-weight:700">${p.stock}</td></tr>`).join('')}</tbody></table></div>`;
-  html+=`<div class="section"><h2><span>💰</span> Dernières Ventes (${d.sales.length})</h2><table><thead><tr><th>Produit</th><th>Qté</th><th>Total</th><th>Date</th></tr></thead><tbody>${d.sales.slice(0,20).map(s=>`<tr><td>${s.productName}</td><td>${s.quantity}</td><td style="color:#10b981;font-weight:700">${s.total} ${s.currency||''}</td><td style="color:#64748b;font-size:12px">${(s.createdAt||'').slice(0,16)}</td></tr>`).join('')}</tbody></table></div>`;
-  html+=`<div class="section"><h2><span>👥</span> Dettes (${d.debts.filter(dd=>!dd.isPaid).length} impayées)</h2><table><thead><tr><th>Débiteur</th><th>Montant</th><th>Statut</th></tr></thead><tbody>${d.debts.map(dd=>`<tr><td>${dd.debtorName}</td><td style="font-weight:700">${dd.amount} ${dd.currency||''}</td><td><span class="badge ${dd.isPaid?'active':'expired'}">${dd.isPaid?'Payée':'Impayée'}</span></td></tr>`).join('')}</tbody></table></div>`;
+  html+=`<div class="section" style="background:#1e293b;border:2px solid #2563eb"><h2><span>📧</span> Connexion par email</h2>
+    <p style="color:#94a3b8;font-size:13px;margin:6px 0 12px">Email actuel : <b style="color:#f1f5f9">${esc(d.email)||'aucun (compte téléphone)'}</b>. Donnez au marchand cet email et ce mot de passe provisoire ; il pourra le changer avec « Mot de passe oublié ».</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <input id="setEmailInput" type="email" placeholder="email du marchand" value="${esc(d.email)}" style="flex:1;min-width:200px;padding:10px;border-radius:8px;border:1px solid #334155;background:#0f172a;color:#fff">
+      <input id="setPwdInput" type="text" placeholder="mot de passe provisoire (6+)" style="flex:1;min-width:180px;padding:10px;border-radius:8px;border:1px solid #334155;background:#0f172a;color:#fff">
+      <button onclick="setUserEmail('${id}')" style="background:#2563eb;color:#fff;border:none;padding:10px 16px;border-radius:8px;font-weight:700;cursor:pointer">Enregistrer</button>
+    </div></div>`;
+  html+=`<div class="section"><h2><span>📦</span> Produits (${d.products.length})</h2><table><thead><tr><th>Nom</th><th>Prix Achat</th><th>Prix Vente</th><th>Stock</th></tr></thead><tbody>${d.products.map(p=>`<tr><td>${esc(p.name)}</td><td>${p.purchasePrice}</td><td>${p.salePrice}</td><td style="color:${p.stock<5?'#ef4444':'#10b981'};font-weight:700">${p.stock}</td></tr>`).join('')}</tbody></table></div>`;
+  html+=`<div class="section"><h2><span>💰</span> Dernières Ventes (${d.sales.length})</h2><table><thead><tr><th>Produit</th><th>Qté</th><th>Total</th><th>Date</th></tr></thead><tbody>${d.sales.slice(0,20).map(s=>`<tr><td>${esc(s.productName)}</td><td>${s.quantity}</td><td style="color:#10b981;font-weight:700">${s.total} ${s.currency||''}</td><td style="color:#64748b;font-size:12px">${(s.createdAt||'').slice(0,16)}</td></tr>`).join('')}</tbody></table></div>`;
+  html+=`<div class="section"><h2><span>👥</span> Dettes (${d.debts.filter(dd=>!dd.isPaid).length} impayées)</h2><table><thead><tr><th>Débiteur</th><th>Montant</th><th>Statut</th></tr></thead><tbody>${d.debts.map(dd=>`<tr><td>${esc(dd.debtorName)}</td><td style="font-weight:700">${dd.amount} ${dd.currency||''}</td><td><span class="badge ${dd.isPaid?'active':'expired'}">${dd.isPaid?'Payée':'Impayée'}</span></td></tr>`).join('')}</tbody></table></div>`;
   document.getElementById('content').innerHTML=html;
   // remember which user we are looking at so grantPremium() can refresh
   window.__currentUserId=id;
+}
+async function setUserEmail(userId){
+  const email=document.getElementById('setEmailInput').value.trim();
+  const newPassword=document.getElementById('setPwdInput').value.trim();
+  const r=await fetch(API+'/admin/user/'+userId+'/set-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:adminPass,email,newPassword})});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok){alert('Erreur : '+(j.detail||r.status));return;}
+  alert('✅ Email enregistré : '+j.email+'\\nMot de passe provisoire : '+newPassword);
+  showUser(userId);
 }
 async function grantPremium(userId,days,plan){
   const label=days===365?'1 an':(days+' jours');
@@ -553,6 +599,7 @@ async function grantPremium(userId,days,plan){
     showUser(userId);
   }catch(e){alert('Erreur réseau : '+e.message);}
 }
+function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function fmt(n){return new Intl.NumberFormat('fr-FR',{minimumFractionDigits:0,maximumFractionDigits:2}).format(n||0)}
 // Auto-restore session on page load / F5 refresh
 window.addEventListener('DOMContentLoaded',()=>{tryRestoreSession();});

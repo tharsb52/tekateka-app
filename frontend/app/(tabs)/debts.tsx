@@ -1,18 +1,16 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  TextInput,
-  Alert,
   Modal,
   Platform,
   KeyboardAvoidingView,
   Keyboard,
   TouchableWithoutFeedback,
 } from 'react-native';
+import { Alert, Text, TextInput } from '../../components/AppText';
 import CalendarPicker from '../../components/CalendarPicker';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';

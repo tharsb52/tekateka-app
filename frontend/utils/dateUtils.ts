@@ -119,3 +119,21 @@ export const localDayKey = (input: string | number | Date | null | undefined): s
  *   new Date()  ->  "2026-05-17T13:00:00.000Z"
  */
 export const toUtcIso = (d: Date = new Date()): string => d.toISOString();
+
+/** "jeudi 19 novembre" → "Jeudi 19 novembre" (day names always start with a capital). */
+export const capitalize = (s: string): string => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
+/** BCP-47 locale for Intl date formatting, following the app language. */
+export const dateLocale = (): string => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const i18n = require('./i18n').default;
+  return i18n.locale === 'en' ? 'en-US' : 'fr-FR';
+};
+
+/** date-fns locale following the app language. */
+export const dfLocale = () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { fr, enUS } = require('date-fns/locale');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require('./i18n').default.locale === 'en' ? enUS : fr;
+};

@@ -1,7 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  View,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
 } from 'react-native';
+import { Text } from '../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Ionicons from "@react-native-vector-icons/ionicons";
@@ -10,7 +14,7 @@ import { fr } from 'date-fns/locale';
 import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { formatCurrency, convertCurrency } from '../utils/currencies';
-import { formatLocal } from '../utils/dateUtils';
+import { formatLocal, dfLocale } from '../utils/dateUtils';
 
 type Row = {
   productId: string;
@@ -48,7 +52,7 @@ export default function MonthlyReportScreen() {
     setSelectedMonth(next);
     setExpandedProductId(null);
   };
-  const monthLabel = format(selectedMonth, 'MMMM yyyy', { locale: fr });
+  const monthLabel = format(selectedMonth, 'MMMM yyyy', { locale: dfLocale() });
 
   const monthlyReport: Row[] = useMemo(() => {
     const start = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), 1, 0, 0, 0);

@@ -4,12 +4,14 @@ import Ionicons from "@react-native-vector-icons/ionicons";
 import { View, ActivityIndicator, Platform } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { tr, useLocale } from '../../utils/translate';
 import i18n from '../../utils/i18n';
 
 const BG = '#fef3e7';
 
 export default function TabLayout() {
   const { user, loading, hasPin, pinVerified } = useAuth();
+  useLocale(); // re-render tab labels when the language changes
   const insets = useSafeAreaInsets();
 
   if (loading) {
@@ -90,7 +92,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="products"
         options={{
-          title: 'Stock',
+          title: tr('Stock'),
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="cube" size={size} color={color} />
           ),
@@ -117,7 +119,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="settings"
         options={{
-          title: 'Plus',
+          title: tr('Plus'),
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="ellipsis-horizontal" size={size} color={color} />
           ),

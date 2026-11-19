@@ -1,16 +1,16 @@
+import { tr } from '../../utils/translate';
 import React, { useMemo, useEffect, useState } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   Image,
   TouchableOpacity,
-  Alert,
   Dimensions,
   Modal,
   ActivityIndicator,
 } from 'react-native';
+import { Alert, Text } from '../../components/AppText';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'expo-router';
@@ -34,11 +34,12 @@ const exportSalesToPDF = lazyExport.pdf as any;
 const exportSalesToExcel = lazyExport.excel as any;
 import { format, subDays } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { formatLocal, localDayKey } from '../../utils/dateUtils';
+import { formatLocal, localDayKey, dfLocale } from '../../utils/dateUtils';
 
 import AppHeader from '../../components/AppHeader';
 import SubscriptionStatusCard from '../../components/SubscriptionStatusCard';
 import { cardShadow } from '../../utils/shadows';
+import { capitalize, dateLocale } from '../../utils/dateUtils';
 
 const BG = '#fef3e7';
 
@@ -295,7 +296,7 @@ export default function DashboardScreen() {
     setSelectedMonth(next);
     setExpandedProductId(null);
   };
-  const monthLabel = format(selectedMonth, 'MMMM yyyy', { locale: fr });
+  const monthLabel = format(selectedMonth, 'MMMM yyyy', { locale: dfLocale() });
 
   // Revenue chart data based on selected period - converted to user currency
   const { chartData, periodLabel, filteredSales } = useMemo(() => {
@@ -338,12 +339,12 @@ export default function DashboardScreen() {
       const isLast = i === dayCount - 1;
       let dayLabel: string;
       if (dayCount <= 7) {
-        dayLabel = isLast ? 'Auj' : format(date, 'EEE', { locale: fr });
+        dayLabel = isLast ? tr('Auj') : format(date, 'EEE', { locale: dfLocale() });
       } else if (dayCount <= 31) {
-        dayLabel = format(date, 'd MMM', { locale: fr });
+        dayLabel = format(date, 'd MMM', { locale: dfLocale() });
       } else {
         // For long ranges, label every ~5 days to keep the axis readable.
-        dayLabel = (i % 5 === 0 || isLast) ? format(date, 'd MMM', { locale: fr }) : '';
+        dayLabel = (i % 5 === 0 || isLast) ? format(date, 'd MMM', { locale: dfLocale() }) : '';
       }
       const dayRevenue = filtered
         .filter(s => {
@@ -381,7 +382,6 @@ export default function DashboardScreen() {
   const urgencyDays = isSubActive ? subDaysLeft : daysRemaining;
   const urgencyLevel = getUrgencyLevel(urgencyDays);
   const urgencyColors = getUrgencyColor(urgencyLevel);
-  const showBanner = (daysRemaining <= 7 && daysRemaining > 0 && !isSubActive) || (expiryReminder && isSubActive);
 
   // In-app alert on dashboard open for critical urgency
   useEffect(() => {
@@ -411,9 +411,9 @@ export default function DashboardScreen() {
       {/* Date row + Refresh */}
       <View style={styles.subHeader}>
         <Text style={styles.dateTime}>
-          {nowTime.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          {capitalize(nowTime.toLocaleDateString(dateLocale(), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}
           {'  '}
-          {nowTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+          {nowTime.toLocaleTimeString(dateLocale(), { hour: '2-digit', minute: '2-digit' })}
         </Text>
         <TouchableOpacity style={styles.refreshBtn} onPress={handleRefresh} disabled={refreshing}>
           {refreshing ? (
@@ -427,43 +427,6 @@ export default function DashboardScreen() {
 
       {/* Subscription status card (always visible) */}
       <SubscriptionStatusCard />
-
-      {/* Expiry Reminder Banner */}
-      {showBanner && (
-        <TouchableOpacity
-          style={[styles.expiryBanner, {
-            backgroundColor: urgencyColors.bg,
-            borderColor: urgencyColors.border,
-          }]}
-          onPress={() => router.push('/subscription')}
-          activeOpacity={0.8}
-        >
-          <View style={styles.expiryBannerLeft}>
-            <Ionicons
-              name={urgencyLevel === 'critical' ? 'warning' : urgencyLevel === 'warning' ? 'time' : 'information-circle'}
-              size={24}
-              color={urgencyColors.icon}
-            />
-            <View style={styles.expiryBannerText}>
-              <Text style={[styles.expiryBannerTitle, { color: urgencyColors.text }]}>
-                {urgencyLevel === 'critical'
-                  ? (urgencyDays === 0 ? "Expire aujourd'hui !" : 'Expire demain !')
-                  : urgencyLevel === 'warning'
-                  ? `${urgencyDays} jours restants`
-                  : `${urgencyDays} jours restants`}
-              </Text>
-              <Text style={[styles.expiryBannerSub, { color: urgencyColors.text }]}>
-                {isSubActive ? 'Renouvelez votre abonnement' : 'Passez a un abonnement'}
-              </Text>
-            </View>
-          </View>
-          <View style={[styles.expiryBannerBtn, { backgroundColor: urgencyColors.icon }]}>
-            <Text style={styles.expiryBannerBtnText}>
-              {isSubActive ? 'Renouveler' : "S'abonner"}
-            </Text>
-          </View>
-        </TouchableOpacity>
-      )}
 
       {/* ============ STOCK ALERT (re-ordered to top per spec) ============ */}
       <View style={styles.section}>
@@ -684,7 +647,7 @@ export default function DashboardScreen() {
             </TouchableOpacity>
             <View style={{ flex: 1, padding: 12, backgroundColor: '#f8fafc', borderRadius: 8, alignItems: 'center' }}>
               <Text style={{ fontSize: 15, fontWeight: '600', color: '#1e293b' }}>
-                {format(customStartDate, 'dd MMM yyyy', { locale: fr })}
+                {format(customStartDate, 'dd MMM yyyy', { locale: dfLocale() })}
               </Text>
             </View>
             <TouchableOpacity
@@ -713,7 +676,7 @@ export default function DashboardScreen() {
             </TouchableOpacity>
             <View style={{ flex: 1, padding: 12, backgroundColor: '#f8fafc', borderRadius: 8, alignItems: 'center' }}>
               <Text style={{ fontSize: 15, fontWeight: '600', color: '#1e293b' }}>
-                {format(customEndDate, 'dd MMM yyyy', { locale: fr })}
+                {format(customEndDate, 'dd MMM yyyy', { locale: dfLocale() })}
               </Text>
             </View>
             <TouchableOpacity

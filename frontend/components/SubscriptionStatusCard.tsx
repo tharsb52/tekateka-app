@@ -10,12 +10,19 @@
  * Utilisée à la fois sur le Dashboard et l'écran "Plus" (Settings).
  */
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import {
+  View,
+  StyleSheet,
+  TouchableOpacity,
+} from 'react-native';
+import { Text } from './AppText';
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import { format } from 'date-fns';
-import { fr } from 'date-fns/locale';
+import { fr, enUS } from 'date-fns/locale';
+import i18n from '../utils/i18n';
+import { tr } from '../utils/translate';
 
 const PLAN_LABELS: Record<string, string> = {
   trial: 'Essai gratuit',
@@ -55,7 +62,7 @@ export default function SubscriptionStatusCard({ compact = false }: { compact?: 
 
   let endDateLabel = '';
   if (endDateIso) {
-    try { endDateLabel = format(new Date(endDateIso), 'dd MMM yyyy', { locale: fr }); } catch {}
+    try { endDateLabel = format(new Date(endDateIso), 'dd MMM yyyy', { locale: i18n.locale === 'en' ? enUS : fr }); } catch {}
   }
 
   return (
@@ -72,12 +79,12 @@ export default function SubscriptionStatusCard({ compact = false }: { compact?: 
             </View>
           </View>
           <Text style={[styles.subLabel, { color: colors.text }]}>
-            {daysLeft > 0
+            {tr(daysLeft > 0
               ? `${daysLeft} jour${daysLeft > 1 ? 's' : ''} restant${daysLeft > 1 ? 's' : ''}`
               : getGraceHoursRemaining() > 0
                 ? `Accès bloqué dans ${getGraceHoursRemaining()} h`
-                : "Aucun jour restant"}
-            {endDateLabel ? `  ·  ${daysLeft > 0 ? 'Jusqu\'au' : 'Expiré le'} ${endDateLabel}` : ''}
+                : "Aucun jour restant")}
+            {endDateLabel ? `  ·  ${tr(daysLeft > 0 ? 'Jusqu\'au' : 'Expiré le')} ${endDateLabel}` : ''}
           </Text>
         </View>
       </View>

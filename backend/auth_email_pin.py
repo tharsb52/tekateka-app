@@ -275,8 +275,25 @@ async def login_pin(req: LoginPinRequest):
         # Generic error so we don't leak whether the account exists
         raise HTTPException(status_code=401, detail="Identifiant ou PIN incorrect")
 
+    # Brute-force protection: 5 wrong PINs → locked 15 minutes
+    now = datetime.now(timezone.utc)
+    locked_until = user.get("pinLockedUntil")
+    if locked_until:
+        if locked_until.tzinfo is None:
+            locked_until = locked_until.replace(tzinfo=timezone.utc)
+        if locked_until > now:
+            minutes = max(1, int((locked_until - now).total_seconds() // 60) + 1)
+            raise HTTPException(status_code=429, detail=f"Trop d'essais. Réessayez dans {minutes} min ou utilisez votre mot de passe.")
+
     if not pwd_context.verify(req.pin, user["pinHash"]):
+        fails = int(user.get("pinFailedCount") or 0) + 1
+        update = {"pinFailedCount": fails}
+        if fails >= 5:
+            update = {"pinFailedCount": 0, "pinLockedUntil": now + timedelta(minutes=15)}
+        await db.users.update_one({"_id": user["_id"]}, {"$set": update})
         raise HTTPException(status_code=401, detail="Identifiant ou PIN incorrect")
+
+    await db.users.update_one({"_id": user["_id"]}, {"$set": {"pinFailedCount": 0}, "$unset": {"pinLockedUntil": ""}})
 
     token = create_access_token(str(user["_id"]), user.get("phoneNumber", ""))
     return {"success": True, "token": token, "user": serialize_user(user)}

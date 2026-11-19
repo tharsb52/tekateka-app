@@ -1,0 +1,41 @@
+{
+  "summary": "Short retest of the iteration-8 fixes. Backend: 43/43 pass across test_iter8_phone_lock_admin_email.py, test_pin_login_and_ambassador_signup.py and test_subscription_lock.py, plus one new XSS regression test that also passes. POST /api/admin/user/not-an-id/set-email with the valid admin password now returns 400 'ID utilisateur invalide'. A wrong password gives 401 and an unknown valid ObjectId gives 404. The /api/admin JS passes node --check; in the UI, login shows 51 user rows, showUser works, and 'Connexion par email' is visible. FOUND AND FIXED a remaining stored XSS: on the admin dashboard, the 'Qui me doit de l'argent ?' debtor list (admin_api.py:530) inserted ${dd.name}, ${dd.userPhone} and ${dd.currency} without esc(). A test debt named '<img src=x onerror=...>' ran its JS when the admin logged in. After wrapping them in esc() it no longer runs. Product, debtor, sale and phone fields in the user detail view were already escaped. English mode (test@, set via More > Language > English): dashboard card '208 days left · Until 15 Jun 2027', '0 expenses', Settings 'Plan Annual • 208 days left', subscription page 'Expires in 208 days', quick-login 'Welcome back!' (no space). I found no French on Dashboard, Stock (+ Add Product modal), Sell, Expenses (+ add modal), Debts (+ add modal), More, Subscription or the login card. The only French left is user data (product names Riz/Huile/Sucre). Language restored to Français via the UI (DB language='fr', French labels confirmed). No deprecated Expo packages found in this scope.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "GET /api/admin (admin dashboard debtor list)", "issue": "FIXED BY TESTER. Stored XSS: the debtor list inserted dd.name, dd.userPhone and dd.currency into innerHTML without esc(), and a merchant debt name ran JS in the admin session, where it could steal adminPass. Wrapped them in esc() at admin_api.py:530 and verified in the browser (window.__xssD no longer set).", "priority": "HIGH"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Settings > My Subscription (EN)", "issues": ["'Plan Annual • N days left' is understandable, but natural English order would be 'Annual plan • N days left' (optional)."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter8_phone_lock_admin_email.py",
+    "/app/backend/tests/test_pin_login_and_ambassador_signup.py",
+    "/app/backend/tests/test_subscription_lock.py",
+    "/app/test_reports/pytest/pytest_iter9.xml"
+  ],
+  "action_items": [
+    "Review the tester fix at admin_api.py:530 (esc() on the debtor list). Also check the ambassador panel for the same unescaped-innerHTML pattern.",
+    "Optional: change the English plan subtitle word order to 'Annual plan • N days left'."
+  ],
+  "critical_code_review_comments": [
+    "translate.ts still uses a lazy '(.+?)' for trailing placeholders such as '{0} jour{1} restant{2}'. It works now only because SubscriptionStatusCard translates the two parts separately, so any new Text that joins more text after the pattern will be swallowed again. Prefer '(s?)' for plural placeholders.",
+    "admin_set_user_email still creates a new CryptContext on every call and does not revoke existing sessions or write an audit log."
+  ],
+  "updated_files": [
+    "/app/backend/admin_api.py (esc() on dd.name / dd.userPhone / dd.currency in the dashboard debtor list)",
+    "/app/backend/tests/test_iter8_phone_lock_admin_email.py (added test_admin_panel_escapes_merchant_data)"
+  ],
+  "success_rate": {"backend": "100% (44/44 incl. new test)", "frontend": "100% of requested EN checks"},
+  "seed_data_creation": "Created a TEST_XSS product (6aff7022e9408bfd5bae8ddc) and a TEST_XSS debt (6aff7022e9408bfd5bae8ddd) for test@ to probe the XSS. Both were deleted by id (verified count 0). No re-seed was needed: grace@ was at 30h and expired@ at 72h past expiry. test@ language restored to 'fr'.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Load env via: export $(grep -E '^(MONGO_URL|DB_NAME|ADMIN_PASSWORD)=' backend/.env | tr -d '\"' | xargs); EXPO_PUBLIC_BACKEND_URL from frontend/.env (backend/.env can't be sourced because of RESEND_FROM). Log in to the UI with the login-pin method (test@ / 1234) and navigate with the EN/FR tab-bar text. grace@/expired@ expiresAt are relative: re-seed if more than ~18h have passed since 2026-11-19 22:00 UTC (grace window 48h).",
+  "rca_of_issue": "XSS: the iteration-8 fix added esc() to showUser and the user table, but missed the dashboard's flattened debtors list (admin_api.py:530). Repro: create a debt with debtorName '<img src=x onerror=window.__x=1>', open /api/admin and log in, and window.__x is set. Fix: esc() on all interpolated merchant fields."
+}

@@ -1,7 +1,12 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, ScrollView,
+  View,
+  TouchableOpacity,
+  StyleSheet,
+  Modal,
+  ScrollView,
 } from 'react-native';
+import { Text, TextInput } from './AppText';
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { CURRENCIES, getCurrencySymbol } from '../utils/currencies';
 

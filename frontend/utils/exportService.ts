@@ -1,6 +1,9 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import { Platform, Alert } from 'react-native';
+import {
+  Platform,
+} from 'react-native';
+import { Alert } from '../components/AppText';
 import { Sale } from '../types';
 import { formatCurrency } from './currencies';
 import { format } from 'date-fns';

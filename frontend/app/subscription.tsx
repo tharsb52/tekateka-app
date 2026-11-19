@@ -2,17 +2,15 @@ import { API_BASE_URL } from '../services/constants';
 import React, { useState } from 'react';
 import {
   View,
-  Text,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Alert,
   ActivityIndicator,
   Modal,
-  TextInput,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { Alert, Text, TextInput } from '../components/AppText';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import Ionicons from "@react-native-vector-icons/ionicons";

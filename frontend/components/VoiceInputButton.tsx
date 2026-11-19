@@ -1,7 +1,12 @@
 import React, { useEffect } from 'react';
 import {
-  TouchableOpacity, Text, StyleSheet, View, ActivityIndicator, Platform,
+  TouchableOpacity,
+  StyleSheet,
+  View,
+  ActivityIndicator,
+  Platform,
 } from 'react-native';
+import { Text } from './AppText';
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { useVoiceInput } from '../hooks/useVoiceInput';
 

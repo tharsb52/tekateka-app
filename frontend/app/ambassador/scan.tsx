@@ -1,9 +1,13 @@
 import { API_BASE_URL } from '../../services/constants';
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Alert,
-  TextInput, ActivityIndicator, Platform,
+  View,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  Platform,
 } from 'react-native';
+import { Alert, Text, TextInput } from '../../components/AppText';
 import { useRouter } from 'expo-router';
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { SafeAreaView } from 'react-native-safe-area-context';

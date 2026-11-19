@@ -1,16 +1,23 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  TextInput, Alert, Modal, KeyboardAvoidingView, Platform,
-  Keyboard, TouchableWithoutFeedback,
+  View,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from 'react-native';
+import { Alert, Text, TextInput } from '../../components/AppText';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import i18n from '../../utils/i18n';
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { formatCurrency, CURRENCIES, convertCurrency } from '../../utils/currencies';
 import { format, isToday, isYesterday, parseISO } from 'date-fns';
-import { fr } from 'date-fns/locale';
+import { fr, enUS } from 'date-fns/locale';
 import { formatLocal, localDayKey } from '../../utils/dateUtils';
 import { cardShadow } from '../../utils/shadows';
 import AppHeader from '../../components/AppHeader';
@@ -83,7 +90,7 @@ export default function SellScreen() {
         label = 'Hier';
       } else {
         try {
-          label = format(date, 'EEEE dd MMMM yyyy', { locale: fr });
+          label = format(date, 'EEEE dd MMMM yyyy', { locale: i18n.locale === 'en' ? enUS : fr });
           label = label.charAt(0).toUpperCase() + label.slice(1);
         } catch {
           label = dateKey;

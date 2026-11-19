@@ -1,9 +1,16 @@
 import { API_BASE_URL } from '../../services/constants';
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ScrollView, Image, ActivityIndicator,
+  View,
+  TouchableOpacity,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
+import { Text, TextInput } from '../../components/AppText';
 import { useRouter } from 'expo-router';
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -109,6 +116,7 @@ export default function AmbassadorLoginScreen() {
               <Ionicons name="mail" size={20} color="#94a3b8" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
+                testID="amb-login-email"
                 placeholder="Email ambassadeur"
                 placeholderTextColor="#64748b"
                 value={email}
@@ -122,6 +130,7 @@ export default function AmbassadorLoginScreen() {
               <Ionicons name="lock-closed" size={20} color="#94a3b8" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
+                testID="amb-login-password"
                 placeholder="Mot de passe"
                 placeholderTextColor="#64748b"
                 value={password}
@@ -133,7 +142,7 @@ export default function AmbassadorLoginScreen() {
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity style={styles.loginBtn} onPress={handleLogin} disabled={loading}>
+            <TouchableOpacity testID="amb-login-submit" style={styles.loginBtn} onPress={handleLogin} disabled={loading}>
               {loading ? (
                 <ActivityIndicator color="#0f172a" />
               ) : (
@@ -142,6 +151,22 @@ export default function AmbassadorLoginScreen() {
                   <Text style={styles.loginBtnText}>Se connecter</Text>
                 </>
               )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              testID="amb-forgot-link"
+              style={styles.linkBtn}
+              onPress={() => router.push({ pathname: '/ambassador/access', params: { mode: 'forgot' } })}
+            >
+              <Text style={styles.linkText}>Mot de passe oublié ?</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="amb-register-link"
+              style={styles.registerBtn}
+              onPress={() => router.push({ pathname: '/ambassador/access', params: { mode: 'register' } })}
+            >
+              <Ionicons name="person-add" size={20} color={ACCENT} />
+              <Text style={styles.registerText}>Créer un compte ambassadeur</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -164,6 +189,10 @@ const styles = StyleSheet.create({
   input: { flex: 1, color: '#fff', fontSize: 16 },
   loginBtn: { backgroundColor: ACCENT, borderRadius: 14, height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8 },
   loginBtnText: { fontSize: 17, fontWeight: '700', color: '#0f172a' },
+  linkBtn: { alignItems: 'center', paddingVertical: 12, minHeight: 44 },
+  linkText: { color: '#93c5fd', fontSize: 15, fontWeight: '600' },
+  registerBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 52, borderRadius: 14, borderWidth: 1.5, borderColor: ACCENT },
+  registerText: { color: ACCENT, fontSize: 16, fontWeight: '700' },
   errorBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(220,38,38,0.15)', borderRadius: 10, padding: 12, marginBottom: 16 },
   errorText: { fontSize: 14, color: '#fca5a5', flex: 1 },
   successBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(16,185,129,0.15)', borderRadius: 10, padding: 12, marginBottom: 16 },

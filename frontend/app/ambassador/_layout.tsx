@@ -1,5 +1,9 @@
 import React, { useEffect } from 'react';
-import { BackHandler, Alert, Platform } from 'react-native';
+import {
+  BackHandler,
+  Platform,
+} from 'react-native';
+import { Alert } from '../../components/AppText';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -53,6 +57,12 @@ export default function AmbassadorLayout() {
           ]
         );
         return true; // consume the back press
+      }
+
+      // Signup / password reset screens: back goes to the ambassador login.
+      if (screen === 'access') {
+        router.replace('/ambassador');
+        return true;
       }
 
       // Sub-screens: redirect to dashboard instead of popping out of the section.

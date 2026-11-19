@@ -42,6 +42,7 @@ td{padding:10px 12px;border-bottom:1px solid #1e293b}
 .badge{padding:3px 8px;border-radius:6px;font-size:12px;font-weight:600}
 .badge.active{background:rgba(16,185,129,0.2);color:#34d399}
 .badge.blocked{background:rgba(239,68,68,0.2);color:#fca5a5}
+.badge.pending{background:rgba(245,158,11,0.2);color:#fbbf24}
 .badge.unused{background:rgba(96,165,250,0.2);color:#60a5fa}
 .badge.used{background:rgba(148,163,184,0.2);color:#94a3b8}
 .form-row{display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap}
@@ -96,6 +97,9 @@ td{padding:10px 12px;border-bottom:1px solid #1e293b}
 const SESSION_KEY='tk_amb_admin_pw';
 let adminPassword = sessionStorage.getItem(SESSION_KEY) || '';
 let ambassadors = [];
+// Ambassador names/emails come from public self-signup: always escape them.
+function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function ambName(id){return (ambassadors.find(x=>x.id===id)||{}).name||'';}
 let sales = [];
 let pricingInfo = {};
 
@@ -235,16 +239,18 @@ async function loadAmbassadors(){
     <thead><tr><th>Nom</th><th>Email</th><th>Pays/Ville</th><th>Ventes</th><th>Codes</th><th>Statut</th><th>Actions</th></tr></thead>
     <tbody>${ambassadors.map(a=>`
       <tr>
-        <td style="font-weight:600">${a.name}</td>
-        <td style="color:#94a3b8">${a.email}</td>
-        <td>${a.country}, ${a.city}</td>
+        <td style="font-weight:600">${esc(a.name)}</td>
+        <td style="color:#94a3b8">${esc(a.email)}</td>
+        <td>${esc(a.country)}, ${esc(a.city)}</td>
         <td style="font-weight:700">${a.totalSales}</td>
         <td>${a.unusedCodes}/${a.totalCodes}</td>
-        <td><span class="badge ${a.status}">${a.status==='active'?'Actif':'Bloqué'}</span></td>
+        <td><span class="badge ${a.status}">${a.status==='active'?'Actif':a.status==='pending'?'⏳ En attente':(a.blockedReason==='no_purchase'?'Bloqué (aucun achat)':'Bloqué')}</span>${a.purchaseDeadline&&a.status==='active'?`<div style="font-size:11px;color:#f59e0b;margin-top:4px">Achat avant le ${new Date(a.purchaseDeadline).toLocaleDateString('fr-FR')}</div>`:''}${a.phone?`<div style="font-size:11px;color:#94a3b8;margin-top:4px">${esc(a.phone)}</div>`:''}</td>
         <td style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="btn" style="padding:6px 10px;font-size:12px;background:#2563eb;color:#fff" onclick="resetAmbassadorPwd('${a.id}','${a.name.replace(/'/g,"\\'")}')">🔑 MDP</button>
-          <button class="btn ${a.status==='active'?'btn-danger':'btn-success'}" style="padding:6px 10px;font-size:12px" onclick="toggleAmbassador('${a.id}')">${a.status==='active'?'Bloquer':'Débloquer'}</button>
-          <button class="btn btn-danger" style="padding:6px 10px;font-size:12px;background:#dc2626" onclick="deleteAmbassador('${a.id}','${a.name.replace(/'/g,"\\'")}')">🗑️ Suppr.</button>
+          <button class="btn" style="padding:6px 10px;font-size:12px;background:#2563eb;color:#fff" onclick="resetAmbassadorPwd('${a.id}',ambName('${a.id}'))">🔑 MDP</button>
+          ${a.status==='pending'
+            ? `<button class="btn btn-success" style="padding:6px 10px;font-size:12px" onclick="approveAmbassador('${a.id}')">✅ Valider</button>`
+            : `<button class="btn ${a.status==='active'?'btn-danger':'btn-success'}" style="padding:6px 10px;font-size:12px" onclick="toggleAmbassador('${a.id}')">${a.status==='active'?'Bloquer':'Débloquer'}</button>`}
+          <button class="btn btn-danger" style="padding:6px 10px;font-size:12px;background:#dc2626" onclick="deleteAmbassador('${a.id}',ambName('${a.id}'))">🗑️ Suppr.</button>
         </td>
       </tr>
     `).join('')}</tbody></table></div>`;
@@ -312,6 +318,14 @@ async function resetAmbassadorPwd(id, name){
   }
 }
 
+async function approveAmbassador(id){
+  if(!confirm("Valider ce compte ambassadeur ? Il aura 7 jours pour acheter ses premiers codes."))return;
+  const r=await fetch('/api/admin/ambassadors/approve',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({adminPassword,ambassadorId:id})});
+  if(!r.ok){const d=await r.json().catch(()=>({}));alert(d.detail||'Erreur');}
+  loadAmbassadors();
+}
+
 async function toggleAmbassador(id){
   await fetch('/api/admin/ambassadors/toggle-status',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({adminPassword,ambassadorId:id})});
@@ -319,7 +333,7 @@ async function toggleAmbassador(id){
 }
 
 function loadCodesForm(){
-  let options = ambassadors.map(a=>`<option value="${a.id}">${a.name} (${a.email})</option>`).join('');
+  let options = ambassadors.map(a=>`<option value="${a.id}">${esc(a.name)} (${esc(a.email)})</option>`).join('');
   document.getElementById('content').innerHTML=`
     <div class="card">
       <h2>Générer des codes d'activation</h2>
@@ -397,7 +411,7 @@ async function loadAllCodes(){
         <tbody>${codes.map(c=>`
           <tr>
             <td style="font-family:monospace;font-weight:700;color:${c.status==='used'?'#94a3b8':'#60a5fa'};cursor:pointer" onclick="navigator.clipboard.writeText('${c.code}');this.style.color='#34d399';setTimeout(()=>this.style.color='${c.status==='used'?'#94a3b8':'#60a5fa'}',1500)" title="Cliquer pour copier">${c.code}</td>
-            <td>${c.ambassadorName||'?'}</td>
+            <td>${esc(c.ambassadorName)||'?'}</td>
             <td><span class="badge active" style="text-transform:capitalize">${c.plan}</span></td>
             <td><span class="badge ${c.status==='used'?'used':'unused'}">${c.status==='used'?'Utilisé':'Disponible'}</span></td>
             <td style="color:#94a3b8;font-size:12px">${c.assignedAt?new Date(c.assignedAt).toLocaleDateString('fr-FR'):'-'}</td>

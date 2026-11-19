@@ -1,10 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Image, Animated, Platform, StatusBar,
+  View,
+  StyleSheet,
+  TouchableOpacity,
+  Image,
+  Animated,
+  Platform,
+  StatusBar,
 } from 'react-native';
+import { Text } from './AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from "@react-native-vector-icons/ionicons";
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { authAPI } from '../services/apiService';
 
 const BG = '#fef3e7';
 const PIN_LENGTH = 4;
@@ -87,6 +95,13 @@ export default function PinScreen({ userId, mode, onSuccess, onLogout, onCancel 
     if (step === 'confirm') {
       if (value === confirmPin) {
         await AsyncStorage.setItem(`@tekateka:${userId}:pin`, value);
+        // Also save it on the server so the merchant can log in with this
+        // PIN from the login screen (any device). Best-effort.
+        try {
+          await authAPI.setupPin(value);
+        } catch (e) {
+          console.warn('server PIN setup failed', e);
+        }
         setSuccessMsg('Code PIN configuré !');
         setTimeout(() => onSuccess(), 800);
       } else {

@@ -1,3 +1,4 @@
+import { dateLocale } from './dateUtils';
 export const CURRENCIES = [
   { code: 'CDF', symbol: 'FC', name: 'Franc Congolais (RDC)' },
   { code: 'USD', symbol: '$', name: 'Dollar Américain' },
@@ -39,7 +40,7 @@ export function convertCurrency(amount: number, fromCurrency: string, toCurrency
 
 export const formatCurrency = (amount: number, currencyCode: string): string => {
   const symbol = getCurrencySymbol(currencyCode);
-  const formatted = amount.toLocaleString('fr-FR', {
+  const formatted = amount.toLocaleString(dateLocale(), {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });

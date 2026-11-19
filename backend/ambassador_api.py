@@ -157,6 +157,39 @@ async def get_ambassador_commission(ambassador_id: str, plan: str):
     _ = ambassador_id  # currently unused, kept for ABI stability
     return _commission_for(plan)
 
+# ==========================================
+# Self-signup rules: admin validation + buy codes within 7 days
+# ==========================================
+PURCHASE_DEADLINE_DAYS = 7
+PENDING_MSG = "Votre compte ambassadeur est en attente de validation par l'administrateur."
+
+
+def blocked_message(amb: dict) -> str:
+    if amb.get("blockedReason") == "no_purchase":
+        return ("Compte bloqué : aucun code acheté dans les 7 jours suivant la validation. "
+                "Seul l'administrateur peut le débloquer.")
+    return "Compte bloqué. Contactez l'administrateur."
+
+
+async def enforce_purchase_rule(amb: dict) -> dict:
+    """Block a self-registered ambassador who hasn't bought any code within
+    7 days of admin approval. Legacy (admin-created) accounts have no
+    approvedAt and are exempt; an admin unblock waives the rule."""
+    approved_at = amb.get("approvedAt")
+    if amb.get("status") != "active" or not approved_at or amb.get("noPurchaseRuleWaived"):
+        return amb
+    if datetime.utcnow() < approved_at + timedelta(days=PURCHASE_DEADLINE_DAYS):
+        return amb
+    has_codes = await db.activation_codes.count_documents({"ambassadorId": str(amb["_id"])}, limit=1)
+    if has_codes:
+        return amb
+    await db.ambassadors.update_one(
+        {"_id": amb["_id"]},
+        {"$set": {"status": "blocked", "blockedReason": "no_purchase", "blockedAt": datetime.utcnow()}},
+    )
+    return {**amb, "status": "blocked", "blockedReason": "no_purchase"}
+
+
 async def get_ambassador_from_token(authorization: str = None):
     """Extract ambassador from JWT token"""
     if not authorization:
@@ -172,8 +205,11 @@ async def get_ambassador_from_token(authorization: str = None):
         ambassador = await db.ambassadors.find_one({"_id": ObjectId(ambassador_id)})
         if not ambassador:
             raise HTTPException(status_code=401, detail="Ambassadeur introuvable")
+        ambassador = await enforce_purchase_rule(ambassador)
+        if ambassador.get("status") == "pending":
+            raise HTTPException(status_code=403, detail=PENDING_MSG)
         if ambassador.get("status") == "blocked":
-            raise HTTPException(status_code=403, detail="Compte ambassadeur bloqué")
+            raise HTTPException(status_code=403, detail=blocked_message(ambassador))
         
         return ambassador
     except JWTError:
@@ -202,8 +238,11 @@ async def ambassador_login(req: AmbassadorLogin):
     if not pwd_context.verify(req.password, ambassador["passwordHash"]):
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
     
+    ambassador = await enforce_purchase_rule(ambassador)
+    if ambassador.get("status") == "pending":
+        raise HTTPException(status_code=403, detail=PENDING_MSG)
     if ambassador.get("status") == "blocked":
-        raise HTTPException(status_code=403, detail="Compte bloqué. Contactez l'administrateur.")
+        raise HTTPException(status_code=403, detail=blocked_message(ambassador))
     
     token = jwt.encode(
         {"ambassador_id": str(ambassador["_id"]), "type": "ambassador", "exp": datetime.utcnow() + timedelta(days=30)},
@@ -809,7 +848,10 @@ async def admin_list_ambassadors(body: dict):
     if password != admin_pass:
         raise HTTPException(status_code=401, detail="Mot de passe admin incorrect")
     
-    ambassadors = await db.ambassadors.find().to_list(100)
+    ambassadors = await db.ambassadors.find().sort("createdAt", -1).to_list(500)
+    for amb in ambassadors:
+        await enforce_purchase_rule(amb)
+    ambassadors = await db.ambassadors.find().sort("createdAt", -1).to_list(500)
     result = []
     for amb in ambassadors:
         amb_id = str(amb["_id"])
@@ -824,6 +866,11 @@ async def admin_list_ambassadors(body: dict):
             "country": amb["country"],
             "city": amb["city"],
             "status": amb.get("status", "active"),
+            "blockedReason": amb.get("blockedReason"),
+            "phone": amb.get("phone"),
+            "approvedAt": amb["approvedAt"].isoformat() if amb.get("approvedAt") else None,
+            "purchaseDeadline": (amb["approvedAt"] + timedelta(days=PURCHASE_DEADLINE_DAYS)).isoformat()
+                if amb.get("approvedAt") and not amb.get("noPurchaseRuleWaived") and total_codes == 0 else None,
             "totalSales": total_sales,
             "totalCodes": total_codes,
             "unusedCodes": unused_codes,
@@ -851,8 +898,15 @@ async def admin_toggle_ambassador(body: dict):
     if not amb:
         raise HTTPException(status_code=404, detail="Ambassadeur introuvable")
     
+    if amb.get("status") == "pending":
+        raise HTTPException(status_code=400, detail="Compte en attente : utilisez le bouton Valider")
     new_status = "blocked" if amb.get("status") == "active" else "active"
-    await db.ambassadors.update_one({"_id": ObjectId(ambassador_id)}, {"$set": {"status": new_status}})
+    update = {"status": new_status}
+    if new_status == "active":
+        # Admin unblock overrides the "buy codes within 7 days" rule for good.
+        update.update({"noPurchaseRuleWaived": True, "blockedReason": None})
+    await db.ambassadors.update_one({"_id": ObjectId(ambassador_id)}, {"$set": update})
+    return {"success": True, "newStatus": new_status}
 
 # ==========================================
 # Admin: Delete Ambassador (and their unused codes)
@@ -879,10 +933,6 @@ async def admin_delete_ambassador(body: dict):
     })
     await db.ambassadors.delete_one({"_id": ObjectId(ambassador_id)})
     return {"success": True, "deletedCodes": deleted_codes.deleted_count}
-
-
-    
-    return {"success": True, "newStatus": new_status}
 
 # ==========================================
 # Admin: Reset Ambassador Password
@@ -1191,3 +1241,138 @@ async def backfill_commissions(body: dict):
         "fixedSales": fixed,
         "createdCommissions": created,
     }
+
+
+# ==========================================
+# Ambassador self-signup, approval and password reset
+# ==========================================
+import hashlib as _hashlib
+import re as _re_mod
+from html import escape as _escape
+from fastapi import BackgroundTasks
+from email_service import send_email
+
+
+def _amb_email_query(email: str) -> dict:
+    return {"email": {"$regex": f"^{_re_mod.escape(email.strip())}$", "$options": "i"}}
+
+
+async def _safe_send(to: str, subject: str, html: str) -> None:
+    try:
+        await send_email(to=to, subject=subject, html=html)
+    except Exception as e:  # never break the request because of email
+        logger.error("Ambassador email to %s failed: %s", to, e)
+
+
+def _mail(title: str, body_html: str) -> str:
+    return (f'<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#1f2937">'
+            f'<h2 style="color:#f59e0b">TekaTeka — {title}</h2>{body_html}</div>')
+
+
+@router.post("/ambassador/register")
+async def ambassador_register(body: dict, background_tasks: BackgroundTasks):
+    name = (body.get("name") or "").strip()
+    email = (body.get("email") or "").strip().lower()
+    country = (body.get("country") or "").strip()
+    city = (body.get("city") or "").strip()
+    phone = (body.get("phone") or "").strip()
+    password = body.get("password") or ""
+    if not all([name, email, country, city, password]):
+        raise HTTPException(status_code=400, detail="Tous les champs sont requis")
+    if not _re_mod.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        raise HTTPException(status_code=400, detail="Email invalide")
+    if len(password) < 6:
+        raise HTTPException(status_code=400, detail="Le mot de passe doit faire au moins 6 caractères")
+    if await db.ambassadors.find_one(_amb_email_query(email)):
+        raise HTTPException(status_code=400, detail="Cet email est déjà utilisé")
+
+    await db.ambassadors.insert_one({
+        "name": name, "email": email, "country": country, "city": city, "phone": phone or None,
+        "passwordHash": pwd_context.hash(password),
+        "status": "pending", "selfRegistered": True, "createdAt": datetime.utcnow(),
+    })
+    admin_to = os.getenv("ADMIN_NOTIFY_EMAIL") or os.getenv("SMTP_EMAIL")
+    if admin_to:
+        background_tasks.add_task(_safe_send, admin_to, "Nouvelle demande ambassadeur", _mail(
+            "Nouvelle demande ambassadeur",
+            f"<p><b>{_escape(name)}</b> ({_escape(email)}) — {_escape(city)}, {_escape(country)}"
+            f"{' — ' + _escape(phone) if phone else ''}</p>"
+            "<p>Validez ou refusez cette demande dans le tableau de bord admin, onglet Ambassadeurs.</p>"))
+    return {"success": True, "message": PENDING_MSG}
+
+
+@router.post("/admin/ambassadors/approve")
+async def admin_approve_ambassador(body: dict, background_tasks: BackgroundTasks):
+    if body.get("adminPassword", "") != os.getenv("ADMIN_PASSWORD", "TekaTeka2025"):
+        raise HTTPException(status_code=401, detail="Mot de passe admin incorrect")
+    try:
+        amb = await db.ambassadors.find_one({"_id": ObjectId(body.get("ambassadorId", ""))})
+    except Exception:
+        raise HTTPException(status_code=400, detail="ID invalide")
+    if not amb:
+        raise HTTPException(status_code=404, detail="Ambassadeur introuvable")
+    if amb.get("status") != "pending":
+        raise HTTPException(status_code=400, detail="Ce compte n'est pas en attente")
+    now = datetime.utcnow()
+    await db.ambassadors.update_one({"_id": amb["_id"]}, {"$set": {"status": "active", "approvedAt": now}})
+    deadline = (now + timedelta(days=PURCHASE_DEADLINE_DAYS)).strftime("%d/%m/%Y")
+    background_tasks.add_task(_safe_send, amb["email"], "Votre compte ambassadeur est validé", _mail(
+        "Compte validé",
+        f"<p>Bonjour {_escape(amb.get('name', ''))},</p><p>Votre compte ambassadeur est validé. "
+        f"Vous pouvez vous connecter dans l'app TekaTeka (Espace Ambassadeur).</p>"
+        f"<p><b>Important :</b> achetez vos premiers codes d'activation avant le <b>{deadline}</b>, "
+        "sinon votre compte sera bloqué.</p>"))
+    return {"success": True}
+
+
+def _hash_amb_code(code: str, email: str) -> str:
+    return _hashlib.sha256(f"amb:{code}:{email.lower()}:{SECRET_KEY}".encode()).hexdigest()
+
+
+@router.post("/ambassador/forgot-password")
+async def ambassador_forgot_password(body: dict, background_tasks: BackgroundTasks):
+    email = (body.get("email") or "").strip().lower()
+    generic = {"success": True, "message": "Si un compte existe pour cet email, un code vient d'être envoyé."}
+    if not email:
+        raise HTTPException(status_code=400, detail="Email requis")
+    amb = await db.ambassadors.find_one(_amb_email_query(email))
+    if not amb:
+        return generic  # don't reveal whether the account exists
+    # Anti-spam: one email per minute per account
+    exp = amb.get("resetCodeExpiresAt")
+    if exp and exp - timedelta(minutes=29) > datetime.utcnow():
+        return generic
+    code = f"{secrets.randbelow(1000000):06d}"
+    await db.ambassadors.update_one({"_id": amb["_id"]}, {"$set": {
+        "resetCodeHash": _hash_amb_code(code, email),
+        "resetCodeExpiresAt": datetime.utcnow() + timedelta(minutes=30),
+        "resetAttempts": 0,
+    }})
+    background_tasks.add_task(_safe_send, amb["email"], "Code de réinitialisation ambassadeur", _mail(
+        "Réinitialisation du mot de passe",
+        f"<p>Votre code : <b style='font-size:24px;letter-spacing:4px'>{code}</b></p>"
+        "<p>Il est valable 30 minutes. Si vous n'avez rien demandé, ignorez cet email.</p>"))
+    return generic
+
+
+@router.post("/ambassador/reset-password")
+async def ambassador_reset_password(body: dict):
+    email = (body.get("email") or "").strip().lower()
+    code = (body.get("code") or "").strip()
+    new_password = (body.get("newPassword") or "").strip()
+    if len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="Le mot de passe doit faire au moins 6 caractères")
+    amb = await db.ambassadors.find_one(_amb_email_query(email))
+    invalid = HTTPException(status_code=400, detail="Code invalide ou expiré")
+    if not amb or not amb.get("resetCodeHash") or not amb.get("resetCodeExpiresAt"):
+        raise invalid
+    if amb["resetCodeExpiresAt"] < datetime.utcnow() or int(amb.get("resetAttempts") or 0) >= 5:
+        raise invalid
+    if _hash_amb_code(code, email) != amb["resetCodeHash"]:
+        await db.ambassadors.update_one({"_id": amb["_id"]}, {"$inc": {"resetAttempts": 1}})
+        raise invalid
+    await db.ambassadors.update_one({"_id": amb["_id"]}, {
+        "$set": {"passwordHash": pwd_context.hash(new_password), "passwordUpdatedAt": datetime.utcnow()},
+        "$unset": {"resetCodeHash": "", "resetCodeExpiresAt": "", "resetAttempts": ""},
+    })
+    return {"success": True}

@@ -5,6 +5,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert } from 'react-native';
 import { router } from 'expo-router';
+import { tr } from '../utils/translate';
 
 import { API_BASE_URL } from './constants';
 
@@ -29,15 +30,15 @@ export const setReadOnlyMode = (value: boolean) => {
 // clear message with the "Activer" action.
 const originalAlert = Alert.alert;
 Alert.alert = (...args: Parameters<typeof Alert.alert>) => {
-  if (args[0] !== READ_ONLY_TITLE && Date.now() - lastReadOnlyAlertAt < 2000) return;
+  if (args[0] !== tr(READ_ONLY_TITLE) && Date.now() - lastReadOnlyAlertAt < 2000) return;
   originalAlert(...args);
 };
 
 function notifyReadOnly(): never {
   lastReadOnlyAlertAt = Date.now();
-  originalAlert(READ_ONLY_TITLE, READ_ONLY_MESSAGE, [
-    { text: 'Plus tard', style: 'cancel' },
-    { text: 'Activer', onPress: () => router.push('/subscription') },
+  originalAlert(tr(READ_ONLY_TITLE), tr(READ_ONLY_MESSAGE), [
+    { text: tr('Plus tard'), style: 'cancel' },
+    { text: tr('Activer'), onPress: () => router.push('/subscription') },
   ]);
   throw new Error(READ_ONLY_MESSAGE);
 }
@@ -184,14 +185,6 @@ async function apiFetchWithHeaders(
 // Auth API
 // ==========================================
 export const authAPI = {
-  phoneLogin: async (phoneNumber: string) => {
-    const data = await apiFetch('/auth/phone-login', {
-      method: 'POST',
-      body: JSON.stringify({ phoneNumber }),
-    });
-    if (data.token) await setToken(data.token);
-    return data;
-  },
 
   credentialLogin: async (identifier: string, password: string) => {
     const data = await apiFetch('/auth/credential-login', {

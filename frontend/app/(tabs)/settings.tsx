@@ -1,21 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import {
   View,
-  Text,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Alert,
   Modal,
-  TextInput,
   ActivityIndicator,
   Image,
   Platform,
   Linking,
   Keyboard,
   EmitterSubscription,
+  KeyboardAvoidingView,
 } from 'react-native';
+import { Alert, Text, TextInput } from '../../components/AppText';
 import { useAuth } from '../../context/AuthContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { tr } from '../../utils/translate';
 import { useRouter } from 'expo-router';
 import i18n from '../../utils/i18n';
 import Ionicons from "@react-native-vector-icons/ionicons";
@@ -67,6 +68,7 @@ function SettingsScreenInner() {
     return () => { s.remove(); h.remove(); };
   }, []);
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [langModalVisible, setLangModalVisible] = useState(false);
   const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
   const [pinModalVisible, setPinModalVisible] = useState(false);
@@ -334,7 +336,7 @@ function SettingsScreenInner() {
                 </Text>
                 <Text style={styles.settingSubtitle}>
                   {isSubActive
-                    ? `Plan ${user?.subscriptionPlan === 'monthly' ? 'Mensuel' : user?.subscriptionPlan === 'quarterly' ? 'Trimestriel' : 'Annuel'} • ${subDaysLeft} jours restants`
+                    ? `Plan ${tr(user?.subscriptionPlan === 'monthly' ? 'Mensuel' : user?.subscriptionPlan === 'quarterly' ? 'Trimestriel' : 'Annuel')} • ${subDaysLeft} jours restants`
                     : 'Essai gratuit • Passer à un plan payant'}
                 </Text>
               </View>
@@ -614,7 +616,7 @@ function SettingsScreenInner() {
       {/* Language Modal */}
       <Modal visible={langModalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: 20 + insets.bottom }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Choisir la langue</Text>
               <TouchableOpacity onPress={() => setLangModalVisible(false)}>
@@ -831,8 +833,9 @@ function SettingsScreenInner() {
         transparent
         onRequestClose={() => { if (!deleting) setDeleteModalVisible(false); }}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { paddingHorizontal: 22, paddingVertical: 22, maxHeight: '90%' }]}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <View style={[styles.modalContent, { paddingHorizontal: 22, paddingTop: 22, paddingBottom: 22 + insets.bottom, maxHeight: '92%' }]}>
+           <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <View style={{ alignItems: 'center', marginBottom: 12 }}>
               <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: '#fee2e2', alignItems: 'center', justifyContent: 'center' }}>
                 <Ionicons name="trash" size={32} color="#dc2626" />
@@ -849,6 +852,7 @@ function SettingsScreenInner() {
             </View>
             <Text style={{ fontSize: 13, fontWeight: '600', color: '#334155', marginTop: 18, marginBottom: 6 }}>Pour confirmer, tapez <Text style={{ color: '#dc2626', fontWeight: '800' }}>SUPPRIMER</Text> ci-dessous :</Text>
             <TextInput
+              testID="delete-confirm-input"
               style={{ borderWidth: 2, borderColor: '#e2e8f0', borderRadius: 10, padding: 12, fontSize: 16, color: '#0f172a', backgroundColor: '#fff' }}
               value={deleteConfirmText}
               onChangeText={setDeleteConfirmText}
@@ -865,6 +869,7 @@ function SettingsScreenInner() {
             )}
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
               <TouchableOpacity
+                testID="delete-cancel-button"
                 style={{ flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#f1f5f9', alignItems: 'center', opacity: deleting ? 0.5 : 1 }}
                 onPress={() => { if (!deleting) { setDeleteModalVisible(false); setDeleteConfirmText(''); } }}
                 disabled={deleting}
@@ -876,6 +881,7 @@ function SettingsScreenInner() {
                   flex: 1, padding: 14, borderRadius: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6,
                   backgroundColor: deleteConfirmText.trim().toUpperCase() === 'SUPPRIMER' && !deleting ? '#dc2626' : '#fca5a5',
                 }}
+                testID="delete-confirm-button"
                 onPress={handleDeleteAccount}
                 disabled={deleting || deleteConfirmText.trim().toUpperCase() !== 'SUPPRIMER'}
               >
@@ -887,8 +893,9 @@ function SettingsScreenInner() {
                 )}
               </TouchableOpacity>
             </View>
+           </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

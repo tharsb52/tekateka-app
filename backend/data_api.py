@@ -161,7 +161,13 @@ async def get_current_user(authorization: str = Header(None)):
 # ==========================================
 @router.post("/auth/phone-login")
 async def phone_login(req: PhoneLoginRequest = None, phone_number: str = None, phoneNumber: str = None):
-    """Login/register via phone after OTP verification. Creates user if not exists."""
+    """DISABLED (security): issued a token for any phone number without
+    verification. Merchants now sign in with email + password or PIN; the
+    admin can attach an email to phone-only accounts."""
+    raise HTTPException(
+        status_code=410,
+        detail="La connexion par numéro de téléphone n'est plus disponible. Connectez-vous avec votre email. Pas d'email ? Contactez l'administrateur TekaTeka.",
+    )
     phone = None
     if req and req.phoneNumber:
         phone = req.phoneNumber

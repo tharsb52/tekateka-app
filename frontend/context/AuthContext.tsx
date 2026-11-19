@@ -42,9 +42,7 @@ interface AuthContextType {
   loading: boolean;
   pinVerified: boolean;
   hasPin: boolean;
-  login: (phoneNumber: string, otp: string) => Promise<void>;
   loginWithCredentials: (identifier: string, password: string) => Promise<void>;
-  quickLogin: (phoneNumber: string) => Promise<void>;
   setupCredentials: (email?: string, username?: string, password?: string) => Promise<void>;
   // === NEW June 2026 — Email + PIN auth ===
   signupWithEmail: (email: string, password: string, name?: string) => Promise<void>;
@@ -149,69 +147,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setPinVerified(true);
   };
 
-  // Login via phone (called after OTP verification)
-  const login = async (phoneNumber: string, _otp: string) => {
+
+  // Remember the last account on this device so the login screen can offer
+  // "PIN only" next time.
+  const rememberAccount = async (u: User) => {
     try {
-      // Call backend to create/login user in MongoDB and get JWT
-      const result = await authAPI.phoneLogin(phoneNumber);
-      if (result.user) {
-        const mappedUser = mapBackendUser(result.user);
-        setUser(mappedUser);
-        await changeLocale(mappedUser.language);
-
-        // Persist the phone+userId so that even after logout the user can
-        // come back via "Quick Login (PIN)" without re-doing the SMS dance.
-        // This dramatically improves the experience for repeat users on
-        // shaky African networks where re-receiving a SMS can fail multiple
-        // times before Firebase rate-limits the phone for 1 hour.
-        try {
-          await AsyncStorage.setItem('@tekateka:lastPhone', phoneNumber);
-          await AsyncStorage.setItem('@tekateka:lastUserId', mappedUser.id);
-          await AsyncStorage.setItem('@tekateka:lastUserName', mappedUser.name || '');
-        } catch (e) { console.warn('persist lastPhone failed', e); }
-
-        // Schedule trial expiry reminders - DEFERRED & ISOLATED so any native crash
-        // here cannot break the login flow
-        if (!mappedUser.isSubscribed) {
-          setTimeout(() => {
-            try {
-              const trialEnd = new Date(mappedUser.createdAt);
-              trialEnd.setDate(trialEnd.getDate() + 7);
-              scheduleExpiryReminders(trialEnd.toISOString(), true).catch((e) => {
-                console.warn('scheduleExpiryReminders failed (non-blocking):', e);
-              });
-            } catch (e) {
-              console.warn('scheduleExpiryReminders sync error (non-blocking):', e);
-            }
-          }, 2000);
-        }
-      }
-    } catch (error: any) {
-      console.error('Phone login error:', error);
-      throw new Error(error.message || 'Erreur de connexion');
-    }
-  };
-
-  // QUICK LOGIN — fast path that skips Firebase entirely.
-  // Used when the user already has a PIN set on this device AND the backend
-  // recognises their phone (returning user). No SMS, no reCAPTCHA, no rate
-  // limit. The backend `quickLogin` endpoint re-issues a fresh JWT.
-  const quickLogin = async (phoneNumber: string) => {
-    try {
-      const result = await authAPI.phoneLogin(phoneNumber);
-      if (result.user) {
-        const mappedUser = mapBackendUser(result.user);
-        setUser(mappedUser);
-        await changeLocale(mappedUser.language);
-        try {
-          await AsyncStorage.setItem('@tekateka:lastPhone', phoneNumber);
-          await AsyncStorage.setItem('@tekateka:lastUserId', mappedUser.id);
-          await AsyncStorage.setItem('@tekateka:lastUserName', mappedUser.name || '');
-        } catch {}
-      }
-    } catch (error: any) {
-      throw new Error(error.message || 'Erreur de connexion');
-    }
+      if (u.email) await AsyncStorage.setItem('@tekateka:lastEmail', u.email);
+      await AsyncStorage.setItem('@tekateka:lastUserId', u.id);
+      await AsyncStorage.setItem('@tekateka:lastUserName', u.name || '');
+    } catch {}
   };
 
   // Login via email/username + password (for colleague)
@@ -222,6 +166,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const mappedUser = mapBackendUser(result.user);
         setUser(mappedUser);
         await changeLocale(mappedUser.language);
+        await rememberAccount(mappedUser);
       }
     } catch (error: any) {
       console.error('Credential login error:', error);
@@ -254,6 +199,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const mapped = mapBackendUser(result.user);
         setUser(mapped);
         await changeLocale(mapped.language);
+        await rememberAccount(mapped);
       }
     } catch (e: any) {
       console.error('Email signup error:', e);
@@ -266,8 +212,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const result = await authAPI.loginPin(identifier, pin);
       if (result.user) {
         const mapped = mapBackendUser(result.user);
+        // PIN already proven on the server → keep the local lock in sync
+        // and skip the extra PIN screen.
+        await AsyncStorage.setItem(`@tekateka:${mapped.id}:pin`, pin);
+        setHasPin(true);
+        setPinVerified(true);
         setUser(mapped);
         await changeLocale(mapped.language);
+        await rememberAccount(mapped);
       }
     } catch (e: any) {
       console.error('PIN login error:', e);
@@ -458,9 +410,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         loading,
         pinVerified,
         hasPin,
-        login,
         loginWithCredentials,
-        quickLogin,
         setupCredentials,
         signupWithEmail,
         loginWithPin,

@@ -1,5 +1,13 @@
 import React from 'react';
-import { View, Text, Image, StyleSheet, TouchableOpacity, StatusBar, Platform } from 'react-native';
+import {
+  View,
+  Image,
+  StyleSheet,
+  TouchableOpacity,
+  StatusBar,
+  Platform,
+} from 'react-native';
+import { Text } from './AppText';
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { useAuth } from '../context/AuthContext';
 import { useRouter } from 'expo-router';

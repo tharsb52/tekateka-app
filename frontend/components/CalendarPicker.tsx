@@ -1,7 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView,
+  View,
+  TouchableOpacity,
+  StyleSheet,
+  Modal,
+  ScrollView,
 } from 'react-native';
+import { Text } from './AppText';
 import Ionicons from "@react-native-vector-icons/ionicons";
 
 const MONTHS_FR = [

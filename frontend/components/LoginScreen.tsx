@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   View,
-  Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   KeyboardAvoidingView,
@@ -12,6 +10,7 @@ import {
   ScrollView,
   StatusBar,
 } from 'react-native';
+import { Text, TextInput } from './AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../context/AuthContext';
@@ -24,7 +23,7 @@ const BG = '#fef3e7';
 
 
 export default function LoginScreen() {
-  const { loginWithCredentials, quickLogin, signupWithEmail, forgotPassword, resetPassword } = useAuth();
+  const { loginWithCredentials, loginWithPin, signupWithEmail, forgotPassword, resetPassword } = useAuth();
   const router = useRouter();
   // Sub-mode of the credentials tab: 'login' | 'signup' | 'forgot' | 'reset'
   const [credMode, setCredMode] = useState<'login' | 'signup' | 'forgot' | 'reset'>('login');
@@ -41,34 +40,33 @@ export default function LoginScreen() {
   const [selectedCountry, setSelectedCountry] = useState<Country>(ALL_COUNTRIES[0]);
   const [loading, setLoading] = useState(false);
 
-  // QUICK LOGIN — returning user enters a 4-digit PIN, no SMS at all.
-  // Used ONLY after at least one successful Firebase sign-in on this device.
-  // A new user / new device must still go through the full Firebase phone flow.
-  const [savedPhone, setSavedPhone] = useState<string | null>(null);
+  // QUICK LOGIN — the last account used on this phone only needs its PIN.
+  // On another phone the merchant types email + PIN (or email + password).
+  const [savedEmail, setSavedEmail] = useState<string | null>(null);
   const [savedUserId, setSavedUserId] = useState<string | null>(null);
   const [savedUserName, setSavedUserName] = useState<string>('');
   const [quickPin, setQuickPin] = useState('');
   const [quickPinError, setQuickPinError] = useState('');
   const [showFullLogin, setShowFullLogin] = useState(false);
+  const [loginMethod, setLoginMethod] = useState<'password' | 'pin'>('password');
+  const [loginPin, setLoginPin] = useState('');
 
   useEffect(() => {
     (async () => {
       try {
-        const [phone, uid, name] = await Promise.all([
-          AsyncStorage.getItem('@tekateka:lastPhone'),
+        const [email, uid, name] = await Promise.all([
+          AsyncStorage.getItem('@tekateka:lastEmail'),
           AsyncStorage.getItem('@tekateka:lastUserId'),
           AsyncStorage.getItem('@tekateka:lastUserName'),
         ]);
-        if (phone && uid) {
-          const savedPinForUser = await AsyncStorage.getItem(`@tekateka:${uid}:pin`);
-          if (savedPinForUser) {
-            setSavedPhone(phone);
-            setSavedUserId(uid);
-            setSavedUserName(name || '');
-            const cc = ALL_COUNTRIES.find(c => phone.startsWith('+' + c.code));
-            if (cc) setSelectedCountry(cc);
-          }
-        }
+        if (!uid) return;
+        const localPin = await AsyncStorage.getItem(`@tekateka:${uid}:pin`);
+        // Phone-only accounts can no longer sign in by number (security):
+        // they must use an email given by the admin.
+        if (!email || !localPin) return;
+        setSavedEmail(email);
+        setSavedUserId(uid);
+        setSavedUserName(name || '');
       } catch (e) {
         console.warn('quick login init failed', e);
       }
@@ -76,42 +74,33 @@ export default function LoginScreen() {
   }, []);
 
   const handleQuickPinSubmit = async () => {
-    if (!savedPhone || !savedUserId || quickPin.length < 4) {
+    if (!savedUserId || quickPin.length < 4) {
       setQuickPinError('Entrez votre code PIN à 4 chiffres');
       return;
     }
     setQuickPinError('');
+    setLoading(true);
     try {
-      const storedPin = await AsyncStorage.getItem(`@tekateka:${savedUserId}:pin`);
-      if (!storedPin) {
-        setQuickPinError("PIN introuvable. Utilisez 'Se connecter avec mon numéro'.");
-        return;
-      }
-      if (storedPin !== quickPin) {
-        setQuickPinError('Code PIN incorrect.');
-        setQuickPin('');
-        return;
-      }
-      setLoading(true);
-      await quickLogin(savedPhone);
+      await loginWithPin(savedEmail as string, quickPin);
     } catch (e: any) {
       setLoading(false);
+      setQuickPin('');
       setQuickPinError(e?.message || 'Erreur de connexion');
     }
   };
 
   const handleUseOtherAccount = async () => {
     try {
-      await AsyncStorage.multiRemove(['@tekateka:lastPhone', '@tekateka:lastUserId', '@tekateka:lastUserName']);
+      await AsyncStorage.multiRemove(['@tekateka:lastEmail', '@tekateka:lastPhone', '@tekateka:lastUserId', '@tekateka:lastUserName']);
     } catch {}
-    setSavedPhone(null);
+    setSavedEmail(null);
     setSavedUserId(null);
     setSavedUserName('');
     setQuickPin('');
     setShowFullLogin(true);
   };
 
-  const showQuickLogin = savedPhone && savedUserId && !showFullLogin;
+  const showQuickLogin = !!savedUserId && !!savedEmail && !showFullLogin;
 
   // Credential login state
   const [identifier, setIdentifier] = useState('');
@@ -125,13 +114,21 @@ export default function LoginScreen() {
       setCredError("Entrez votre email ou nom d'utilisateur");
       return;
     }
-    if (!password) {
+    if (loginMethod === 'pin' && loginPin.length < 4) {
+      setCredError('Entrez votre code PIN à 4 chiffres');
+      return;
+    }
+    if (loginMethod === 'password' && !password) {
       setCredError('Entrez votre mot de passe');
       return;
     }
     setLoading(true);
     try {
-      await loginWithCredentials(identifier.trim(), password);
+      if (loginMethod === 'pin') {
+        await loginWithPin(identifier.trim().toLowerCase(), loginPin);
+      } else {
+        await loginWithCredentials(identifier.trim(), password);
+      }
     } catch (error: any) {
       setCredError(error.message || 'Identifiants incorrects');
     } finally {
@@ -163,12 +160,13 @@ export default function LoginScreen() {
               <View style={styles.quickLoginIcon}>
                 <Ionicons name="person-circle" size={64} color="#2563eb" />
               </View>
-              <Text style={styles.quickLoginHello}>Bon retour{savedUserName ? ',' : ' !'}</Text>
+              <Text style={styles.quickLoginHello}>Bon retour{savedUserName ? ',' : '!'}</Text>
               {!!savedUserName && <Text style={styles.quickLoginName}>{savedUserName}</Text>}
-              <Text style={styles.quickLoginPhone}>{savedPhone}</Text>
+              <Text style={styles.quickLoginPhone}>{savedEmail}</Text>
 
               <Text style={styles.quickLoginLabel}>Entrez votre code PIN à 4 chiffres</Text>
               <TextInput
+                testID="quick-pin-input"
                 style={styles.quickPinInput}
                 value={quickPin}
                 onChangeText={(t) => { setQuickPin(t.replace(/\D/g, '').slice(0, 4)); setQuickPinError(''); }}
@@ -182,6 +180,7 @@ export default function LoginScreen() {
               {!!quickPinError && <Text style={styles.quickPinError}>{quickPinError}</Text>}
 
               <TouchableOpacity
+                testID="quick-pin-submit"
                 style={[styles.quickLoginBtn, (loading || quickPin.length < 4) && styles.quickLoginBtnDisabled]}
                 onPress={handleQuickPinSubmit}
                 disabled={loading || quickPin.length < 4}
@@ -195,8 +194,11 @@ export default function LoginScreen() {
                 )}
               </TouchableOpacity>
 
-              <TouchableOpacity onPress={handleUseOtherAccount} style={styles.useOtherBtn}>
-                <Text style={styles.useOtherBtnText}>Utiliser un autre numéro</Text>
+              <TouchableOpacity testID="quick-use-password" onPress={() => { setShowFullLogin(true); setLoginMethod('password'); setIdentifier(savedEmail || ''); }} style={styles.useOtherBtn}>
+                <Text style={styles.useOtherBtnText}>Se connecter avec mon mot de passe</Text>
+              </TouchableOpacity>
+              <TouchableOpacity testID="quick-use-other" onPress={handleUseOtherAccount} style={styles.useOtherBtn}>
+                <Text style={styles.useOtherBtnText}>Utiliser un autre compte</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -234,11 +236,12 @@ export default function LoginScreen() {
               <View style={styles.credInfoBox}>
                 <Ionicons name="information-circle" size={20} color="#2563eb" />
                 <Text style={styles.credInfoText}>
-                  Connectez-vous avec votre email et mot de passe — universel, sans SMS.
+                  Connectez-vous avec votre email et mot de passe — ou Code PIN.
                 </Text>
               </View>
               <Text style={styles.label}>Email</Text>
               <TextInput
+                testID="login-email-input"
                 style={styles.input}
                 placeholder="votre@email.com"
                 placeholderTextColor="#94a3b8"
@@ -247,9 +250,42 @@ export default function LoginScreen() {
                 autoCapitalize="none"
                 keyboardType="email-address"
               />
+              <View style={styles.methodToggle}>
+                {(['password', 'pin'] as const).map((m) => (
+                  <TouchableOpacity
+                    key={m}
+                    testID={`login-method-${m}`}
+                    style={[styles.methodBtn, loginMethod === m && styles.methodBtnActive]}
+                    onPress={() => { setLoginMethod(m); setCredError(''); }}
+                  >
+                    <Ionicons name={m === 'pin' ? 'keypad' : 'key'} size={16} color={loginMethod === m ? '#fff' : '#2563eb'} />
+                    <Text style={[styles.methodBtnText, loginMethod === m && styles.methodBtnTextActive]}>
+                      {m === 'pin' ? 'Code PIN' : 'Mot de passe'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {loginMethod === 'pin' ? (
+                <>
+                  <Text style={[styles.label, { marginTop: 12 }]}>Code PIN</Text>
+                  <TextInput
+                    testID="login-pin-input"
+                    style={styles.input}
+                    placeholder="••••"
+                    placeholderTextColor="#94a3b8"
+                    value={loginPin}
+                    onChangeText={(t) => { setLoginPin(t.replace(/\D/g, '').slice(0, 4)); setCredError(''); }}
+                    keyboardType="number-pad"
+                    maxLength={4}
+                    secureTextEntry
+                  />
+                </>
+              ) : (
+                <>
               <Text style={[styles.label, { marginTop: 12 }]}>Mot de passe</Text>
               <View style={styles.passwordRow}>
                 <TextInput
+                  testID="login-password-input"
                   style={styles.passwordInput}
                   placeholder="Mot de passe"
                   placeholderTextColor="#94a3b8"
@@ -261,13 +297,15 @@ export default function LoginScreen() {
                   <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={22} color="#64748b" />
                 </TouchableOpacity>
               </View>
+                </>
+              )}
               {credError ? (
                 <View style={styles.errorBox}>
                   <Ionicons name="alert-circle" size={16} color="#dc2626" />
                   <Text style={styles.errorText}>{credError}</Text>
                 </View>
               ) : null}
-              <TouchableOpacity style={[styles.button, loading && styles.buttonDisabled]} onPress={handleCredentialLogin} disabled={loading}>
+              <TouchableOpacity testID="login-submit-button" style={[styles.button, loading && styles.buttonDisabled]} onPress={handleCredentialLogin} disabled={loading}>
                 {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Se connecter</Text>}
               </TouchableOpacity>
 
@@ -415,6 +453,34 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
+  methodToggle: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+  },
+  methodBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    minHeight: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#2563eb',
+    backgroundColor: '#fff',
+  },
+  methodBtnActive: {
+    backgroundColor: '#2563eb',
+  },
+  methodBtnText: {
+    color: '#2563eb',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  methodBtnTextActive: {
+    color: '#fff',
+  },
   quickLoginCard: { backgroundColor: '#fff', marginHorizontal: 16, marginTop: 16, marginBottom: 24, borderRadius: 18, padding: 24, alignItems: 'center', borderWidth: 1, borderColor: '#e2e8f0' },
   quickLoginIcon: { marginBottom: 8 },
   quickLoginHello: { fontSize: 20, fontWeight: '800', color: '#0f172a' },
