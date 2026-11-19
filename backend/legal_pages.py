@@ -16,7 +16,7 @@ from fastapi.responses import HTMLResponse
 
 router = APIRouter(tags=["legal"])
 
-LAST_UPDATED = "14 juin 2026"
+LAST_UPDATED = "13 novembre 2026"
 CONTACT_EMAIL = "support@tekateka.app"
 COMPANY = "TekaTeka"
 
@@ -76,9 +76,10 @@ Email de contact : <a href="mailto:{CONTACT_EMAIL}">{CONTACT_EMAIL}</a>
 
 <h3>2.1 Données fournies par vous lors de l'inscription</h3>
 <ul>
-  <li><strong>Numéro de téléphone</strong> — obligatoire pour l'authentification (envoi du code SMS via Firebase Authentication).</li>
+  <li><strong>Adresse email</strong> — obligatoire : identifiant de connexion et envoi des codes de réinitialisation du mot de passe ou du code PIN.</li>
+  <li><strong>Mot de passe et code PIN à 4 chiffres</strong> — obligatoires pour sécuriser l'accès au compte. Ils sont stockés uniquement sous forme chiffrée (hachage bcrypt) ; personne, y compris {COMPANY}, ne peut les lire.</li>
+  <li><strong>Numéro de téléphone</strong> — facultatif, utilisé uniquement pour identifier votre commerce et votre pays.</li>
   <li><strong>Nom et prénom</strong> — facultatif, utilisés uniquement pour personnaliser l'interface.</li>
-  <li><strong>Adresse email</strong> — facultative, utilisée uniquement si vous l'enregistrez vous-même dans votre profil.</li>
   <li><strong>Photo de profil</strong> — facultative, stockée localement et sur nos serveurs sous forme d'image encodée.</li>
 </ul>
 
@@ -110,7 +111,7 @@ jamais vos coordonnées bancaires.</strong>
   <li>Identifiant unique de l'appareil (anonymisé).</li>
   <li>Système d'exploitation et version (Android / iOS).</li>
   <li>Modèle de l'appareil et résolution d'écran.</li>
-  <li>Adresse IP, pays et opérateur télécom (pour la sécurité et la facturation SMS).</li>
+  <li>Adresse IP et pays (pour la sécurité du compte).</li>
   <li>Rapports de plantage et journaux de diagnostic.</li>
 </ul>
 
@@ -140,9 +141,9 @@ qualité de <strong>sous-traitants</strong> et sont contractuellement tenus
 au respect du RGPD :
 </p>
 <ul>
-  <li><strong>Firebase Authentication (Google LLC, États-Unis)</strong> —
-      Envoi des codes SMS, vérification du numéro de téléphone, gestion des sessions.
-      Politique : <a href="https://firebase.google.com/support/privacy" target="_blank">firebase.google.com/support/privacy</a></li>
+  <li><strong>Gmail (Google LLC, États-Unis)</strong> —
+      Envoi des emails de réinitialisation du mot de passe et du code PIN.
+      Politique : <a href="https://policies.google.com/privacy" target="_blank">policies.google.com/privacy</a></li>
   <li><strong>Stripe Inc. (États-Unis)</strong> —
       Traitement des paiements d'abonnement. Politique :
       <a href="https://stripe.com/privacy" target="_blank">stripe.com/privacy</a></li>
@@ -206,7 +207,8 @@ délai maximal d'<strong>un mois</strong>.
 <h2>7. Sécurité des données</h2>
 <ul>
   <li>Chiffrement <strong>TLS 1.3</strong> de toutes les communications réseau.</li>
-  <li>Authentification forte par OTP SMS (Firebase Authentication).</li>
+  <li>Connexion par email et mot de passe, protégée par un code PIN à 4 chiffres ; mots de passe et PIN chiffrés (bcrypt).</li>
+  <li>Codes de réinitialisation à usage unique et à durée limitée, envoyés par email.</li>
   <li>Stockage chiffré au repos sur MongoDB Atlas.</li>
   <li>Accès restreint à la base de données via réseau privé.</li>
   <li>Aucune donnée bancaire stockée sur nos serveurs (déléguée à Stripe PCI-DSS).</li>

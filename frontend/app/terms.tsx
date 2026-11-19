@@ -20,7 +20,7 @@ export default function TermsScreen() {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.lastUpdate}>Dernière mise à jour : Juin 2025</Text>
+        <Text style={styles.lastUpdate}>Dernière mise à jour : Novembre 2026</Text>
 
         <Text style={styles.sectionTitle}>1. Acceptation des conditions</Text>
         <Text style={styles.paragraph}>
@@ -34,7 +34,8 @@ export default function TermsScreen() {
 
         <Text style={styles.sectionTitle}>3. Inscription et compte</Text>
         <Text style={styles.paragraph}>Pour utiliser TekaTeka, vous devez :</Text>
-        <Text style={styles.bullet}>• Disposer d'un numéro de téléphone valide</Text>
+        <Text style={styles.bullet}>• Disposer d'une adresse email valide</Text>
+        <Text style={styles.bullet}>• Choisir un mot de passe et un code PIN que vous gardez secrets</Text>
         <Text style={styles.bullet}>• Être âgé d'au moins 18 ans ou avoir l'autorisation d'un tuteur légal</Text>
         <Text style={styles.bullet}>• Fournir des informations exactes lors de l'inscription</Text>
         <Text style={styles.bullet}>• Maintenir la confidentialité de vos identifiants de connexion</Text>
@@ -48,8 +49,10 @@ export default function TermsScreen() {
 
         <Text style={styles.sectionTitle}>5. Abonnement et paiement</Text>
         <Text style={styles.paragraph}>
-          TekaTeka propose une période d'essai gratuite. Au-delà, un abonnement payant est requis. Les tarifs sont affichés dans l'application. Les paiements sont traités par des prestataires tiers sécurisés (Stripe pour les cartes, Flutterwave pour le Mobile Money).
+          TekaTeka propose une période d'essai gratuite. Au-delà, un abonnement payant est requis. Les tarifs sont affichés dans l'application. Les paiements par carte sont traités par Stripe, un prestataire sécurisé. Un abonnement peut aussi être activé avec un code d'activation.
         </Text>
+        <Text style={styles.bullet}>• À la fin de l'essai gratuit, le compte passe en consultation seule jusqu'à l'activation d'un abonnement</Text>
+        <Text style={styles.bullet}>• À l'expiration d'un abonnement payant, l'accès complet est maintenu 48 heures, puis le compte passe en consultation seule jusqu'au renouvellement ; vos données sont conservées</Text>
         <Text style={styles.bullet}>• Les abonnements sont renouvelés automatiquement sauf annulation</Text>
         <Text style={styles.bullet}>• Les remboursements sont traités conformément aux politiques des stores (Apple/Google)</Text>
         <Text style={styles.bullet}>• Nous nous réservons le droit de modifier les tarifs avec préavis de 30 jours</Text>

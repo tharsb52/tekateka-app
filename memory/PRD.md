@@ -48,3 +48,6 @@ The user builds locally with `eas build` (package `com.tekateka.app`). Download 
 - Read-only: login → /subscription first ("Consulter mes données" button), tabs viewable, writes blocked client-side (apiService) + server-side (server.py middleware → 402 on /api/data/* writes, rules in backend/subscription_guard.py).
 - Security: disabled free self-activation endpoints /api/auth/subscribe and /api/payments/subscribe/confirm (410). Plans only via Stripe, activation codes, admin.
 - Frontend now reads expiry from expiresAt OR expiryDate (activation-code users had no expiry before → never blocked).
+
+## Legal pages (Nov 2026)
+- /api/privacy (backend/legal_pages.py), app/privacy.tsx, app/terms.tsx updated: Email+password+PIN auth, Gmail for reset emails, Firebase/OTP/Flutterwave mentions removed, 48h grace rule added to terms.

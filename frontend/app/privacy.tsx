@@ -20,7 +20,7 @@ export default function PrivacyPolicyScreen() {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.lastUpdate}>Dernière mise à jour : Juin 2025</Text>
+        <Text style={styles.lastUpdate}>Dernière mise à jour : Novembre 2026</Text>
 
         <Text style={styles.sectionTitle}>1. Introduction</Text>
         <Text style={styles.paragraph}>
@@ -29,8 +29,9 @@ export default function PrivacyPolicyScreen() {
 
         <Text style={styles.sectionTitle}>2. Données collectées</Text>
         <Text style={styles.paragraph}>Nous collectons les données suivantes :</Text>
-        <Text style={styles.bullet}>• Numéro de téléphone (pour l'authentification OTP)</Text>
-        <Text style={styles.bullet}>• Email et nom d'utilisateur (optionnel, pour l'accès collègue)</Text>
+        <Text style={styles.bullet}>• Adresse email (identifiant de connexion et réinitialisation du mot de passe / PIN)</Text>
+        <Text style={styles.bullet}>• Mot de passe et code PIN (stockés uniquement sous forme chiffrée)</Text>
+        <Text style={styles.bullet}>• Numéro de téléphone (optionnel)</Text>
         <Text style={styles.bullet}>• Photo de profil (optionnel)</Text>
         <Text style={styles.bullet}>• Données commerciales : produits, ventes, dépenses, dettes, notes</Text>
         <Text style={styles.bullet}>• Devise et langue préférées</Text>
@@ -44,15 +45,15 @@ export default function PrivacyPolicyScreen() {
 
         <Text style={styles.sectionTitle}>4. Stockage et sécurité</Text>
         <Text style={styles.paragraph}>
-          Vos données sont stockées de manière sécurisée dans notre base de données MongoDB avec chiffrement. Les mots de passe sont hashés avec bcrypt. Les communications sont protégées par HTTPS et l'authentification utilise des tokens JWT.
+          Vos données sont stockées de manière sécurisée dans notre base de données MongoDB avec chiffrement. Les mots de passe et codes PIN sont hashés avec bcrypt. Les communications sont protégées par HTTPS et l'authentification utilise des tokens JWT.
         </Text>
 
         <Text style={styles.sectionTitle}>5. Partage des données</Text>
         <Text style={styles.paragraph}>
           Nous ne vendons, ne louons et ne partageons pas vos données personnelles avec des tiers, sauf dans les cas suivants :
         </Text>
-        <Text style={styles.bullet}>• Fournisseurs de services de paiement (Stripe, Flutterwave) pour le traitement des transactions</Text>
-        <Text style={styles.bullet}>• Fournisseur SMS (Africa's Talking) pour l'envoi des codes OTP</Text>
+        <Text style={styles.bullet}>• Stripe, pour le traitement des paiements par carte</Text>
+        <Text style={styles.bullet}>• Gmail (Google), pour l'envoi des emails de réinitialisation du mot de passe et du PIN</Text>
         <Text style={styles.bullet}>• Obligation légale ou judiciaire</Text>
 
         <Text style={styles.sectionTitle}>6. Vos droits</Text>
@@ -64,7 +65,7 @@ export default function PrivacyPolicyScreen() {
 
         <Text style={styles.sectionTitle}>7. Données de paiement</Text>
         <Text style={styles.paragraph}>
-          Les informations de carte bancaire sont traitées directement par Stripe et ne sont jamais stockées sur nos serveurs. Les transactions Mobile Money sont traitées par Flutterwave de manière sécurisée.
+          Les informations de carte bancaire sont traitées directement par Stripe et ne sont jamais stockées sur nos serveurs.
         </Text>
 
         <Text style={styles.sectionTitle}>8. Conservation des données</Text>
