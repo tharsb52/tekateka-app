@@ -44,7 +44,6 @@ ALLOWED_ORIGINS = sorted({
 ALLOWED_ORIGIN_REGEX = r"https://([a-z0-9-]+\.)*(emergentagent\.com|emergent\.host)"
 
 # ---------------------------------------------------------------- lockout
-MAX_FAILURES = 5
 LOCK_MINUTES = 15
 # Number of trusted proxies that append to X-Forwarded-For after the client
 # (preview: Cloudflare + Google load balancer = 2).
@@ -65,8 +64,22 @@ def client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+# Per login type: (max failures per account, max failures per IP or None = no IP limit)
+LIMITS = {
+    "pin": (5, None),          # merchants share IPs on mobile networks -> account only
+    "password": (5, 5),
+    "ambassador": (5, 30),
+    "admin": (10, 10),
+}
+
+
 def _keys(scope: str, account: str, request: Request):
-    return [f"{scope}:acct:{(account or '').strip().lower()}", f"{scope}:ip:{client_ip(request)}"]
+    """[(key, max_failures)] — account key first."""
+    acct_max, ip_max = LIMITS[scope]
+    keys = [(f"{scope}:acct:{(account or '').strip().lower()}", acct_max)]
+    if ip_max:
+        keys.append((f"{scope}:ip:{client_ip(request)}", ip_max))
+    return keys
 
 
 def _locked_message(until: datetime, now: datetime) -> str:
@@ -80,7 +93,7 @@ async def ensure_lock_indexes():
 
 async def check_not_locked(scope: str, account: str, request: Request):
     now = datetime.now(timezone.utc)
-    async for doc in _locks.find({"_id": {"$in": _keys(scope, account, request)}, "lockedUntil": {"$gt": now}}):
+    async for doc in _locks.find({"_id": {"$in": [k for k, _ in _keys(scope, account, request)]}, "lockedUntil": {"$gt": now}}):
         until = doc["lockedUntil"]
         if until.tzinfo is None:
             until = until.replace(tzinfo=timezone.utc)
@@ -88,10 +101,10 @@ async def check_not_locked(scope: str, account: str, request: Request):
 
 
 async def record_failure(scope: str, account: str, request: Request):
-    """Count one failure on the account and on the IP; lock at 5 within 15 min."""
+    """Count one failure on the account (and IP if limited); lock at the limit within 15 min."""
     now = datetime.now(timezone.utc)
     window_start = now - timedelta(minutes=LOCK_MINUTES)
-    for key in _keys(scope, account, request):
+    for key, max_failures in _keys(scope, account, request):
         await _locks.update_one(
             {"_id": key},
             [{"$set": {
@@ -101,7 +114,7 @@ async def record_failure(scope: str, account: str, request: Request):
                                           now, {"$ifNull": ["$windowStart", now]}]},
                 "expiresAt": now + timedelta(minutes=LOCK_MINUTES * 2),
             }}, {"$set": {
-                "lockedUntil": {"$cond": [{"$gte": ["$failures", MAX_FAILURES]},
+                "lockedUntil": {"$cond": [{"$gte": ["$failures", max_failures]},
                                           now + timedelta(minutes=LOCK_MINUTES), None]},
             }}],
             upsert=True,
@@ -111,7 +124,7 @@ async def record_failure(scope: str, account: str, request: Request):
 async def clear_failures(scope: str, account: str, request: Request):
     """Success resets the ACCOUNT counter only; the IP counter expires by itself,
     so a valid account cannot be used to reset the per-IP limit."""
-    await _locks.delete_one({"_id": _keys(scope, account, request)[0]})
+    await _locks.delete_one({"_id": _keys(scope, account, request)[0][0]})
 
 
 async def require_admin(request: Request, password) -> None:
@@ -121,3 +134,9 @@ async def require_admin(request: Request, password) -> None:
         await record_failure("admin", "admin", request)
         raise HTTPException(status_code=401, detail="Accès refusé")
     await clear_failures("admin", "admin", request)
+
+
+async def unlock_admin() -> int:
+    """Remove every admin lock (account + IP). Used at server start and by unlock_admin.py."""
+    res = await _locks.delete_many({"_id": {"$regex": "^admin:"}})
+    return res.deleted_count

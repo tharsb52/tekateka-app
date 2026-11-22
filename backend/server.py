@@ -19,7 +19,7 @@ from reporting import router as reporting_router
 from data_api import router as data_router
 from data_api import db as data_db, SECRET_KEY as DATA_SECRET_KEY, ALGORITHM as DATA_ALGORITHM
 from subscription_guard import has_write_access
-from security_config import client_ip as real_client_ip, ALLOWED_ORIGINS, ALLOWED_ORIGIN_REGEX, ensure_lock_indexes
+from security_config import client_ip as real_client_ip, ALLOWED_ORIGINS, ALLOWED_ORIGIN_REGEX, ensure_lock_indexes, unlock_admin
 from jose import jwt as jose_jwt, JWTError
 from bson import ObjectId
 from admin_api import router as admin_router
@@ -226,6 +226,7 @@ async def start_daily_backups():
 @app.on_event("startup")
 async def ensure_data_indexes():
     await ensure_lock_indexes()
+    await unlock_admin()  # a restart / redeploy always unblocks the admin
     # Fast per-merchant queries (sync signatures) + offline idempotency keys
     try:
         for name in ("products", "sales", "expenses", "debts", "purchases"):

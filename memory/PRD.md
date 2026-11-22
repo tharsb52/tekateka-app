@@ -83,3 +83,4 @@ The user builds locally with `eas build` (package `com.tekateka.app`). Download 
 - Webhook Stripe : signature obligatoire (`/api/payments/stripe/webhook`).
 - Supprimés : firebase_auth_page.py, firebase_otp.py, otp_service.py, routes /otp/*, change-password admin.
 - /api/reports/* protégés (header X-Admin-Password). activate-code utilise le token, plus le userId du body.
+- Limites ajustées : PIN = compte seul (5/15 min) ; admin = 10/15 min (compte+IP), déblocage `python unlock_admin.py` ou redémarrage/redéploiement ; ambassadeur = 5 par compte + 30 par IP ; mot de passe inchangé (5+5).
