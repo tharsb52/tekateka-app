@@ -91,3 +91,6 @@ credentials.json
 *credentials.json*
 # Environment and credential files
 backend/backups/
+.env
+.env.*
+*.env
