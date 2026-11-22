@@ -84,3 +84,4 @@ The user builds locally with `eas build` (package `com.tekateka.app`). Download 
 - Supprimés : firebase_auth_page.py, firebase_otp.py, otp_service.py, routes /otp/*, change-password admin.
 - /api/reports/* protégés (header X-Admin-Password). activate-code utilise le token, plus le userId du body.
 - Limites ajustées : PIN = compte seul (5/15 min) ; admin = 10/15 min (compte+IP), déblocage `python unlock_admin.py` ou redémarrage/redéploiement ; ambassadeur = 5 par compte + 30 par IP ; mot de passe inchangé (5+5).
+- Juin 2026 : contrôle de déploiement OK (warn seulement). .gitignore nettoyé (n'exclut plus les .env), MONGO_URL/DB_NAME/RESET_CODE_PEPPER sans valeurs par défaut, firebase_admin/firestore retirés de requirements. eas.json et l'URL de secours de constants.ts gardés volontairement (builds EAS locaux).

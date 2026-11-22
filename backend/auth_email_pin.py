@@ -68,8 +68,8 @@ from email_service import (
 load_dotenv()
 
 # ---------- DB & helpers ----------
-MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
-DB_NAME = os.getenv("DB_NAME", "tekateka_db")
+MONGO_URL = os.environ["MONGO_URL"]
+DB_NAME = os.environ["DB_NAME"]
 _client = AsyncIOMotorClient(MONGO_URL, tz_aware=True)  # aware datetimes: avoids naive/aware TypeError in reset-code expiry/throttle
 db = _client[DB_NAME]
 
@@ -79,7 +79,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Pepper added to the reset code hash so a DB dump alone cannot brute-force the
 # small 6-digit space.
-RESET_CODE_PEPPER = os.getenv("RESET_CODE_PEPPER", "tekateka_default_pepper_replace_me")
+RESET_CODE_PEPPER = os.environ["RESET_CODE_PEPPER"]
 
 logger = logging.getLogger("auth_email_pin")
 
