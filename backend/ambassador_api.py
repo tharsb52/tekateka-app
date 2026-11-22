@@ -40,32 +40,7 @@ router = APIRouter()
 # ==========================================
 # Subscription helpers
 # ==========================================
-PLAN_DURATION_DAYS = {"monthly": 30, "quarterly": 90, "yearly": 365}
-
-
-def compute_cumulative_expiry(user: dict, plan: str, now: datetime) -> datetime:
-    """
-    Cumul d'abonnement: si l'utilisateur a déjà un abonnement actif (non expiré),
-    le nouveau plan s'ajoute à la date d'expiration existante. Sinon, on repart
-    de maintenant.
-
-    Lit aussi bien `subscription.expiryDate` que `subscription.expiresAt` car
-    les deux clés ont coexisté dans la base.
-    """
-    days = PLAN_DURATION_DAYS.get(plan, 30)
-    existing_sub = (user or {}).get("subscription") or {}
-    existing_str = existing_sub.get("expiryDate") or existing_sub.get("expiresAt")
-    base = now
-    if existing_str and existing_sub.get("status") in ("active", "trial"):
-        try:
-            existing_dt = datetime.fromisoformat(
-                str(existing_str).replace("Z", "+00:00")
-            ).replace(tzinfo=None)
-            if existing_dt > now:
-                base = existing_dt
-        except Exception:
-            pass
-    return base + timedelta(days=days)
+from subscription_utils import extend_subscription  # noqa: E402
 
 
 
@@ -512,9 +487,7 @@ async def activate_code(body: dict):
     if not user:
         raise HTTPException(status_code=404, detail="Client introuvable")
 
-    # Calculate expiry — CUMUL: prolonge l'abonnement actuel si encore actif
     now = datetime.utcnow()
-    expiry = compute_cumulative_expiry(user, plan, now)
 
     # Pricing + commission for this activation
     pricing_cfg = PRICING_TIERS[DEFAULT_TIER][plan]
@@ -535,21 +508,20 @@ async def activate_code(body: dict):
         # Race condition: another request grabbed this code first.
         raise HTTPException(status_code=409, detail="Code déjà utilisé, veuillez réessayer")
 
-    # Update user subscription
-    await db.users.update_one(
-        {"_id": ObjectId(client_user_id)},
-        {"$set": {
-            "subscription": {
-                "status": "active",
-                "plan": plan,
-                "startDate": now.isoformat(),
-                "expiryDate": expiry.isoformat(),
-                "activatedBy": amb_id,
-                "activationCode": code_doc["code"],
-                "method": "ambassador_code",
-            }
-        }}
-    )
+    # Shared rule: max(current expiry, now) + purchased duration
+    try:
+        expiry = await extend_subscription(db, client_user_id, plan, {
+            "activatedBy": amb_id,
+            "activationCode": code_doc["code"],
+            "method": "ambassador_code",
+        }, now)
+    except Exception:
+        # Give the code back if the subscription could not be written
+        await db.activation_codes.update_one(
+            {"_id": code_doc["_id"]},
+            {"$set": {"status": "unused", "usedAt": None, "usedByUserId": None}},
+        )
+        raise HTTPException(status_code=500, detail="Activation impossible, réessayez")
 
     client_display_name = user.get("username") or user.get("name") or user.get("phoneNumber", "Client")
 
@@ -697,9 +669,7 @@ async def client_activate_code(body: dict, request: Request):
     plan = code_doc["plan"]
     ambassador_id = code_doc["ambassadorId"]
 
-    # Calculate expiry — CUMUL: prolonge l'abonnement actuel si encore actif
     now = datetime.utcnow()
-    expiry = compute_cumulative_expiry(user, plan, now)
 
     # Pricing + commission for this activation. Source of truth for both
     # numbers is PRICING_TIERS[DEFAULT_TIER]. Commission = appPrice - ambassadorPrice.
@@ -717,32 +687,21 @@ async def client_activate_code(body: dict, request: Request):
     if upd.modified_count != 1:
         raise HTTPException(status_code=409, detail="Code déjà utilisé, veuillez réessayer")
 
-    # Update user subscription
-    # Write BOTH `expiryDate` (legacy) AND `expiresAt` (canonical) so every
-    # reader in the codebase (admin panel, SubscriptionStatusCard, stripe_api)
-    # sees the same expiry — this was the root cause of the
-    # "subscription expired but admin shows active" mismatch.
-    await db.users.update_one(
-        {"_id": ObjectId(user_id)},
-        {"$set": {
-            "subscription": {
-                "status": "active",
-                "plan": plan,
-                "startDate": now.isoformat(),
-                "startedAt": now.isoformat(),
-                "expiryDate": expiry.isoformat(),
-                "expiresAt": expiry.isoformat(),
-                "activatedBy": ambassador_id,
-                "activationCode": code_str,
-                "method": "activation_code",
-                "provider": "ambassador_code",
-            },
-            "isSubscribed": True,
-            "subscriptionPlan": plan,
-            "subscriptionEndDate": expiry.isoformat(),
-            "updatedAt": now.isoformat(),
-        }}
-    )
+    # Shared rule: max(current expiry, now) + purchased duration
+    try:
+        expiry = await extend_subscription(db, user_id, plan, {
+            "activatedBy": ambassador_id,
+            "activationCode": code_str,
+            "method": "activation_code",
+            "provider": "ambassador_code",
+        }, now)
+    except Exception:
+        # Give the code back if the subscription could not be written
+        await db.activation_codes.update_one(
+            {"_id": code_doc["_id"]},
+            {"$set": {"status": "unused", "usedAt": None, "usedByUserId": None}},
+        )
+        raise HTTPException(status_code=500, detail="Activation impossible, réessayez")
 
     # Record ambassador sale (legacy collection, kept for back-compat)
     ambassador = await db.ambassadors.find_one({"_id": ObjectId(ambassador_id)})

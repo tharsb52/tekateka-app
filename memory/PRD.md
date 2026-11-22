@@ -85,3 +85,9 @@ The user builds locally with `eas build` (package `com.tekateka.app`). Download 
 - /api/reports/* protégés (header X-Admin-Password). activate-code utilise le token, plus le userId du body.
 - Limites ajustées : PIN = compte seul (5/15 min) ; admin = 10/15 min (compte+IP), déblocage `python unlock_admin.py` ou redémarrage/redéploiement ; ambassadeur = 5 par compte + 30 par IP ; mot de passe inchangé (5+5).
 - Juin 2026 : contrôle de déploiement OK (warn seulement). .gitignore nettoyé (n'exclut plus les .env), MONGO_URL/DB_NAME/RESET_CODE_PEPPER sans valeurs par défaut, firebase_admin/firestore retirés de requirements. eas.json et l'URL de secours de constants.ts gardés volontairement (builds EAS locaux).
+
+## Juin 2026 – Prolongation d'abonnement (iteration 15 OK, 22 tests)
+- `subscription_utils.extend_subscription` : règle unique max(expiration actuelle, maintenant) + durée, écriture compare-and-swap, essai implicite 7 j (createdAt) compté. Utilisée par Stripe, code client, activation ambassadeur/QR.
+- Stripe : paiement « réservé » atomiquement (status != completed) → un paiement ne prolonge qu'une fois ; rollback si échec. Codes : remis « unused » si échec.
+- Tests : tests/test_subscription_extension.py, tests/test_subscription_extension_api.py.
+- Non modifié : admin grant-premium (fixe maintenant + N jours).

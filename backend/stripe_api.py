@@ -96,6 +96,7 @@ else:
 # JWT auth (reuse data_api logic)
 import jwt
 from security_config import JWT_SECRET
+from subscription_utils import PLAN_DAYS, extend_subscription
 
 router = APIRouter()
 
@@ -224,11 +225,7 @@ STRIPE_AMBASSADOR_PRICE_IDS = {
     for plan in ("monthly", "quarterly", "yearly")
 }
 
-SUBSCRIPTION_DURATION_DAYS = {
-    "monthly":   30,
-    "quarterly": 90,
-    "yearly":   365,
-}
+SUBSCRIPTION_DURATION_DAYS = PLAN_DAYS  # single source: subscription_utils
 
 # Free trial granted to new users at signup
 FREE_TRIAL_DAYS = 7
@@ -664,49 +661,31 @@ async def _fulfill_payment(payment: dict, session: dict):
     user_id = payment.get("userId")
     ptype = payment.get("type")
 
-    await db.payments.update_one(
-        {"_id": payment["_id"]},
+    # IDEMPOTENCE: atomically claim the payment. If Stripe sends the same event
+    # twice, or the webhook and the status polling arrive together, only the
+    # first caller flips it to "completed" and extends the subscription.
+    claim = await db.payments.update_one(
+        {"_id": payment["_id"], "status": {"$ne": "completed"}},
         {"$set": {
             "status": "completed",
             "completedAt": now.isoformat() + "Z",
             "stripePaymentIntentId": session.get("payment_intent") if isinstance(session, dict) else getattr(session, "payment_intent", None),
         }}
     )
+    if claim.modified_count != 1:
+        logger.info(f"Payment {payment['_id']} already fulfilled — duplicate event ignored")
+        return
 
     if ptype == "subscription":
         plan = payment.get("plan", "monthly")
-        plan_days = SUBSCRIPTION_DURATION_DAYS.get(plan, 30)
-        # CUMUL: si l'utilisateur a déjà un abonnement actif, le nouveau
-        # paiement prolonge la période d'expiration existante au lieu de la
-        # remplacer. Si expiré ou nouveau, on repart de maintenant.
-        existing_user = await db.users.find_one({"_id": ObjectId(user_id)}) or {}
-        existing_sub = existing_user.get("subscription") or {}
-        base = now
-        existing_expiry_str = existing_sub.get("expiresAt") or existing_sub.get("expiryDate")
-        if existing_expiry_str and existing_sub.get("status") in ("active", "trial"):
-            try:
-                existing_dt = datetime.fromisoformat(
-                    str(existing_expiry_str).replace("Z", "+00:00")
-                ).replace(tzinfo=None)
-                if existing_dt > now:
-                    base = existing_dt
-            except Exception:
-                pass
-        end_date = base + timedelta(days=plan_days)
-        await db.users.update_one(
-            {"_id": ObjectId(user_id)},
-            {"$set": {
-                "subscription": {
-                    "plan": plan,
-                    "status": "active",
-                    "startedAt": now.isoformat() + "Z",
-                    "expiresAt": end_date.isoformat() + "Z",
-                    "provider": "stripe",
-                },
-                "updatedAt": now.isoformat() + "Z",
-            }}
-        )
-        logger.info(f"Activated {plan} subscription for user {user_id} (cumul base={base.isoformat()}, end={end_date.isoformat()})")
+        # Shared rule: max(current expiry, now) + purchased duration
+        try:
+            end_date = await extend_subscription(db, user_id, plan, {"provider": "stripe", "stripePaymentId": str(payment["_id"])}, now)
+        except Exception:
+            # Release the claim so a webhook replay / status poll can retry: the customer paid.
+            await db.payments.update_one({"_id": payment["_id"]}, {"$set": {"status": "pending"}})
+            raise
+        logger.info(f"Activated {plan} subscription for user {user_id} (end={end_date.isoformat()})")
 
     elif ptype == "ambassador_codes":
         qty = int(payment.get("quantity", 1))

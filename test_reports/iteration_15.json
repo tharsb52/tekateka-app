@@ -1,0 +1,31 @@
+{
+  "summary": "Backend-only test of the subscription extension rule (new_expiry = max(current_expiry, now) + plan_days) and Stripe idempotency. 21/21 tests pass: the 6 existing unit tests plus 15 new integration tests against the public URL. Client activate-code: 40 days left + monthly code -> now+70d, with expiresAt == expiryDate == subscriptionEndDate and isSubscribed=true. Expired -> now+30d. Trial with expiresAt now+5d -> now+35d. Monthly sub with 10 days left + quarterly code -> now+100d. Two codes activated at the same time -> both counted (+60d). Reusing a code -> 400 and no second extension. No token -> 401. Ambassador activate: 40 days left + quarterly -> now+130d, the response expiryDate matches the DB, the code is marked used, and the commission and ambassador_sales records are created. Expired -> now+30d. No code left -> 404 and the subscription is untouched. Stripe: polling the status of an already-completed payment 3 times -> no extension. Another user's session -> 404. Webhook without a signature -> 400/503. Regressions: GET /auth/profile shows the active subscription. The write guard returns 402 on an expired subscription and 200 after activation. Admin grant-premium still sets now+days.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "stripe_api._fulfill_payment", "issue": "The payment is set to 'completed' before extend_subscription runs. If extend_subscription throws (RuntimeError after 5 compare-and-swap conflicts, or user not found / bad userId), the customer has paid but gets no days, and replaying the webhook or polling cannot fix it because the payment is already completed. The same pattern in activate-code and ambassador/activate uses up the code without extending the subscription."},
+      {"endpoint": "POST /api/subscription/activate-code, /api/ambassador/activate (email-signup users)", "issue": "/auth/email-signup saves no subscription object. The 7-day trial only exists implicitly (createdAt+7d in subscription_guard), so current_expiry() sees no expiry. If such a user activates during the trial, they get now+30d and lose the remaining trial days. Phone-login users have subscription.expiresAt = trial end and get trial_end+30d. The two signup paths behave differently."},
+      {"endpoint": "POST /api/admin/user/{id}/grant-premium", "issue": "Kept unchanged as requested: it sets now+days and can shorten a paid subscription (40 days left + grant of 30 days -> 30 days). Worth confirming that this is intended."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": [], "react_native_issues": []},
+  "test_report_links": ["/app/backend/tests/test_subscription_extension_api.py", "/app/backend/tests/test_subscription_extension.py", "/app/test_reports/pytest/pytest_sub_extension.xml"],
+  "action_items": [
+    "In _fulfill_payment, wrap extend_subscription in try/except. On failure, set the payment back to pending (or to 'fulfillment_failed') and log an alert, so a retry can still grant the days. Do the same for activation codes: set the code back to unused if the extension fails.",
+    "Decide whether email-signup trial days (createdAt+7d) should count as current_expiry. If yes, fall back to createdAt+TRIAL_DAYS in current_expiry() when there is no subscription, or save a trial subscription at email signup.",
+    "Optional: confirm with the user that admin grant-premium should keep overwriting the expiry (now+days) instead of extending it."
+  ],
+  "critical_code_review_comments": [
+    "subscription_utils.extend_subscription: the compare-and-swap on the full embedded subscription document is correct, because Motor keeps field order on round-trip. Concurrency is verified both in the unit tests and through the API.",
+    "The plan field is overwritten by the latest purchase (for example, a yearly plan with 300 days left + a monthly code -> plan='monthly'). The expiry is correct; this only affects the plan label shown.",
+    "The pending-payment branch of the Stripe status poll (a live Stripe Session.retrieve) was not tested end-to-end because there is no real paid session. The duplicate-fulfillment unit test covers it.",
+    "ambassador_api.py has 1296 lines and stripe_api.py has 758, both above the 700-line guideline."
+  ],
+  "updated_files": ["/app/backend/tests/test_subscription_extension_api.py"],
+  "success_rate": {"backend": "100% (21/21)", "frontend": "not tested (backend only)"},
+  "seed_data_creation": "None kept. Test users (test_ext_*@example.com), a TEST_Amb ambassador with its codes, sales and commissions, test payments and test notes were created and deleted by id. login_lockouts were cleared at the start and at the end. Verified afterwards that 0 test documents remain.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend && pytest tests/test_subscription_extension_api.py tests/test_subscription_extension.py -v. The integration test writes subscriptions directly to Mongo and creates its own ambassador through the admin API (admin password in test_credentials.md).",
+  "rca_of_issue": "The original bug (wrong expiry when buying while already active) is fixed: every activation path (Stripe, activate-code, ambassador activate) now uses subscription_utils.extend_subscription, and Stripe fulfillment is claimed atomically with status != completed."
+}
