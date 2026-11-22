@@ -255,6 +255,13 @@ if _static_dir.exists():
     app.mount("/api/assets", StaticFiles(directory=str(_static_dir)), name="assets")
 
 @app.on_event("startup")
+async def start_daily_backups():
+    import asyncio
+    import backup_service
+    asyncio.create_task(backup_service.daily_backup_loop())
+
+
+@app.on_event("startup")
 async def ensure_data_indexes():
     # Fast per-merchant queries (sync signatures) + offline idempotency keys
     try:

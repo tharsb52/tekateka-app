@@ -8,7 +8,8 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Depends, Header, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
+import backup_service
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 from passlib.context import CryptContext
@@ -183,6 +184,29 @@ async def admin_stats(request: Request):
         "users": user_stats,
         "trends": trends,
     }
+
+
+@router.post("/admin/export")
+async def admin_export(request: Request):
+    """Full downloadable backup (gzip JSON) built server-side, without password/PIN hashes."""
+    body = await request.json()
+    if body.get("password") != ADMIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="Accès refusé")
+    data, _ = await backup_service.build_archive(for_export=True)
+    name = f"tekateka-export-{datetime.utcnow().strftime('%Y-%m-%d_%H%M')}.json.gz"
+    return Response(content=data, media_type="application/gzip",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@router.post("/admin/backups")
+async def admin_backups(request: Request):
+    """Last automatic backups (date, size, off-site status)."""
+    body = await request.json()
+    if body.get("password") != ADMIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="Accès refusé")
+    if body.get("runNow"):
+        await backup_service.run_backup()
+    return await backup_service.list_backups()
 
 
 @router.post("/admin/users")
@@ -428,7 +452,7 @@ tr:hover td{background:#1e293b}
 <div class="dashboard" id="dashboard">
 <div class="dash-header">
 <h1><span style="color:#f59e0b;font-weight:900;margin-right:8px">TK</span> TekaTeka - Backoffice</h1>
-<div><a href="/api/admin/ambassador-panel" style="background:#f59e0b;color:#0f172a;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;margin-right:8px">Ambassadeurs</a><button class="chg-pw" onclick="showPwModal()">Changer le mot de passe</button><button class="logout" onclick="doLogout()">Déconnexion</button></div>
+<div><a href="/api/admin/ambassador-panel" style="background:#f59e0b;color:#0f172a;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;margin-right:8px">Ambassadeurs</a><button class="chg-pw" id="exportBtn" onclick="exportAll()" style="background:#16a34a;color:#fff">⬇️ Exporter toutes les données</button><button class="chg-pw" onclick="showPwModal()">Changer le mot de passe</button><button class="logout" onclick="doLogout()">Déconnexion</button></div>
 </div>
 <div class="pw-modal" id="pwModal">
 <div class="pw-box">
@@ -564,8 +588,37 @@ async function loadDashboard(){
         }).join('')}
       </tbody>
     </table>
+  </div>
+  <div class="section">
+    <h2><span>🛡️</span> Sauvegardes automatiques (30 jours)</h2>
+    <div id="backupList" style="color:#94a3b8">Chargement...</div>
+    <button onclick="loadBackups(true)" style="margin-top:12px;background:#334155;color:#f1f5f9;border:none;padding:10px 16px;border-radius:8px;cursor:pointer">Lancer une sauvegarde maintenant</button>
   </div>`;
   document.getElementById('content').innerHTML=html;
+  loadBackups(false);
+}
+async function loadBackups(runNow){
+  const el=document.getElementById('backupList');
+  if(runNow)el.textContent='Sauvegarde en cours...';
+  try{
+    const r=await post(API+'/admin/backups',{runNow});
+    if(!r.ok)throw new Error('Erreur '+r.status);
+    const list=await r.json();
+    el.innerHTML=list.length?`<table><thead><tr><th>Date</th><th>Taille</th><th>Serveur</th><th>Copie externe</th></tr></thead><tbody>${list.map(b=>`<tr><td>${esc(new Date(b.createdAt).toLocaleString('fr-FR'))}</td><td>${fmt(b.size/1024)} Ko</td><td>${b.local?'✅':'— (expirée)'}</td><td>${b.remotePath?'✅':'❌ '+esc(b.remoteError||'')}</td></tr>`).join('')}</tbody></table>`:'Aucune sauvegarde pour le moment (la première est faite automatiquement chaque jour après 02:00 UTC).';
+  }catch(e){el.textContent='Impossible de charger les sauvegardes : '+e.message}
+}
+async function exportAll(){
+  const btn=document.getElementById('exportBtn');const label=btn.textContent;
+  btn.disabled=true;btn.textContent='Préparation...';
+  try{
+    const r=await post(API+'/admin/export');
+    if(!r.ok)throw new Error('Erreur '+r.status);
+    const blob=await r.blob();
+    const name=(r.headers.get('Content-Disposition')||'').match(/filename="(.+)"/)?.[1]||'tekateka-export.json.gz';
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+  }catch(e){alert('Export impossible : '+e.message)}
+  btn.disabled=false;btn.textContent=label;
 }
 async function showUser(id){
   const r=await post(API+'/admin/user/'+id);

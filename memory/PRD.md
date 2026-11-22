@@ -71,3 +71,9 @@ The user builds locally with `eas build` (package `com.tekateka.app`). Download 
 ## Juin 2026 – Optimisation admin
 - `/api/admin/stats` réécrit avec des pipelines d'agrégation MongoDB (totaux par marchand calculés côté base, tendance 7 jours ne lit que la dernière semaine). Résultat identique à l'ancienne version, vérifié.
 - `/api/admin/users` : projection des seuls champs utiles.
+
+## Juin 2026 – Protection des données
+- `backup_service.py` : sauvegarde quotidienne automatique (après 02:00 UTC, 1/jour, verrou anti-doublon), archive gzip JSON étendu, copie locale `backend/backups/` (purge >30 j) + copie externe Emergent Object Storage `tekateka/backups/` (pas d'API de suppression : anciennes copies marquées expirées). Journal : collection `backups`.
+- `restore_backup.py` : restauration (--list, fichier local, --remote, --db pour tester). Vérifié.
+- Admin : bouton « Exporter toutes les données » (`POST /api/admin/export`, sans hachés PIN/mot de passe) + liste des sauvegardes (`POST /api/admin/backups`, runNow).
+- Audit sécurité : CRITIQUE JWT_SECRET par défaut (non défini dans .env) ; HAUTE webhook Stripe non signé. À corriger (en attente de validation utilisateur).
