@@ -27,6 +27,7 @@ import { VoiceInputButton } from '../../components/VoiceInputButton';
 
 const BG = '#fef3e7';
 
+import { usePaged, ShowMore } from '../../components/ShowMore';
 export default function DebtsScreen() {
   const { debts, addDebt, updateDebt, deleteDebt, markDebtAsPaidWithRevenue } = useData();
   const { user } = useAuth();
@@ -45,6 +46,8 @@ export default function DebtsScreen() {
 
   const unpaidDebts = debts.filter(d => !d.isPaid);
   const paidDebts = debts.filter(d => d.isPaid);
+  const pagedUnpaid = usePaged(unpaidDebts);
+  const pagedPaid = usePaged(paidDebts);
   const userCurrency = user?.currency || 'USD';
   // Convert each debt amount to the user's preferred currency before summing
   // so multi-currency totals are accurate.
@@ -180,7 +183,7 @@ export default function DebtsScreen() {
         {unpaidDebts.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>{i18n.t('unpaidDebts')} ({unpaidDebts.length})</Text>
-            {unpaidDebts.map((debt) => (
+            {pagedUnpaid.visible.map((debt) => (
               <View key={debt.id} style={[styles.debtCard, styles.unpaidCard]}>
                 <View style={styles.debtHeader}>
                   <View style={styles.debtInfo}>
@@ -230,6 +233,7 @@ export default function DebtsScreen() {
                 </View>
               </View>
             ))}
+            <ShowMore remaining={pagedUnpaid.remaining} onPress={pagedUnpaid.showMore} testID="pagedUnpaid-show-more" />
           </View>
         )}
 
@@ -237,7 +241,7 @@ export default function DebtsScreen() {
         {paidDebts.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>{i18n.t('paidDebts')} ({paidDebts.length})</Text>
-            {paidDebts.map((debt) => (
+            {pagedPaid.visible.map((debt) => (
               <View key={debt.id} style={[styles.debtCard, styles.paidCard]}>
                 <View style={styles.debtHeader}>
                   <View style={styles.debtInfo}>
@@ -269,6 +273,7 @@ export default function DebtsScreen() {
                 </View>
               </View>
             ))}
+            <ShowMore remaining={pagedPaid.remaining} onPress={pagedPaid.showMore} testID="pagedPaid-show-more" />
           </View>
         )}
 

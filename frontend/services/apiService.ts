@@ -300,6 +300,11 @@ export const authAPI = {
   },
 };
 
+/** Per-collection "what changed?" signatures (a few bytes). */
+export const changesAPI = {
+  get: (): Promise<Record<string, string>> => apiFetch('/data/changes', {}, 0),
+};
+
 // ==========================================
 // Products API
 // ==========================================
@@ -335,10 +340,11 @@ export const productsAPI = {
 export const salesAPI = {
   getAll: () => apiFetch('/data/sales'),
 
+  // retries=1: an offline sale is saved locally fast instead of waiting
   add: (sale: any) => apiFetch('/data/sales', {
     method: 'POST',
     body: JSON.stringify(sale),
-  }),
+  }, 1),
 
   update: (id: string, updates: any) => apiFetch(`/data/sales/${id}`, {
     method: 'PUT',
@@ -401,7 +407,7 @@ export const purchasesAPI = {
   add: (purchase: any) => apiFetch('/data/purchases', {
     method: 'POST',
     body: JSON.stringify(purchase),
-  }),
+  }, 1),
 
   update: (id: string, updates: any) => apiFetch(`/data/purchases/${id}`, {
     method: 'PUT',

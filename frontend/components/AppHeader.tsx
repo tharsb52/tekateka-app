@@ -10,6 +10,7 @@ import {
 import { Text } from './AppText';
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { useAuth } from '../context/AuthContext';
+import { useData } from '../context/DataContext';
 import { useRouter } from 'expo-router';
 import { getCountryFromPhone } from '../utils/countryFlags';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -30,6 +31,7 @@ export default function AppHeader({ showSubscription = false }: AppHeaderProps) 
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const country = getCountryFromPhone(user?.phoneNumber || '');
+  const { pendingCount } = useData();
   const graceHours = getGraceHoursRemaining();
   const readOnly = isReadOnly();
   const lockMessage = readOnly
@@ -54,6 +56,14 @@ export default function AppHeader({ showSubscription = false }: AppHeaderProps) 
             ces infos (plan + jours restants + date d'expiration).
             Évite le doublon visuel demandé par l'utilisateur. */}
       </View>
+      {pendingCount > 0 && (
+        <View style={styles.offlineBanner} testID="offline-pending-banner">
+          <Ionicons name="cloud-offline" size={16} color="#fff" />
+          <Text style={styles.offlineBannerText}>
+            {pendingCount} enregistrement(s) hors ligne — envoi automatique au retour du réseau
+          </Text>
+        </View>
+      )}
       {lockMessage !== '' && (
         <TouchableOpacity
           testID="subscription-lock-banner"
@@ -71,6 +81,15 @@ export default function AppHeader({ showSubscription = false }: AppHeaderProps) 
 }
 
 const styles = StyleSheet.create({
+  offlineBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#475569',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  offlineBannerText: { flex: 1, color: '#fff', fontSize: 12, fontWeight: '600' },
   lockBanner: {
     flexDirection: 'row',
     alignItems: 'center',

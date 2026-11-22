@@ -4,6 +4,17 @@ import { User } from '../types';
 import { changeLocale } from '../utils/i18n';
 import { scheduleExpiryReminders, cancelAllReminders } from '../services/notificationService';
 import { authAPI, getToken, clearToken, setReadOnlyMode } from '../services/apiService';
+import { isOfflineError } from '../services/offlineSync';
+
+/** User id ("sub") inside the JWT, to check the offline profile matches. */
+function tokenUserId(token: string): string | null {
+  try {
+    const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(part.padEnd(part.length + ((4 - (part.length % 4)) % 4), '='))).sub || null;
+  } catch {
+    return null;
+  }
+}
 
 // Map backend user response to frontend User type.
 // Access rules mirror backend/subscription_guard.py.
@@ -102,6 +113,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }, [user?.id]);
 
+  // Profile kept on the phone so the app opens even without network
+  useEffect(() => {
+    if (user) AsyncStorage.setItem('@tekateka:offlineUser', JSON.stringify(user)).catch(() => {});
+  }, [user]);
+
   const loadUser = async () => {
     try {
       const token = await getToken();
@@ -120,9 +136,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             const savedPin = await AsyncStorage.getItem(`@tekateka:${mappedUser.id}:pin`);
             setHasPin(!!savedPin);
           }
-        } catch (error) {
-          console.log('Token expired or invalid, clearing');
-          await clearToken();
+        } catch (error: any) {
+          if (isOfflineError(error)) {
+            // No network: restore the last known profile, keep the token
+            const raw = await AsyncStorage.getItem('@tekateka:offlineUser');
+            const saved: User | null = raw ? JSON.parse(raw) : null;
+            if (saved && tokenUserId(token) === saved.id) {
+              const mappedUser = saved;
+              setUser(mappedUser);
+              await changeLocale(mappedUser.language);
+              const savedPin = await AsyncStorage.getItem(`@tekateka:${mappedUser.id}:pin`);
+              setHasPin(!!savedPin);
+            }
+          } else {
+            console.log('Token expired or invalid, clearing');
+            await clearToken();
+          }
         }
       }
     } catch (error) {
@@ -265,6 +294,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const logout = async () => {
+    await AsyncStorage.removeItem('@tekateka:offlineUser').catch(() => {});
     await cancelAllReminders();
     await authAPI.logout();
     setUser(null);

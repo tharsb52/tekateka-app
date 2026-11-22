@@ -254,6 +254,24 @@ _static_dir = _Path(__file__).parent / "static"
 if _static_dir.exists():
     app.mount("/api/assets", StaticFiles(directory=str(_static_dir)), name="assets")
 
+@app.on_event("startup")
+async def ensure_data_indexes():
+    # Fast per-merchant queries (sync signatures) + offline idempotency keys
+    try:
+        for name in ("products", "sales", "expenses", "debts", "purchases"):
+            await data_db[name].create_index("userId")
+        for name in ("sales", "purchases"):
+            existing = await data_db[name].index_information()
+            if "userId_1_clientId_1" in existing:  # old non-unique version
+                await data_db[name].drop_index("userId_1_clientId_1")
+            await data_db[name].create_index(
+                [("userId", 1), ("clientId", 1)], unique=True, name="userId_clientId_unique",
+                partialFilterExpression={"clientId": {"$type": "string"}},
+            )
+    except Exception as e:
+        logging.getLogger(__name__).warning("index creation failed: %s", e)
+
+
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()

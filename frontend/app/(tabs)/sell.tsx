@@ -25,6 +25,7 @@ import { VoiceInputButton } from '../../components/VoiceInputButton';
 
 const BG = '#fef3e7';
 
+import { usePaged, usePagedGroups, ShowMore } from '../../components/ShowMore';
 export default function SellScreen() {
   const { products, sales, addSale, updateSale, deleteSale } = useData();
   const { user } = useAuth();
@@ -48,6 +49,7 @@ export default function SellScreen() {
   }, [user?.currency]);
 
   const availableProducts = products.filter(p => p.stock > 0);
+  const pagedProducts = usePaged(availableProducts);
 
   // Effective price (promo or normal) in the PRODUCT's native currency.
   const getEffectivePriceNative = (p: any) => p.promotionPrice && p.promotionPrice > 0 ? p.promotionPrice : (p.salePrice || p.price || 0);
@@ -102,6 +104,7 @@ export default function SellScreen() {
     
     return groups;
   }, [sales, currency]);
+  const pagedDays = usePagedGroups(salesByDay);
 
   // Debt payments (shown separately)
   const debtPayments = [...sales]
@@ -134,9 +137,14 @@ export default function SellScreen() {
     const qty = parseInt(editQty);
     if (isNaN(qty) || qty <= 0) { Alert.alert(i18n.t('error'), 'Quantite invalide'); return; }
     const newTotal = editingSale.price * qty;
-    await updateSale(editingSale.id, { quantity: qty, totalAmount: newTotal });
-    setEditSaleModal(false);
-    Alert.alert(i18n.t('success'), 'Vente modifiee');
+    try {
+      await updateSale(editingSale.id, { quantity: qty, totalAmount: newTotal });
+      setEditSaleModal(false);
+      Alert.alert(i18n.t('success'), 'Vente modifiee');
+    } catch (e: any) {
+      setEditSaleModal(false);
+      Alert.alert(i18n.t('error'), e?.message || 'Echec');
+    }
   };
 
   const handleDeleteSale = (id: string) => {
@@ -174,11 +182,12 @@ export default function SellScreen() {
 
       {showHistory ? (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Historique des ventes ({sales.filter(s => s.productId !== 'debt-payment').length})</Text>
+          <Text style={styles.sectionTitle}>{`Historique des ventes (${sales.filter(s => s.productId !== 'debt-payment').length})`}</Text>
           {salesByDay.length === 0 ? (
             <Text style={styles.noData}>Aucune vente</Text>
           ) : (
-            salesByDay.map((dayGroup) => (
+            <>
+            {pagedDays.visible.map((dayGroup) => (
               <View key={dayGroup.date} style={styles.dayGroup}>
                 <View style={styles.dayHeader}>
                   <View style={styles.dayLabelRow}>
@@ -199,10 +208,10 @@ export default function SellScreen() {
                     <View style={styles.saleRight}>
                       <Text style={styles.saleTotal}>{formatCurrency(sale.totalAmount, sale.currency)}</Text>
                       <View style={styles.saleActions}>
-                        <TouchableOpacity onPress={() => openEditSale(sale)} hitSlop={{top:10,bottom:10,left:10,right:10}}>
+                        <TouchableOpacity testID={`sale-edit-${sale.id}`} onPress={() => openEditSale(sale)} hitSlop={{top:10,bottom:10,left:10,right:10}}>
                           <Ionicons name="pencil" size={16} color="#2563eb" />
                         </TouchableOpacity>
-                        <TouchableOpacity onPress={() => handleDeleteSale(sale.id)} hitSlop={{top:10,bottom:10,left:10,right:10}}>
+                        <TouchableOpacity testID={`sale-delete-${sale.id}`} onPress={() => handleDeleteSale(sale.id)} hitSlop={{top:10,bottom:10,left:10,right:10}}>
                           <Ionicons name="trash" size={16} color="#dc2626" />
                         </TouchableOpacity>
                       </View>
@@ -210,7 +219,9 @@ export default function SellScreen() {
                   </View>
                 ))}
               </View>
-            ))
+            ))}
+            <ShowMore remaining={pagedDays.remaining} onPress={pagedDays.showMore} testID="sell-show-more" />
+            </>
           )}
           {/* Debt payments section */}
           {debtPayments.length > 0 && (
@@ -246,7 +257,7 @@ export default function SellScreen() {
               <Text style={styles.noData}>{i18n.t('noData')}</Text>
             ) : (
               <View style={styles.productGrid}>
-                {availableProducts.map((product) => {
+                {pagedProducts.visible.map((product) => {
                   const effPrice = getEffectivePrice(product);
                   const hasPromo = product.promotionPrice && product.promotionPrice > 0;
                   return (
@@ -395,7 +406,7 @@ export default function SellScreen() {
               <TouchableOpacity style={styles.cancelButton} onPress={() => setEditSaleModal(false)}>
                 <Text style={styles.cancelButtonText}>{i18n.t('cancel')}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.saveButton} onPress={handleUpdateSale}>
+              <TouchableOpacity testID="sale-edit-save-button" style={styles.saveButton} onPress={handleUpdateSale}>
                 <Text style={styles.saveButtonText}>{i18n.t('save')}</Text>
               </TouchableOpacity>
             </View>

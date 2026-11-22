@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   TouchableOpacity,
@@ -19,8 +19,14 @@ import { cardShadow } from '../../utils/shadows';
 
 const BG = '#fef3e7';
 
+import { usePaged, ShowMore } from '../../components/ShowMore';
 export default function PurchasesScreen() {
   const { purchases, addPurchase, updatePurchase, deletePurchase } = useData();
+  const sortedPurchases = useMemo(
+    () => [...purchases].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+    [purchases],
+  );
+  const pagedPurchases = usePaged(sortedPurchases);
   const { user } = useAuth();
   const [modalVisible, setModalVisible] = useState(false);
   const [editingPurchase, setEditingPurchase] = useState<any>(null);
@@ -130,7 +136,7 @@ export default function PurchasesScreen() {
             </Text>
           </View>
         </View>
-        <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
+        <TouchableOpacity testID="purchases-add-button" style={styles.addButton} onPress={openAddModal}>
           <Ionicons name="add" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
@@ -143,9 +149,8 @@ export default function PurchasesScreen() {
             <Text style={styles.emptySubtext}>Tap + pour ajouter un achat</Text>
           </View>
         ) : (
-          purchases
-            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-            .map((purchase) => (
+          <>
+          {pagedPurchases.visible.map((purchase) => (
               <View key={purchase.id} style={styles.purchaseCard}>
                 <View style={styles.purchaseHeader}>
                   <View style={styles.purchaseInfo}>
@@ -187,7 +192,9 @@ export default function PurchasesScreen() {
                   </TouchableOpacity>
                 </View>
               </View>
-            ))
+            ))}
+          <ShowMore remaining={pagedPurchases.remaining} onPress={pagedPurchases.showMore} testID="purchases-show-more" />
+          </>
         )}
         <View style={{ height: 80 }} />
       </ScrollView>
@@ -270,7 +277,7 @@ export default function PurchasesScreen() {
               >
                 <Text style={styles.cancelButtonText}>{i18n.t('cancel')}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+              <TouchableOpacity testID="purchases-save-button" style={styles.saveButton} onPress={handleSave}>
                 <Text style={styles.saveButtonText}>{i18n.t('save')}</Text>
               </TouchableOpacity>
             </View>

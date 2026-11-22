@@ -94,31 +94,45 @@ async def admin_stats(request: Request):
     body = await request.json()
     if body.get("password") != ADMIN_PASSWORD:
         raise HTTPException(status_code=401, detail="Accès refusé")
-    users = await db.users.find().to_list(10000)
-    all_sales = await db.sales.find().to_list(50000)
-    all_expenses = await db.expenses.find().to_list(50000)
-    all_debts = await db.debts.find().to_list(50000)
-    all_products = await db.products.find().to_list(50000)
+    # Aggregation pipelines: totals are computed inside MongoDB, so the server
+    # never loads every sale/expense/product in memory.
+    user_fields = {"phoneNumber": 1, "email": 1, "username": 1, "currency": 1, "subscription": 1, "createdAt": 1}
+    users = await db.users.find({}, user_fields).to_list(None)
 
-    total_revenue = sum(s.get("total", 0) for s in all_sales)
-    total_expenses = sum(e.get("amount", 0) for e in all_expenses)
-    unpaid_debts = [d for d in all_debts if not d.get("isPaid")]
-    total_debt = sum(d.get("amount", 0) for d in unpaid_debts)
-    total_stock_value = sum(p.get("purchasePrice", 0) * p.get("stock", 0) for p in all_products)
-    low_stock = [p for p in all_products if 0 < p.get("stock", 0) < 5]
+    async def by_user(coll, match, sum_expr, extra=None):
+        group = {"_id": "$userId", "sum": {"$sum": sum_expr}, "count": {"$sum": 1}}
+        if extra:
+            group.update(extra)
+        rows = await db[coll].aggregate([{"$match": match}, {"$group": group}]).to_list(None)
+        return {r["_id"]: r for r in rows}
 
-    # Per-user breakdown
+    sales_by = await by_user("sales", {}, {"$ifNull": ["$total", 0]})
+    exp_by = await by_user("expenses", {}, {"$ifNull": ["$amount", 0]})
+    prod_by = await by_user(
+        "products", {},
+        {"$multiply": [{"$ifNull": ["$purchasePrice", 0]}, {"$ifNull": ["$stock", 0]}]},
+        {"low": {"$sum": {"$cond": [{"$and": [{"$gt": ["$stock", 0]}, {"$lt": ["$stock", 5]}]}, 1, 0]}}},
+    )
+    unpaid = await db.debts.find(
+        {"isPaid": {"$ne": True}}, {"userId": 1, "debtorName": 1, "amount": 1, "currency": 1}
+    ).to_list(None)
+
+    debts_by = {}
+    for d in unpaid:
+        debts_by.setdefault(d.get("userId"), []).append(d)
+
+    def total(m, key="sum"):
+        return sum(r.get(key, 0) for r in m.values())
+
+    total_revenue = total(sales_by)
+    total_expenses = total(exp_by)
+
     user_stats = []
     for u in users:
         uid = str(u["_id"])
-        u_sales = [s for s in all_sales if s.get("userId") == uid]
-        u_expenses = [e for e in all_expenses if e.get("userId") == uid]
-        u_debts = [d for d in unpaid_debts if d.get("userId") == uid]
-        u_products = [p for p in all_products if p.get("userId") == uid]
-        u_revenue = sum(s.get("total", 0) for s in u_sales)
-        u_expense = sum(e.get("amount", 0) for e in u_expenses)
-        u_stock_val = sum(p.get("purchasePrice", 0) * p.get("stock", 0) for p in u_products)
-
+        s, e, p = sales_by.get(uid, {}), exp_by.get(uid, {}), prod_by.get(uid, {})
+        u_debts = debts_by.get(uid, [])
+        u_revenue, u_expense = s.get("sum", 0), e.get("sum", 0)
         user_stats.append({
             "id": uid,
             "phone": u.get("phoneNumber", ""),
@@ -132,21 +146,26 @@ async def admin_stats(request: Request):
             "profit": u_revenue - u_expense,
             "unpaidDebts": sum(d.get("amount", 0) for d in u_debts),
             "debtors": [{"name": d.get("debtorName", ""), "amount": d.get("amount", 0), "currency": d.get("currency", "USD")} for d in u_debts],
-            "productsCount": len(u_products),
-            "salesCount": len(u_sales),
-            "stockValue": u_stock_val,
+            "productsCount": p.get("count", 0),
+            "salesCount": s.get("count", 0),
+            "stockValue": p.get("sum", 0),
         })
 
     user_stats.sort(key=lambda x: x["revenue"], reverse=True)
 
-    # 7-day trend
+    # 7-day trend: only the last week's sales are read (3 small fields each)
+    days = [(datetime.utcnow() - timedelta(days=i)) for i in range(6, -1, -1)]
+    first = days[0].strftime("%Y-%m-%d")
+    recent = await db.sales.find(
+        {"$or": [{"createdAt": {"$gte": first}}, {"date": {"$gte": first}}]},
+        {"total": 1, "createdAt": 1, "date": 1, "_id": 0},
+    ).to_list(None)
     trends = []
-    for i in range(6, -1, -1):
-        day = datetime.utcnow() - timedelta(days=i)
+    for day in days:
         day_str = day.strftime("%Y-%m-%d")
         day_sales = sum(
-            s.get("total", 0) for s in all_sales
-            if (s.get("createdAt") or "").startswith(day_str) or (s.get("date") or "").startswith(day_str)
+            s.get("total", 0) for s in recent
+            if str(s.get("createdAt") or "").startswith(day_str) or str(s.get("date") or "").startswith(day_str)
         )
         trends.append({"date": day_str, "label": day.strftime("%a %d"), "revenue": day_sales})
 
@@ -155,12 +174,12 @@ async def admin_stats(request: Request):
         "totalRevenue": total_revenue,
         "totalExpenses": total_expenses,
         "netProfit": total_revenue - total_expenses,
-        "totalUnpaidDebt": total_debt,
-        "unpaidDebtors": len(unpaid_debts),
-        "totalStockValue": total_stock_value,
-        "lowStockProducts": len(low_stock),
-        "totalProducts": len(all_products),
-        "totalSales": len(all_sales),
+        "totalUnpaidDebt": sum(d.get("amount", 0) for d in unpaid),
+        "unpaidDebtors": len(unpaid),
+        "totalStockValue": total(prod_by),
+        "lowStockProducts": total(prod_by, "low"),
+        "totalProducts": total(prod_by, "count"),
+        "totalSales": total(sales_by, "count"),
         "users": user_stats,
         "trends": trends,
     }
@@ -172,7 +191,10 @@ async def admin_users(request: Request):
     body = await request.json()
     if body.get("password") != ADMIN_PASSWORD:
         raise HTTPException(status_code=401, detail="Accès refusé")
-    users = await db.users.find().to_list(10000)
+    users = await db.users.find({}, {
+        "phoneNumber": 1, "email": 1, "username": 1, "currency": 1, "language": 1,
+        "subscription": 1, "passwordHash": 1, "createdAt": 1,
+    }).to_list(None)
     result = []
     for u in users:
         result.append({

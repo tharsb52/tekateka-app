@@ -1,0 +1,48 @@
+{
+  "summary": "Retest of iteration 10 fixes. Backend: test_offline_sync_changes.py 13/13 pass. The unique partial index userId_clientId_unique exists on sales and purchases (checked in Mongo). FIX 1 PASS: after an online start, an offline reload (API blocked with page.route abort) keeps the user signed in on /dashboard, keeps the token, shows the cached data and the pending banner ('1 enregistrement(s) hors ligne…'), and the queued sale shows in the totals (26 transactions). Back online: the token is kept, the banner was gone after about 15s, the server has the sale once (clientId kept, createdAt = offline time, stock -1), and only POST /data/sales, GET /data/changes, products, sales and purchases were called. A garbage token while online goes to the login screen and the token is cleared. Note: context.set_offline(True)+reload cannot be tested on web (ERR_INTERNET_DISCONNECTED, the bundle is not cached). FIX 2 PASS: on expired@ with 1 queued sale, the outbox was emptied at startup, the banner did not appear, and there was 0 POST /data/sales in 55s. The item is dropped on the client by the readOnly guard (notifyReadOnly throws), so no request is sent. FIX 3 PASS: the EN user sees products, pagedUnpaid and pagedPaid buttons as 'Show more (N left)'. FIX 4 FAILED as shipped: the 'Mes achats' card (settings-purchases) is there, but tapping it (or opening /purchases directly) goes to /purchases and then immediately back to /dashboard. RCA: expo-router 58 TabsClient turns href:null into options.hidden=true, and useVisibleTabsWithRedirect sends a focused hidden tab back to the initial tab. I replaced it with tabBarButton:()=>null + tabBarItemStyle display:none in (tabs)/_layout.tsx. The tab bar is unchanged (6 tabs) and the Purchases screen now opens. purchases-show-more shows 'Show more (5 left)' and moves from 20 to 25 rows. An offline purchase showed in the list with banner 1, was sent within 20s of coming back online, and the server has it exactly once. Regression: an online sale sends only POST /data/sales, and /data/changes is polled about every 60s. NEW HIGH bug: '@tekateka:offlineUser' is written only on token refresh and is never cleared on logout or written on login. After logging out of account A and logging in as test@, an offline restart restored A's profile, language and cached data while using test@'s token. Also, the first offline restart right after a fresh login shows the login screen. Minor: editing a pending sale makes no API call (OK), but handleUpdateSale in sell.tsx has no try/catch, so you get an Uncaught Error (red LogBox overlay on web) and no message to the user. Deprecated packages: none found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "tests/test_auth_refresh.py", "issue": "Obsolete test: uses phone-login, which now returns 410 by design. 12 errors in the fixture. The test needs to switch to email login or be removed."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Settings > Mes achats (Purchases screen)", "issue": "Tapping it went back to /dashboard because expo-router 58 redirects away from hidden (href:null) tabs. Temporarily fixed by the tester in app/(tabs)/_layout.tsx (tabBarButton:()=>null, tabBarItemStyle display none). Main agent: keep this fix, or move purchases.tsx to app/purchases.tsx as a Stack screen.", "testID": "settings-purchases", "priority": "HIGH"},
+      {"component": "Sell edit modal (pending local- sale)", "issue": "handleUpdateSale has no try/catch. updateSale throws 'Cette vente n'est pas encore envoyée…' as an uncaught promise error, so the user sees no Alert, the modal stays open, and web shows a red LogBox. Wrap it in try/catch with Alert, or hide the edit button for sale.pending.", "testID": "sale-edit-save-button", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [
+      {"flow": "Offline profile restore (AuthContext)", "issue": "'@tekateka:offlineUser' is set only in loadUser after a refresh. It is never removed in logout() and never written in loginWithCredentials, loginWithPin or signup. Reproduced: log in as A, reload, log out, log in as B, offline restart → A's profile (email, language, trial, cached data) is shown with B's token. Offline writes would be queued under A's uid and sent with B's token. Also, a first offline restart right after login shows the login screen because there is no offlineUser yet.", "affected_testIDs": ["login-email-input", "offline-pending-banner"]}
+    ],
+    "design_issues": [
+      {"screen": "Sell (EN)", "issues": ["The history header 'Historique des ventes (N)' is not translated in English mode."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_offline_sync_changes.py", "/app/backend/tests/seed_pagination_account.py", "/app/test_reports/pytest/iter11.xml"],
+  "action_items": [
+    "HIGH: AuthContext — write '@tekateka:offlineUser' on every successful login/signup/PIN login/setupCredentials/updateUser, and remove it in logout() and account deletion. When restoring offline, check that the stored profile belongs to the current token (for example, store {token sub/uid} next to it, or decode the JWT sub) before restoring.",
+    "HIGH: keep the tester's change in app/(tabs)/_layout.tsx (purchases: tabBarButton:()=>null + tabBarItemStyle display none instead of href:null), or move the Purchases screen out of (tabs) to a Stack route. href:null tabs are not reachable in expo-router 58.",
+    "MEDIUM: sell.tsx handleUpdateSale — add try/catch with Alert (like purchases handleSave), and preferably hide or disable the edit button for pending (local-) sales and purchases.",
+    "MINOR: loadUser clears the token on any non-offline refresh error. A 5xx with a JSON body after retries ('Internal Server Error') logs the user out. Clear the token only when status is 401 or 403.",
+    "MINOR: dropping read-only items calls notifyReadOnly from background sync, which on native pops an alert with no context, and the sale is lost silently. Tell the user that N offline records were discarded.",
+    "MINOR: after an offline restart, the pending sale stock decrement is not applied to the cached products (applyRows only adds sales and purchases), so stock shows the pre-sale value until sync.",
+    "MINOR: after your own online write, the next /data/changes poll downloads products and sales again because the local signatures are not updated after writes.",
+    "MINOR: update or remove backend/tests/test_auth_refresh.py (phone-login now returns 410)."
+  ],
+  "critical_code_review_comments": [
+    "AuthContext.tsx:119-136 — offlineUser cache is not scoped to the token or user and is never invalidated (see integration issue).",
+    "DataContext.flushOutbox drops every non-offline error, including a 401. With an expired token, the queued sales are deleted with no retry and no warning to the user.",
+    "settings.tsx is 1192 lines and should be split (more than 700 lines)."
+  ],
+  "updated_files": [
+    "/app/frontend/app/(tabs)/_layout.tsx (purchases tab: href:null → tabBarButton:()=>null + tabBarItemStyle display none, so the screen can be reached)",
+    "/app/frontend/app/(tabs)/purchases.tsx (testIDs purchases-add-button, purchases-save-button)",
+    "/app/frontend/app/(tabs)/sell.tsx (testIDs sale-edit-<id>, sale-delete-<id>, sale-edit-save-button)"
+  ],
+  "success_rate": {"backend": "100% (13/13 offline sync tests; test_auth_refresh.py obsolete)", "frontend": "~80% (FIX1/2/3 pass; FIX4 needed a tester nav fix; stale offlineUser bug; edit-pending uncaught error)"},
+  "seed_data_creation": "Throwaway account test_pag_be98c468@example.com from seed_pagination_account.py, language set to en, plus 2 sales and 1 purchase. Deleted with DELETE /api/account/me (200). Nothing was written to test@ or expired@: the expired@ outbox item was local only and was dropped before any request.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Login: login-email-input / login-password-input / login-submit-button. Navigate tabs with a[href*=\"sell|products|debts|settings\"] (text clicks on 'Plus' hit hidden screens). Use :visible on testIDs because tab screens stay mounted. Offline reload: page.route('**/api/**', abort), since context.set_offline breaks the reload. In-session offline: context.set_offline(True). Outbox key: '@tekateka:outbox:<uid>'; uid is in '@tekateka:offlineUser'. Set language with PUT /api/auth/profile {language:'en'}. In EN, the purchase modal placeholders are translated, so use input:visible nth(0..3). expired@ lands on /subscription. Watch for PAGEERROR with page.on('pageerror'), because RN-web Alerts do nothing."
+}

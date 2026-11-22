@@ -1,0 +1,349 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="12" failures="0" skipped="0" tests="25" time="3.893" timestamp="2026-11-22T17:54:27.634052+00:00" hostname="agent-env-a85c72c0-73e4-4afe-ab47-e4724b201c44"><testcase classname="test_auth_refresh.TestPhoneLoginExpiry" name="test_phone_login_token_expires_in_365_days" time="0.216"><error message="failed on setup with &quot;AssertionError: phone-login failed: 410 {&quot;detail&quot;:&quot;La connexion par numéro de téléphone n'est plus disponible. Connectez-vous avec votre email. Pas d'email ? Contactez l'administrateur TekaTeka.&quot;}&#10;assert 410 == 200&#10; +  where 410 = &lt;Response [410]&gt;.status_code&quot;">session = &lt;requests.sessions.Session object at 0xf96e0ecb7790&gt;
+
+    @pytest.fixture(scope="module")
+    def authed(session: requests.Session) -&gt; dict:
+        """One logged-in user shared across the refresh tests."""
+&gt;       return _phone_login(session)
+               ^^^^^^^^^^^^^^^^^^^^^
+
+test_auth_refresh.py:96: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+session = &lt;requests.sessions.Session object at 0xf96e0ecb7790&gt;
+phone = '+243370067717'
+
+    def _phone_login(session: requests.Session, phone: str | None = None) -&gt; dict:
+        """Helper to phone-login (creates user if not exists)."""
+        phone = phone or _unique_phone()
+        resp = session.post(
+            f"{BASE_URL}/api/auth/phone-login",
+            json={"phoneNumber": phone},
+            timeout=20,
+        )
+        if resp.status_code == 429:
+            pytest.skip(f"Rate-limited on /auth/phone-login: {resp.text}")
+&gt;       assert resp.status_code == 200, f"phone-login failed: {resp.status_code} {resp.text}"
+E       AssertionError: phone-login failed: 410 {"detail":"La connexion par numéro de téléphone n'est plus disponible. Connectez-vous avec votre email. Pas d'email ? Contactez l'administrateur TekaTeka."}
+E       assert 410 == 200
+E        +  where 410 = &lt;Response [410]&gt;.status_code
+
+test_auth_refresh.py:74: AssertionError</error></testcase><testcase classname="test_auth_refresh.TestRefreshAuthFailures" name="test_no_authorization_header_returns_401" time="0.000"><error message="failed on setup with &quot;AssertionError: phone-login failed: 410 {&quot;detail&quot;:&quot;La connexion par numéro de téléphone n'est plus disponible. Connectez-vous avec votre email. Pas d'email ? Contactez l'administrateur TekaTeka.&quot;}&#10;assert 410 == 200&#10; +  where 410 = &lt;Response [410]&gt;.status_code&quot;">session = &lt;requests.sessions.Session object at 0xf96e0ecb7790&gt;
+
+    @pytest.fixture(scope="module")
+    def authed(session: requests.Session) -&gt; dict:
+        """One logged-in user shared across the refresh tests."""
+&gt;       return _phone_login(session)
+               ^^^^^^^^^^^^^^^^^^^^^
+
+test_auth_refresh.py:96: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+session = &lt;requests.sessions.Session object at 0xf96e0ecb7790&gt;
+phone = '+243370067717'
+
+    def _phone_login(session: requests.Session, phone: str | None = None) -&gt; dict:
+        """Helper to phone-login (creates user if not exists)."""
+        phone = phone or _unique_phone()
+        resp = session.post(
+            f"{BASE_URL}/api/auth/phone-login",
+            json={"phoneNumber": phone},
+            timeout=20,
+        )
+        if resp.status_code == 429:
+            pytest.skip(f"Rate-limited on /auth/phone-login: {resp.text}")
+&gt;       assert resp.status_code == 200, f"phone-login failed: {resp.status_code} {resp.text}"
+E       AssertionError: phone-login failed: 410 {"detail":"La connexion par numéro de téléphone n'est plus disponible. Connectez-vous avec votre email. Pas d'email ? Contactez l'administrateur TekaTeka."}
+E       assert 410 == 200
+E        +  where 410 = &lt;Response [410]&gt;.status_code
+
+test_auth_refresh.py:74: AssertionError</error></testcase><testcase classname="test_auth_refresh.TestRefreshAuthFailures" name="test_invalid_bearer_returns_401" time="0.000"><error message="failed on setup with &quot;AssertionError: phone-login failed: 410 {&quot;detail&quot;:&quot;La connexion par numéro de téléphone n'est plus disponible. Connectez-vous avec votre email. Pas d'email ? Contactez l'administrateur TekaTeka.&quot;}&#10;assert 410 == 200&#10; +  where 410 = &lt;Response [410]&gt;.status_code&quot;">session = &lt;requests.sessions.Session object at 0xf96e0ecb7790&gt;
+
+    @pytest.fixture(scope="module")
+    def authed(session: requests.Session) -&gt; dict:
+        """One logged-in user shared across the refresh tests."""
+&gt;       return _phone_login(session)
+               ^^^^^^^^^^^^^^^^^^^^^
+
+test_auth_refresh.py:96: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+session = &lt;requests.sessions.Session object at 0xf96e0ecb7790&gt;
+phone = '+243370067717'
+
+    def _phone_login(session: requests.Session, phone: str | None = None) -&gt; dict:
+        """Helper to phone-login (creates user if not exists)."""
+        phone = phone or _unique_phone()
+        resp = session.post(
+            f"{BASE_URL}/api/auth/phone-login",
+            json={"phoneNumber": phone},
+            timeout=20,
+        )
+        if resp.status_code == 429:
+            pytest.skip(f"Rate-limited on /auth/phone-login: {resp.text}")
+&gt;       assert resp.status_code == 200, f"phone-login failed: {resp.status_code} {resp.text}"
+E       AssertionError: phone-login failed: 410 {"detail":"La connexion par numéro de téléphone n'est plus disponible. Connectez-vous avec votre email. Pas d'email ? Contactez l'administrateur TekaTeka."}
+E       assert 410 == 200
+E        +  where 410 = &lt;Response [410]&gt;.status_code
+
+test_auth_refresh.py:74: AssertionError</error></testcase><testcase classname="test_auth_refresh.TestRefreshAuthFailures" name="test_malformed_authorization_returns_401" time="0.000"><error message="failed on setup with &quot;AssertionError: phone-login failed: 410 {&quot;detail&quot;:&quot;La connexion par numéro de téléphone n'est plus disponible. Connectez-vous avec votre email. Pas d'email ? Contactez l'administrateur TekaTeka.&quot;}&#10;assert 410 == 200&#10; +  where 410 = &lt;Response [410]&gt;.status_code&quot;">session = &lt;requests.sessions.Session object at 0xf96e0ecb7790&gt;
+
+    @pytest.fixture(scope="module")
+    def authed(session: requests.Session) -&gt; dict:
+        """One logged-in user shared across the refresh tests."""
+&gt;       return _phone_login(session)
+               ^^^^^^^^^^^^^^^^^^^^^
+
+test_auth_refresh.py:96: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+session = &lt;requests.sessions.Session object at 0xf96e0ecb7790&gt;
+phone = '+243370067717'
+
+    def _phone_login(session: requests.Session, phone: str | None = None) -&gt; dict:
+        """Helper to phone-login (creates user if not exists)."""
+        phone = phone or _unique_phone()
+        resp = session.post(
+            f"{BASE_URL}/api/auth/phone-login",
+            json={"phoneNumber": phone},
+            timeout=20,
+        )
+        if resp.status_code == 429:
+            pytest.skip(f"Rate-limited on /auth/phone-login: {resp.text}")
+&gt;       assert resp.status_code == 200, f"phone-login failed: {resp.status_code} {resp.text}"
+E       AssertionError: phone-login failed: 410 {"detail":"La connexion par numéro de téléphone n'est plus disponible. Connectez-vous avec votre email. Pas d'email ? Contactez l'administrateur TekaTeka."}
+E       assert 410 == 200
+E        +  where 410 = &lt;Response [410]&gt;.status_code
+
+test_auth_refresh.py:74: AssertionError</error></testcase><testcase classname="test_auth_refresh.TestRefreshAuthFailures" name="test_empty_bearer_token_returns_401" time="0.000"><error message="failed on setup with &quot;AssertionError: phone-login failed: 410 {&quot;detail&quot;:&quot;La connexion par numéro de téléphone n'est plus disponible. Connectez-vous avec votre email. Pas d'email ? Contactez l'administrateur TekaTeka.&quot;}&#10;assert 410 == 200&#10; +  where 410 = &lt;Response [410]&gt;.status_code&quot;">session = &lt;requests.sessions.Session object at 0xf96e0ecb7790&gt;
+
+    @pytest.fixture(scope="module")
+    def authed(session: requests.Session) -&gt; dict:
+        """One logged-in user shared across the refresh tests."""
+&gt;       return _phone_login(session)
+               ^^^^^^^^^^^^^^^^^^^^^
+
+test_auth_refresh.py:96: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+session = &lt;requests.sessions.Session object at 0xf96e0ecb7790&gt;
+phone = '+243370067717'
+
+    def _phone_login(session: requests.Session, phone: str | None = None) -&gt; dict:
+        """Helper to phone-login (creates user if not exists)."""
+        phone = phone or _unique_phone()
+        resp = session.post(
+            f"{BASE_URL}/api/auth/phone-login",
+            json={"phoneNumber": phone},
+            timeout=20,
+        )
+        if resp.status_code == 429:
+            pytest.skip(f"Rate-limited on /auth/phone-login: {resp.text}")
+&gt;       assert resp.status_code == 200, f"phone-login failed: {resp.status_code} {resp.text}"
+E       AssertionError: phone-login failed: 410 {"detail":"La connexion par numéro de téléphone n'est plus disponible. Connectez-vous avec votre email. Pas d'email ? Contactez l'administrateur TekaTeka."}
+E       assert 410 == 200
+E        +  where 410 = &lt;Response [410]&gt;.status_code
+
+test_auth_refresh.py:74: AssertionError</error></testcase><testcase classname="test_auth_refresh.TestRefreshHappyPath" name="test_refresh_returns_expected_shape" time="0.000"><error message="failed on setup with &quot;AssertionError: phone-login failed: 410 {&quot;detail&quot;:&quot;La connexion par numéro de téléphone n'est plus disponible. Connectez-vous avec votre email. Pas d'email ? Contactez l'administrateur TekaTeka.&quot;}&#10;assert 410 == 200&#10; +  where 410 = &lt;Response [410]&gt;.status_code&quot;">session = &lt;requests.sessions.Session object at 0xf96e0ecb7790&gt;
+
+    @pytest.fixture(scope="module")
+    def authed(session: requests.Session) -&gt; dict:
+        """One logged-in user shared across the refresh tests."""
+&gt;       return _phone_login(session)
+               ^^^^^^^^^^^^^^^^^^^^^
+
+test_auth_refresh.py:96: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+session = &lt;requests.sessions.Session object at 0xf96e0ecb7790&gt;
+phone = '+243370067717'
+
+    def _phone_login(session: requests.Session, phone: str | None = None) -&gt; dict:
+        """Helper to phone-login (creates user if not exists)."""
+        phone = phone or _unique_phone()
+        resp = session.post(
+            f"{BASE_URL}/api/auth/phone-login",
+            json={"phoneNumber": phone},
+            timeout=20,
+        )
+        if resp.status_code == 429:
+            pytest.skip(f"Rate-limited on /auth/phone-login: {resp.text}")
+&gt;       assert resp.status_code == 200, f"phone-login failed: {resp.status_code} {resp.text}"
+E       AssertionError: phone-login failed: 410 {"detail":"La connexion par numéro de téléphone n'est plus disponible. Connectez-vous avec votre email. Pas d'email ? Contactez l'administrateur TekaTeka."}
+E       assert 410 == 200
+E        +  where 410 = &lt;Response [410]&gt;.status_code
+
+test_auth_refresh.py:74: AssertionError</error></testcase><testcase classname="test_auth_refresh.TestRefreshHappyPath" name="test_refreshed_token_works_against_profile" time="0.000"><error message="failed on setup with &quot;AssertionError: phone-login failed: 410 {&quot;detail&quot;:&quot;La connexion par numéro de téléphone n'est plus disponible. Connectez-vous avec votre email. Pas d'email ? Contactez l'administrateur TekaTeka.&quot;}&#10;assert 410 == 200&#10; +  where 410 = &lt;Response [410]&gt;.status_code&quot;">session = &lt;requests.sessions.Session object at 0xf96e0ecb7790&gt;
+
+    @pytest.fixture(scope="module")
+    def authed(session: requests.Session) -&gt; dict:
+        """One logged-in user shared across the refresh tests."""
+&gt;       return _phone_login(session)
+               ^^^^^^^^^^^^^^^^^^^^^
+
+test_auth_refresh.py:96: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+session = &lt;requests.sessions.Session object at 0xf96e0ecb7790&gt;
+phone = '+243370067717'
+
+    def _phone_login(session: requests.Session, phone: str | None = None) -&gt; dict:
+        """Helper to phone-login (creates user if not exists)."""
+        phone = phone or _unique_phone()
+        resp = session.post(
+            f"{BASE_URL}/api/auth/phone-login",
+            json={"phoneNumber": phone},
+            timeout=20,
+        )
+        if resp.status_code == 429:
+            pytest.skip(f"Rate-limited on /auth/phone-login: {resp.text}")
+&gt;       assert resp.status_code == 200, f"phone-login failed: {resp.status_code} {resp.text}"
+E       AssertionError: phone-login failed: 410 {"detail":"La connexion par numéro de téléphone n'est plus disponible. Connectez-vous avec votre email. Pas d'email ? Contactez l'administrateur TekaTeka."}
+E       assert 410 == 200
+E        +  where 410 = &lt;Response [410]&gt;.status_code
+
+test_auth_refresh.py:74: AssertionError</error></testcase><testcase classname="test_auth_refresh.TestRefreshHappyPath" name="test_old_token_still_works_after_refresh" time="0.000"><error message="failed on setup with &quot;AssertionError: phone-login failed: 410 {&quot;detail&quot;:&quot;La connexion par numéro de téléphone n'est plus disponible. Connectez-vous avec votre email. Pas d'email ? Contactez l'administrateur TekaTeka.&quot;}&#10;assert 410 == 200&#10; +  where 410 = &lt;Response [410]&gt;.status_code&quot;">session = &lt;requests.sessions.Session object at 0xf96e0ecb7790&gt;
+
+    @pytest.fixture(scope="module")
+    def authed(session: requests.Session) -&gt; dict:
+        """One logged-in user shared across the refresh tests."""
+&gt;       return _phone_login(session)
+               ^^^^^^^^^^^^^^^^^^^^^
+
+test_auth_refresh.py:96: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+session = &lt;requests.sessions.Session object at 0xf96e0ecb7790&gt;
+phone = '+243370067717'
+
+    def _phone_login(session: requests.Session, phone: str | None = None) -&gt; dict:
+        """Helper to phone-login (creates user if not exists)."""
+        phone = phone or _unique_phone()
+        resp = session.post(
+            f"{BASE_URL}/api/auth/phone-login",
+            json={"phoneNumber": phone},
+            timeout=20,
+        )
+        if resp.status_code == 429:
+            pytest.skip(f"Rate-limited on /auth/phone-login: {resp.text}")
+&gt;       assert resp.status_code == 200, f"phone-login failed: {resp.status_code} {resp.text}"
+E       AssertionError: phone-login failed: 410 {"detail":"La connexion par numéro de téléphone n'est plus disponible. Connectez-vous avec votre email. Pas d'email ? Contactez l'administrateur TekaTeka."}
+E       assert 410 == 200
+E        +  where 410 = &lt;Response [410]&gt;.status_code
+
+test_auth_refresh.py:74: AssertionError</error></testcase><testcase classname="test_auth_refresh.TestRefreshDeletedUser" name="test_refresh_returns_404_for_deleted_user" time="0.000"><error message="failed on setup with &quot;AssertionError: phone-login failed: 410 {&quot;detail&quot;:&quot;La connexion par numéro de téléphone n'est plus disponible. Connectez-vous avec votre email. Pas d'email ? Contactez l'administrateur TekaTeka.&quot;}&#10;assert 410 == 200&#10; +  where 410 = &lt;Response [410]&gt;.status_code&quot;">session = &lt;requests.sessions.Session object at 0xf96e0ecb7790&gt;
+
+    @pytest.fixture(scope="module")
+    def authed(session: requests.Session) -&gt; dict:
+        """One logged-in user shared across the refresh tests."""
+&gt;       return _phone_login(session)
+               ^^^^^^^^^^^^^^^^^^^^^
+
+test_auth_refresh.py:96: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+session = &lt;requests.sessions.Session object at 0xf96e0ecb7790&gt;
+phone = '+243370067717'
+
+    def _phone_login(session: requests.Session, phone: str | None = None) -&gt; dict:
+        """Helper to phone-login (creates user if not exists)."""
+        phone = phone or _unique_phone()
+        resp = session.post(
+            f"{BASE_URL}/api/auth/phone-login",
+            json={"phoneNumber": phone},
+            timeout=20,
+        )
+        if resp.status_code == 429:
+            pytest.skip(f"Rate-limited on /auth/phone-login: {resp.text}")
+&gt;       assert resp.status_code == 200, f"phone-login failed: {resp.status_code} {resp.text}"
+E       AssertionError: phone-login failed: 410 {"detail":"La connexion par numéro de téléphone n'est plus disponible. Connectez-vous avec votre email. Pas d'email ? Contactez l'administrateur TekaTeka."}
+E       assert 410 == 200
+E        +  where 410 = &lt;Response [410]&gt;.status_code
+
+test_auth_refresh.py:74: AssertionError</error></testcase><testcase classname="test_auth_refresh.TestRegressionWithLongLivedJwt" name="test_profile_with_new_token" time="0.000"><error message="failed on setup with &quot;AssertionError: phone-login failed: 410 {&quot;detail&quot;:&quot;La connexion par numéro de téléphone n'est plus disponible. Connectez-vous avec votre email. Pas d'email ? Contactez l'administrateur TekaTeka.&quot;}&#10;assert 410 == 200&#10; +  where 410 = &lt;Response [410]&gt;.status_code&quot;">session = &lt;requests.sessions.Session object at 0xf96e0ecb7790&gt;
+
+    @pytest.fixture(scope="module")
+    def authed(session: requests.Session) -&gt; dict:
+        """One logged-in user shared across the refresh tests."""
+&gt;       return _phone_login(session)
+               ^^^^^^^^^^^^^^^^^^^^^
+
+test_auth_refresh.py:96: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+session = &lt;requests.sessions.Session object at 0xf96e0ecb7790&gt;
+phone = '+243370067717'
+
+    def _phone_login(session: requests.Session, phone: str | None = None) -&gt; dict:
+        """Helper to phone-login (creates user if not exists)."""
+        phone = phone or _unique_phone()
+        resp = session.post(
+            f"{BASE_URL}/api/auth/phone-login",
+            json={"phoneNumber": phone},
+            timeout=20,
+        )
+        if resp.status_code == 429:
+            pytest.skip(f"Rate-limited on /auth/phone-login: {resp.text}")
+&gt;       assert resp.status_code == 200, f"phone-login failed: {resp.status_code} {resp.text}"
+E       AssertionError: phone-login failed: 410 {"detail":"La connexion par numéro de téléphone n'est plus disponible. Connectez-vous avec votre email. Pas d'email ? Contactez l'administrateur TekaTeka."}
+E       assert 410 == 200
+E        +  where 410 = &lt;Response [410]&gt;.status_code
+
+test_auth_refresh.py:74: AssertionError</error></testcase><testcase classname="test_auth_refresh.TestRegressionWithLongLivedJwt" name="test_get_notes_with_new_token" time="0.000"><error message="failed on setup with &quot;AssertionError: phone-login failed: 410 {&quot;detail&quot;:&quot;La connexion par numéro de téléphone n'est plus disponible. Connectez-vous avec votre email. Pas d'email ? Contactez l'administrateur TekaTeka.&quot;}&#10;assert 410 == 200&#10; +  where 410 = &lt;Response [410]&gt;.status_code&quot;">session = &lt;requests.sessions.Session object at 0xf96e0ecb7790&gt;
+
+    @pytest.fixture(scope="module")
+    def authed(session: requests.Session) -&gt; dict:
+        """One logged-in user shared across the refresh tests."""
+&gt;       return _phone_login(session)
+               ^^^^^^^^^^^^^^^^^^^^^
+
+test_auth_refresh.py:96: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+session = &lt;requests.sessions.Session object at 0xf96e0ecb7790&gt;
+phone = '+243370067717'
+
+    def _phone_login(session: requests.Session, phone: str | None = None) -&gt; dict:
+        """Helper to phone-login (creates user if not exists)."""
+        phone = phone or _unique_phone()
+        resp = session.post(
+            f"{BASE_URL}/api/auth/phone-login",
+            json={"phoneNumber": phone},
+            timeout=20,
+        )
+        if resp.status_code == 429:
+            pytest.skip(f"Rate-limited on /auth/phone-login: {resp.text}")
+&gt;       assert resp.status_code == 200, f"phone-login failed: {resp.status_code} {resp.text}"
+E       AssertionError: phone-login failed: 410 {"detail":"La connexion par numéro de téléphone n'est plus disponible. Connectez-vous avec votre email. Pas d'email ? Contactez l'administrateur TekaTeka."}
+E       assert 410 == 200
+E        +  where 410 = &lt;Response [410]&gt;.status_code
+
+test_auth_refresh.py:74: AssertionError</error></testcase><testcase classname="test_auth_refresh.TestRegressionWithLongLivedJwt" name="test_get_products_with_new_token" time="0.000"><error message="failed on setup with &quot;AssertionError: phone-login failed: 410 {&quot;detail&quot;:&quot;La connexion par numéro de téléphone n'est plus disponible. Connectez-vous avec votre email. Pas d'email ? Contactez l'administrateur TekaTeka.&quot;}&#10;assert 410 == 200&#10; +  where 410 = &lt;Response [410]&gt;.status_code&quot;">session = &lt;requests.sessions.Session object at 0xf96e0ecb7790&gt;
+
+    @pytest.fixture(scope="module")
+    def authed(session: requests.Session) -&gt; dict:
+        """One logged-in user shared across the refresh tests."""
+&gt;       return _phone_login(session)
+               ^^^^^^^^^^^^^^^^^^^^^
+
+test_auth_refresh.py:96: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+session = &lt;requests.sessions.Session object at 0xf96e0ecb7790&gt;
+phone = '+243370067717'
+
+    def _phone_login(session: requests.Session, phone: str | None = None) -&gt; dict:
+        """Helper to phone-login (creates user if not exists)."""
+        phone = phone or _unique_phone()
+        resp = session.post(
+            f"{BASE_URL}/api/auth/phone-login",
+            json={"phoneNumber": phone},
+            timeout=20,
+        )
+        if resp.status_code == 429:
+            pytest.skip(f"Rate-limited on /auth/phone-login: {resp.text}")
+&gt;       assert resp.status_code == 200, f"phone-login failed: {resp.status_code} {resp.text}"
+E       AssertionError: phone-login failed: 410 {"detail":"La connexion par numéro de téléphone n'est plus disponible. Connectez-vous avec votre email. Pas d'email ? Contactez l'administrateur TekaTeka."}
+E       assert 410 == 200
+E        +  where 410 = &lt;Response [410]&gt;.status_code
+
+test_auth_refresh.py:74: AssertionError</error></testcase><testcase classname="test_offline_sync_changes.TestChanges" name="test_requires_auth" time="0.121" /><testcase classname="test_offline_sync_changes.TestChanges" name="test_shape_for_test_user" time="0.491" /><testcase classname="test_offline_sync_changes.TestChanges" name="test_empty_account_signatures" time="0.493" /><testcase classname="test_offline_sync_changes.TestChanges" name="test_signature_changes_after_writes" time="0.499" /><testcase classname="test_offline_sync_changes.TestIdempotency" name="test_sale_same_client_id_twice" time="0.405" /><testcase classname="test_offline_sync_changes.TestIdempotency" name="test_purchase_same_client_id_twice" time="0.237" /><testcase classname="test_offline_sync_changes.TestIdempotency" name="test_sale_concurrent_same_client_id" time="0.305" /><testcase classname="test_offline_sync_changes.TestOfflineCreatedAt" name="test_recent_kept" time="0.073" /><testcase classname="test_offline_sync_changes.TestOfflineCreatedAt" name="test_future_replaced" time="0.082" /><testcase classname="test_offline_sync_changes.TestOfflineCreatedAt" name="test_too_old_replaced" time="0.077" /><testcase classname="test_offline_sync_changes.TestOfflineCreatedAt" name="test_garbage_replaced" time="0.075" /><testcase classname="test_offline_sync_changes.TestOfflineCreatedAt" name="test_purchase_recent_kept" time="0.075" /><testcase classname="test_offline_sync_changes.TestReadOnlyReplay" name="test_expired_sale_with_client_id_402" time="0.566" /></testsuite></testsuites>

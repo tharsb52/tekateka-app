@@ -125,7 +125,8 @@ export default function TabLayout() {
           ),
         }}
       />
-      <Tabs.Screen name="purchases" options={{ href: null }} />
+      {/* Hidden but reachable: expo-router 58 redirects away from href:null (hidden) tabs */}
+      <Tabs.Screen name="purchases" options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' } }} />
     </Tabs>
   );
 }

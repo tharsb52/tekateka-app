@@ -1,0 +1,27 @@
+{
+  "summary": "Targeted retest of the iteration 11 fixes. Everything passed. Backend: test_offline_sync_changes.py passed 13/13. HIGH fix PASS: reproduced the earlier bug path (log in as throwaway A, reload, log out, log in as test@tekateka.com, restart with the API blocked). The app restored test@ (same id as the token's sub, French UI, Settings shows +243111000111/test@) and nothing from A. Logout removes '@tekateka:offlineUser' and the token. Restarting offline right after a fresh login (no online reload first) stays signed in on /dashboard. Extra negative check: when the offlineUser id was changed so it no longer matched the token's sub, the offline restart showed the login screen and did not restore the other profile. MEDIUM fix PASS: editing a pending local- sale while offline closes the modal and logs no pageerror (no red Uncaught screen). The Alert runs inside the catch. I could not see the Alert itself, because RN-web Alert does nothing on web. EN: the header shows 'Sales history (1)'. The Purchases fix is still in place: Settings 'Mes achats' opens /purchases and the purchases-add-button is visible. Regression: an online sale sends only POST /data/sales. Deprecated packages: none seen in the files I reviewed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_offline_sync_changes.py", "/app/backend/tests/seed_iter12_account.py", "/app/test_reports/pytest/iter12.xml"],
+  "action_items": [
+    "MINOR (carried over from iteration 11, still open): loadUser clears the token on any non-offline refresh error. Clear it only on 401/403.",
+    "MINOR (carried over): flushOutbox drops queued items on any non-offline error (for example a 401) without telling the user.",
+    "MINOR: there is no /data/changes signature update after local writes, and the offline stock decrement is not applied to cached products (see iteration 11)."
+  ],
+  "critical_code_review_comments": [
+    "AuthContext.tsx:117-119: the offlineUser persistence effect runs on every user change, which covers login, signup, PIN login, refresh, updateUser and setupCredentials. logout() removes the key before setUser(null). The offline restore checks tokenUserId(token) === saved.id. This looks correct.",
+    "AuthContext.tsx:13: tokenUserId uses atob. This is fine on web and on Hermes (RN 0.74+).",
+    "settings.tsx is still about 1190 lines and should be split (more than 700 lines)."
+  ],
+  "updated_files": ["/app/frontend/app/(tabs)/settings.tsx (added testID settings-logout-button)", "/app/backend/tests/seed_iter12_account.py (new throwaway seed helper)"],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "100% (5/5 targeted checks)"},
+  "seed_data_creation": "Throwaway account test_i12_92c7bd13@example.com (language en, 1 product TEST_Soap, 1 online sale). Deleted with DELETE /api/account/me (200); a login afterwards returns 401. test@ was only logged in and read. No data was written to test@ or expired@.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Login: login-email-input / login-password-input / login-submit-button. Logout: settings-logout-button (use :visible). The token key is '@tekateka:auth_token' and the offline profile is '@tekateka:offlineUser'. For an offline restart, use page.route('**/api/**', abort) and then reload. Sell: click the product name text, then sell-record-button:visible. The History toggle text starts with 'Histor'. Pending sale edit buttons match [data-testid^=sale-edit-local-]."
+}

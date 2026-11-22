@@ -1,0 +1,47 @@
+{
+  "summary": "Tested offline mode, light sync, pagination and regressions. Backend: 13/13 pass (test_offline_sync_changes.py). /api/data/changes returns signatures for the 5 collections and they change after a sale, purchase or expense. A repeated clientId gives one document, the same id and a single stock decrement, including 4 parallel replays. offlineCreatedAt within 30 days is kept; future, >30 days or invalid values get server time. expired@ replay gets 402. Frontend: after login there is 1 full download, then only GET /data/changes every 60s (test@ and throwaway accounts). An online sale sends only POST /data/sales, with no GET /data/products. A collection is downloaded again at the next poll only if its signature changed. Offline sale (context.set_offline): it shows in Historique at once, local stock goes down, and banner offline-pending-banner '1 enregistrement(s) hors ligne…' appears in about 2s. With a purchase item injected into the outbox the banner shows '2 …'. Back online, the banner was gone within 20s and the server had the sale and purchase exactly once, purchase createdAt = offline time, stock correct. Pagination checked with a 25/25/25/22+22 seeded throwaway account: products-show-more, sell-show-more, pagedUnpaid-show-more and pagedPaid-show-more show 'Afficher plus (N restants)' only when there are more than 20 items, tapping shows the rest, and test@ (3 sales) has no button. FAILURES: (1) CRITICAL: starting the app with no network logs the user out, so the 'reload while offline' check fails. (2) A read-only (402) queued item is never dropped and is retried every 20s forever. (3) EN: 'Afficher plus (5 left)', so half of the text stays French. (4) The Purchases screen cannot be reached from any navigation, so the offline purchase and purchases-show-more could not be tested in the UI. Deleting a pending sale could not be tested on web: react-native-web Alert.alert does nothing, so the confirm button never shows. I only reviewed the code, and the logic looks correct. Deprecated packages: none (no expo-av, expo-barcode-scanner or expo-background-fetch; @expo/ngrok removed).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/data/sales, /api/data/purchases", "issue": "clientId idempotency uses find_one then insert with no unique index on (userId, clientId). A race between parallel replays could create duplicates; it did not happen in 4 parallel requests. Add a sparse unique index on {userId:1, clientId:1} and handle DuplicateKeyError by returning the existing doc."},
+      {"endpoint": "GET /api/data/changes", "issue": "The signature is count + max(updatedAt|createdAt). A delete plus an add with a backdated offlineCreatedAt in the same poll window leaves count and max the same, so that change is missed (rare)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "ShowMore (EN)", "issue": "In English the button reads 'Afficher plus (5 left)'. 'Afficher plus (' is not in i18n/en-auto.json; only 'restants)' is translated. Reference: /app/frontend/components/ShowMore.tsx:45", "testID": "products-show-more / pagedUnpaid-show-more", "priority": "MEDIUM"},
+      {"component": "Purchases screen unreachable", "issue": "app/(tabs)/_layout.tsx:128 sets href:null and no router.push points to /purchases. Deep link and router.push('/purchases') both end on the dashboard. Users cannot open the Purchases list, its offline add, or purchases-show-more.", "testID": "purchases-show-more", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [
+      {"flow": "Offline app start (reload/cold start without network)", "issue": "CRITICAL. AuthContext.loadUser (context/AuthContext.tsx:114-126) calls authAPI.refreshToken() at startup and on ANY error runs clearToken(), including 'Connexion internet instable'. With /api unreachable, a reload went to the login screen, cached data was not shown, and the pending sale was never sent: the outbox stays in storage but the user is logged out and cannot log in offline. This breaks the 'works offline' requirement on every cold start without network.", "affected_testIDs": ["offline-pending-banner", "login-email-input"]},
+      {"flow": "Read-only lock + offline queue", "issue": "flushOutbox (DataContext.tsx:147) runs break on /Abonnement expiré|consultation/, so a rejected item is never removed. expired@ with 1 injected queued sale: after 45s the banner was still there and the outbox was unchanged. pendingCount>0 keeps a 20s interval running, so it retries forever, polls /data/changes every 20s instead of 60s, and on native notifyReadOnly() shows the 'Abonnement expiré' Alert every 20s. This contradicts the spec 'rejected items are dropped / must not loop forever'.", "affected_testIDs": ["offline-pending-banner"]}
+    ],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_offline_sync_changes.py", "/app/backend/tests/seed_pagination_account.py", "/app/test_reports/pytest/pytest_iter10.xml"],
+  "action_items": [
+    "CRITICAL: AuthContext.loadUser: when refreshToken fails with an offline error (isOfflineError), do NOT clearToken. Keep the token, restore the user from a locally cached profile (save mapped user to AsyncStorage on login/refresh) and continue, so DataProvider shows the cached data and outbox. Only clear the token on 401/invalid token.",
+    "flushOutbox: on read-only/402 (message 'Mode consultation seulement…' or 'Abonnement expiré…'), drop the item as the spec says (or at least stop the 20s retry loop and do not call notifyReadOnly from background sync). Right now it loops forever.",
+    "Translate 'Afficher plus ({n} restants)' properly: add a pattern entry for it in en-auto.json or use i18n with a placeholder.",
+    "Make the Purchases screen reachable (link from Plus/dashboard) or confirm it is intentionally hidden. Its offline add and pagination cannot be reached by users.",
+    "Minor: add a unique sparse index on sales/purchases (userId, clientId).",
+    "Minor: hide or disable edit (updateSale/updatePurchase) for pending 'local-' items; it would call the API with an invalid id. When deleting a pending sale, restore the local stock decrement.",
+    "Minor: after a flush, syncChanges force-refetches all 5 collections (sentSomething). Refetching only sales/purchases/products, plus updating signatures after your own writes, would save data on slow networks."
+  ],
+  "critical_code_review_comments": [
+    "AuthContext.tsx:123-126 clears the token on network errors, which defeats the offline cache and outbox at cold start.",
+    "DataContext.tsx:147 break on read-only means queued items are never dropped; combined with the 20s interval at line 231-236 this makes an endless retry loop.",
+    "DataContext.tsx:159 syncingRef returns early: a manual 'Actualiser' tap during a running sync is silently ignored (minor).",
+    "DataContext.tsx:344 the offline stock decrement is only in memory, not in the cache, so after a reload the stock shows the server value again until sync (minor).",
+    "No network-state listener (NetInfo): after reconnection, sending can wait up to 20s (observed about 20s). Acceptable but could be immediate.",
+    "react-native-web Alert.alert does nothing, so delete/confirm flows (sale delete, purchase delete) cannot be used in the web preview. This is a known RN-web limitation, not specific to this feature."
+  ],
+  "updated_files": ["/app/backend/tests/test_offline_sync_changes.py (new)", "/app/backend/tests/seed_pagination_account.py (new)"],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "~70% (polling/caching, offline add + sync, pagination OK; offline reload, read-only drop, EN ShowMore failed; purchases UI and pending delete not testable)"},
+  "seed_data_creation": "Created throwaway accounts test_offline_*@example.com (pytest fixture), test_pag_92414200@example.com (25 products/sales/purchases, 22 unpaid + 22 paid debts) and test_off_565b0bb6@example.com. All were deleted with DELETE /api/account/me. For expired@ an outbox item was injected only into browser localStorage and then removed; no server data changed (402). test@ data was not modified.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Login on web: login-email-input + login-password-input + login-submit-button (or 'Code PIN' tab + login-pin-input for test@/1234). Navigate tabs via [href*=\"sell\"], [href*=\"debts\"], or the text 'Vendre'/'Stock'/'Dettes'. The sales history toggle is 'Historique' and becomes 'Fermer' when open. Offline tests: page.context.set_offline(True) works for the in-session add; for 'reload offline' use page.route('**/api/**', abort) because set_offline breaks the bundle reload. The outbox is in localStorage under '@tekateka:outbox:<uid>'. Purchases screen is not reachable through the UI. RN-web Alert does nothing, so confirm dialogs cannot be tested. Use backend/tests/seed_pagination_account.py to seed a pagination account (writes /tmp/pag_account.json), then DELETE /api/account/me with its token.",
+  "rca_of_issue": "Offline reload logout: on reload with /api unreachable, AuthContext.loadUser → authAPI.refreshToken() fails → apiFetch throws 'Connexion internet instable' → the catch block clearToken() → user=null → (tabs)/_layout redirects to '/' → login screen. Reproduce: login, go offline, reload (API blocked). Fix: separate offline errors from auth errors in loadUser and keep the cached user."
+}

@@ -82,6 +82,8 @@ class PurchaseModel(BaseModel):
     totalCost: float = 0
     currency: str = "USD"
     notes: Optional[str] = None
+    clientId: Optional[str] = None          # offline idempotency key
+    offlineCreatedAt: Optional[str] = None  # when it was recorded offline
 
 class NoteModel(BaseModel):
     title: str = ""
@@ -117,6 +119,8 @@ class SaleModel(BaseModel):
     customerTotal: Optional[float] = None
     date: Optional[str] = None
     clientTime: Optional[str] = None  # Local time from device (e.g. "2024-01-15T15:30:00")
+    clientId: Optional[str] = None          # offline idempotency key
+    offlineCreatedAt: Optional[str] = None  # when it was recorded offline
 
 class ExpenseModel(BaseModel):
     category: str
@@ -598,13 +602,50 @@ async def get_sales(user_id: str = Depends(get_current_user)):
     sales = await db.sales.find({"userId": user_id}).to_list(5000)
     return [serialize_doc(s) for s in sales]
 
+
+def _offline_created_at(value: Optional[str]) -> str:
+    """Keep the real time of a sale/purchase recorded offline (max 30 days
+    old, never in the future); otherwise use the server time."""
+    if value:
+        try:
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc)
+            if now - timedelta(days=30) <= dt <= now + timedelta(minutes=5):
+                return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        except ValueError:
+            pass
+    return utc_now_iso()
+
+
+@router.get("/data/changes")
+async def get_changes(user_id: str = Depends(get_current_user)):
+    """Tiny 'what changed?' signature per collection (count + last update).
+    The app polls this and only re-downloads collections whose signature
+    changed, instead of downloading everything every 30 seconds."""
+    out = {}
+    for name in ("products", "sales", "expenses", "debts", "purchases"):
+        agg = await db[name].aggregate([
+            {"$match": {"userId": user_id}},
+            {"$group": {"_id": None, "n": {"$sum": 1},
+                        "m": {"$max": {"$ifNull": ["$updatedAt", "$createdAt"]}}}},
+        ]).to_list(1)
+        out[name] = f"{agg[0]['n']}:{agg[0]['m']}" if agg else "0:"
+    return out
+
 @router.post("/data/sales")
 async def add_sale(sale: SaleModel, user_id: str = Depends(get_current_user)):
+    # Offline replay: the same sale may be sent twice → return the first one
+    if sale.clientId:
+        existing = await db.sales.find_one({"userId": user_id, "clientId": sale.clientId})
+        if existing:
+            return serialize_doc(existing)
     doc = sale.dict()
     doc["userId"] = user_id
     # Always store the canonical UTC timestamp. The mobile app converts to the
     # user's local timezone for display via `utils/dateUtils.formatLocal`.
-    doc["createdAt"] = utc_now_iso()
+    doc["createdAt"] = _offline_created_at(doc.pop("offlineCreatedAt", None))
     # Clean up legacy helper field if present
     doc.pop("clientTime", None)
     result = await db.sales.insert_one(doc)
@@ -721,9 +762,13 @@ async def get_purchases(user_id: str = Depends(get_current_user)):
 
 @router.post("/data/purchases")
 async def add_purchase(purchase: PurchaseModel, user_id: str = Depends(get_current_user)):
+    if purchase.clientId:
+        existing = await db.purchases.find_one({"userId": user_id, "clientId": purchase.clientId})
+        if existing:
+            return serialize_doc(existing)
     doc = purchase.dict()
     doc["userId"] = user_id
-    doc["createdAt"] = utc_now_iso()
+    doc["createdAt"] = _offline_created_at(doc.pop("offlineCreatedAt", None))
     result = await db.purchases.insert_one(doc)
     doc["id"] = str(result.inserted_id)
     return serialize_doc(doc)

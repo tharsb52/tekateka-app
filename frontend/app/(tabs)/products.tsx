@@ -35,6 +35,7 @@ const UNIT_OPTIONS = [
 ] as const;
 const DEFAULT_LOW_STOCK_THRESHOLD = 5;
 
+import { usePaged, ShowMore } from '../../components/ShowMore';
 export default function ProductsScreen() {
   const { products, addProduct, updateProduct, deleteProduct, restockProduct, loading } = useData();
   const { user } = useAuth();
@@ -90,6 +91,7 @@ export default function ProductsScreen() {
     else if (sortMode === 'priceDesc') sorted.sort((a, b) => (b.salePrice || 0) - (a.salePrice || 0));
     return sorted;
   }, [products, searchQuery, stockFilter, sortMode]);
+  const pagedList = usePaged(filteredProducts, filteredProducts.length);
 
   const currency = user?.currency || 'USD';
   const totalInventoryValue = products.reduce((s, p) => {
@@ -378,7 +380,8 @@ export default function ProductsScreen() {
             </Text>
           </View>
         ) : (
-          filteredProducts.map((product) => {
+          <>
+          {pagedList.visible.map((product) => {
             const effectivePrice = getEffectivePrice(product);
             const margin = getMargin(product);
             const totalCost = (product.purchasePrice || 0) * product.stock;
@@ -447,7 +450,9 @@ export default function ProductsScreen() {
                 </View>
               </TouchableOpacity>
             );
-          })
+          })}
+          <ShowMore remaining={pagedList.remaining} onPress={pagedList.showMore} testID="products-show-more" />
+          </>
         )}
         <View style={{ height: 80 }} />
       </ScrollView>

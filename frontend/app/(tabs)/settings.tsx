@@ -305,6 +305,22 @@ function SettingsScreenInner() {
           </View>
         </TouchableOpacity>
 
+        {/* Mes achats (stock purchases) */}
+        <TouchableOpacity testID="settings-purchases" style={[styles.card, { marginBottom: 12 }]} onPress={() => router.push('/purchases')}>
+          <View style={styles.settingRow}>
+            <View style={styles.settingLeft}>
+              <View style={[styles.iconCircle, { backgroundColor: '#dbeafe' }]}>
+                <Ionicons name="cart" size={22} color="#2563eb" />
+              </View>
+              <View>
+                <Text style={styles.settingTitle}>Mes achats</Text>
+                <Text style={styles.settingSubtitle}>Achats de marchandises et fournisseurs</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
+          </View>
+        </TouchableOpacity>
+
         {/* Prendre Notes (anciennement "Mes Notes") */}
         <TouchableOpacity style={[styles.card, { marginBottom: 12 }]} onPress={() => router.push('/notes')}>
           <View style={styles.settingRow}>
@@ -548,7 +564,7 @@ function SettingsScreenInner() {
         </View>
 
         {/* Logout */}
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+        <TouchableOpacity testID="settings-logout-button" style={styles.logoutButton} onPress={handleLogout}>
           <Ionicons name="log-out" size={22} color="#dc2626" />
           <Text style={styles.logoutText}>Déconnexion</Text>
         </TouchableOpacity>
