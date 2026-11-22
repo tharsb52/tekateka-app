@@ -1,4 +1,5 @@
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
+from security_config import require_admin
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 from datetime import datetime, timedelta
@@ -11,7 +12,12 @@ from email.mime.multipart import MIMEMultipart
 
 load_dotenv()
 
-router = APIRouter()
+async def _admin_only(request: Request):
+    """Every report endpoint needs the admin password (header X-Admin-Password)."""
+    await require_admin(request, request.headers.get("x-admin-password", ""))
+
+
+router = APIRouter(dependencies=[Depends(_admin_only)])
 
 # MongoDB connection
 MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
@@ -95,7 +101,7 @@ async def get_country_from_phone(phone_number: str) -> str:
     }
     
     # Remove + if present
-    phone = phone_number.replace("+", "").replace(" ", "")
+    phone = (phone_number or "").replace("+", "").replace(" ", "")
     
     # Try 3-digit codes first
     for code, country in country_codes.items():

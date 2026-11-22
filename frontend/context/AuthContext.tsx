@@ -198,7 +198,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         await rememberAccount(mappedUser);
       }
     } catch (error: any) {
-      console.error('Credential login error:', error);
+      console.warn('Credential login error:', error?.message);
       throw new Error(error.message || 'Identifiants incorrects');
     }
   };
@@ -251,7 +251,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         await rememberAccount(mapped);
       }
     } catch (e: any) {
-      console.error('PIN login error:', e);
+      console.warn('PIN login error:', e?.message);
       throw new Error(e.message || 'Identifiant ou PIN incorrect');
     }
   };

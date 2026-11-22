@@ -1,0 +1,42 @@
+{
+  "summary": "Retest of iteration_13 findings + short regression. 37/37 pytest tests pass in tests/test_security_hardening.py; the file was updated for the activate-code change and gained new reports, IP-counter and panel tests. All 5 retest items are verified. (1) /api/reports/analytics, /send-report and /test-email return 401 without X-Admin-Password or with a wrong one. analytics returns 200 with the correct password through the public URL (51 users, no 500). (2) activate-code returns 401 'Connectez-vous pour activer un code' without a token or with a bad token. userId in the body is ignored. A valid token gives 200 and the subscription becomes active monthly (+30 days); reusing the code gives 400. On the frontend /subscription screen the request sends a Bearer token: a wrong code gives 404, a valid lowercase spaced code gives 200, the modal closes, the CTA changes to 'Renouveler' and the profile shows an active subscription. (3) After 4 failures from an IP, a successful login does not reset the IP counter: the next failure gives 401, then 429 for any identifier, the valid account included (checked on PIN and credential login). (4) The ambassador panel pricing table shows 5/4/1 €, 14/13/1 €, 55/50/5 €, with no undefined or NaN. (5) A failed frontend login shows the inline error and logs only console.warn; the only console 'error' is the browser's own 'Failed to load resource 401' line, not app code. Regression: PIN login, password login, ambassador login (fresh TEST ambassador), admin login and Stripe checkout all return 200; CORS and removed endpoints are OK. Exception: the webhook without a signature returns 503 'Webhook secret not configured', not 400, because STRIPE_WEBHOOK_SECRET is empty in backend/.env (iteration 13 saw 400, so the secret is gone).",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/payments/stripe/webhook", "issue": "STRIPE_WEBHOOK_SECRET is empty in backend/.env, so every webhook is refused with 503 'Webhook secret not configured', not 400. This is safe (fails closed) but real Stripe events are rejected: subscription and ambassador payments will not be confirmed by webhook. Unverified: whether polling via GET /payments/stripe/session/{id} activates the subscription instead. Iteration 13 saw 400, so the secret was lost or not materialized from Secrets.", "priority": "HIGH"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "subscription.tsx handleActivateCode", "issue": "On web preview, React Native's Alert.alert does nothing, so the success alert 'Abonnement activé !' (and the error alert for a wrong code) never appears, and router.replace('/(tabs)/dashboard') only runs from the alert button. Web users see the modal close with no message. Works on native.", "testID": "activation-code-submit", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Payment method modal (/subscription)", "issues": ["The header shows the price of the currently selected plan (e.g. '$59,40 - Annuel'), even though the activation code's plan is decided by the code itself (here monthly). This can confuse users."]},
+      {"screen": "/api/admin/ambassador-panel", "issues": ["The pricing table now uses €, but the dashboard cards ($338 revenue, $212 commissions) and the Ventes table (`$${s.price}`, `$${s.commission}`, admin_ambassador_panel.py:442-443) still use $. Currency is inconsistent."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_security_hardening.py", "/app/backend/tests/seed_iter14_activation.py", "/app/test_reports/pytest/pytest_iter14_security.xml"],
+  "action_items": [
+    "HIGH: Set STRIPE_WEBHOOK_SECRET again (Emergent Secrets / backend/.env) and restart the backend. A webhook without a signature should then return 400, not 503.",
+    "LOW: In subscription.tsx, show web-visible feedback on activation success or error (e.g. window.alert or inline message on Platform.OS==='web') and navigate to the dashboard without depending on the alert button.",
+    "LOW: Use € consistently in the ambassador panel dashboard cards and the Ventes table (admin_ambassador_panel.py:442-443)."
+  ],
+  "critical_code_review_comments": [
+    "ambassador_api.py:664 'if not user_id' is now dead code (already 401 above); the 400 message 'ID utilisateur et code requis' should only mention the code.",
+    "reporting.py still has fallback defaults for MONGO_URL/DB_NAME (os.getenv(..., 'mongodb://localhost:27017')); env-only config is preferred.",
+    "Frontend login-failure handling OK: LoginScreen/apiService use console.warn; ambassador/index.tsx keeps console.error only for network/non-JSON errors (acceptable)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_security_hardening.py (activate-code now needs a token; test_pin_success_clears_counter updated for the account-only reset design; new TestReportsProtected, TestIpCounterNotReset, TestAmbassadorPanel)",
+    "/app/backend/tests/seed_iter14_activation.py (new helper)",
+    "/app/frontend/app/subscription.tsx (added testIDs only: activation-code-open-btn, activation-code-input, activation-code-submit)"
+  ],
+  "success_rate": {"backend": "100% (37/37 pytest); webhook returns 503 instead of 400 because of config", "frontend": "100% of tested flows (login failure, login, subscription code activation, ambassador panel)"},
+  "seed_data_creation": "Created a TEST_Amb14 ambassador, 1 activation code and a TEST_M14 merchant. All of them, plus their code, sale and commission records, were deleted by id. Pytest fixtures clean up their own data. login_lockouts was cleared at the end.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend && export $(grep -E '^(MONGO_URL|DB_NAME)=' .env | xargs) && pytest tests/test_security_hardening.py (do not source .env: RESEND_FROM line breaks bash). In Playwright the activation modal slides in: wait about 2s and click activation-code-submit via el.click(). React Native Alert is a no-op on web, so verify via network responses/profile.",
+  "rca_of_issue": "Webhook 503: backend/.env has 'STRIPE_WEBHOOK_SECRET=' (empty), so stripe_api.py:612 returns 503 before checking the signature."
+}

@@ -16,10 +16,10 @@ from collections import defaultdict
 
 # Import routers
 from reporting import router as reporting_router
-from otp_service import send_otp, verify_otp
 from data_api import router as data_router
 from data_api import db as data_db, SECRET_KEY as DATA_SECRET_KEY, ALGORITHM as DATA_ALGORITHM
 from subscription_guard import has_write_access
+from security_config import client_ip as real_client_ip, ALLOWED_ORIGINS, ALLOWED_ORIGIN_REGEX, ensure_lock_indexes
 from jose import jwt as jose_jwt, JWTError
 from bson import ObjectId
 from admin_api import router as admin_router
@@ -27,7 +27,6 @@ from payment_api import router as payment_router
 from stripe_api import router as stripe_router
 from ambassador_api import router as ambassador_router
 from admin_ambassador_panel import router as amb_panel_router
-from firebase_auth_page import router as firebase_page_router
 from account_api import router as account_router
 from legal_pages import router as legal_router
 # NEW June 2026 — Email + PIN authentication (replaces Firebase Phone Auth).
@@ -49,16 +48,12 @@ app = FastAPI()
 # ==========================================
 # Security: Rate Limiting & Brute Force Protection
 # ==========================================
-login_attempts = defaultdict(list)  # IP -> list of timestamps
-MAX_LOGIN_ATTEMPTS = 5
-LOGIN_WINDOW = 300  # 5 minutes
-
 request_counts = defaultdict(list)  # IP -> list of timestamps
 MAX_REQUESTS_PER_MINUTE = 120
 
 class SecurityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        client_ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "unknown")
+        client_ip = real_client_ip(request)
         path = request.url.path
         now = time.time()
 
@@ -71,15 +66,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             )
         request_counts[client_ip].append(now)
 
-        # Brute force protection on login endpoints
-        if path in ["/api/auth/phone-login", "/api/auth/credential-login", "/api/otp/verify"]:
-            login_attempts[client_ip] = [t for t in login_attempts[client_ip] if now - t < LOGIN_WINDOW]
-            if len(login_attempts[client_ip]) >= MAX_LOGIN_ATTEMPTS:
-                return JSONResponse(
-                    status_code=429,
-                    content={"detail": f"Trop de tentatives. Réessayez dans {int(LOGIN_WINDOW - (now - login_attempts[client_ip][0]))} secondes."}
-                )
-            login_attempts[client_ip].append(now)
+        # Login brute-force protection lives in security_config (per account + per IP).
 
         response = await call_next(request)
 
@@ -135,14 +122,6 @@ class StatusCheck(BaseModel):
 class StatusCheckCreate(BaseModel):
     client_name: str
 
-# OTP Models
-class OTPSendRequest(BaseModel):
-    phoneNumber: str
-
-class OTPVerifyRequest(BaseModel):
-    phoneNumber: str
-    code: str
-
 # Add your routes to the router instead of directly to app
 @api_router.get("/")
 async def root():
@@ -181,21 +160,6 @@ async def get_status_checks(limit: int = 100, skip: int = 0):
     ).limit(limit).skip(skip).to_list(limit)
     return [StatusCheck(**status_check) for status_check in status_checks]
 
-# ==========================================
-# OTP Routes (Africa's Talking)
-# ==========================================
-@api_router.post("/otp/send")
-async def api_send_otp(request: OTPSendRequest):
-    """Send OTP code via Africa's Talking SMS."""
-    result = await send_otp(request.phoneNumber)
-    return result
-
-@api_router.post("/otp/verify")
-async def api_verify_otp(request: OTPVerifyRequest):
-    """Verify OTP code."""
-    result = await verify_otp(request.phoneNumber, request.code)
-    return result
-
 # Include the router in the main app
 app.include_router(api_router)
 
@@ -211,10 +175,11 @@ app.include_router(stripe_router, prefix="/api", tags=["stripe-payments"])
 
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,  # auth uses Bearer tokens, not cookies
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=ALLOWED_ORIGIN_REGEX,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Admin-Password", "admin-password"],
 )
 
 # Configure logging
@@ -232,9 +197,6 @@ app.include_router(ambassador_router, prefix="/api", tags=["ambassador"])
 
 # Include ambassador admin panel
 app.include_router(amb_panel_router, prefix="/api", tags=["ambassador-panel"])
-
-# Include Firebase auth page
-app.include_router(firebase_page_router, prefix="/api", tags=["firebase-auth"])
 
 # Include account API router (GDPR account deletion)
 app.include_router(account_router, prefix="/api", tags=["account"])
@@ -263,6 +225,7 @@ async def start_daily_backups():
 
 @app.on_event("startup")
 async def ensure_data_indexes():
+    await ensure_lock_indexes()
     # Fast per-merchant queries (sync signatures) + offline idempotency keys
     try:
         for name in ("products", "sales", "expenses", "debts", "purchases"):

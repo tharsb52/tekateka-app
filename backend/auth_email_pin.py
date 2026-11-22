@@ -53,7 +53,7 @@ from typing import Optional
 
 from bson import ObjectId
 from dotenv import load_dotenv
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from motor.motor_asyncio import AsyncIOMotorClient
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr, Field
@@ -88,6 +88,7 @@ router = APIRouter(prefix="/api")
 
 # Import the existing JWT helpers from data_api so tokens issued here are
 # accepted by the rest of the API.
+from security_config import check_not_locked, record_failure, clear_failures  # noqa: E402
 from data_api import create_access_token, get_current_user, serialize_user, utc_now_iso  # noqa: E402
 
 
@@ -244,7 +245,7 @@ async def setup_pin(req: SetupPinRequest, user_id: str = Depends(get_current_use
 
 
 @router.post("/auth/login-pin")
-async def login_pin(req: LoginPinRequest):
+async def login_pin(req: LoginPinRequest, request: Request):
     """
     Login with `identifier` (email / phone / userId) + 4-digit PIN.
 
@@ -256,6 +257,8 @@ async def login_pin(req: LoginPinRequest):
         raise HTTPException(status_code=400, detail="Le PIN doit contenir entre 4 et 6 chiffres.")
 
     identifier = req.identifier.strip().lower()
+    # 5 failures -> blocked 15 min, per account AND per IP address
+    await check_not_locked("pin", identifier, request)
 
     # Try every reasonable lookup path
     user = None
@@ -271,29 +274,11 @@ async def login_pin(req: LoginPinRequest):
     if not user:
         user = await db.users.find_one({"username": identifier})
 
-    if not user or not user.get("pinHash"):
+    if not user or not user.get("pinHash") or not pwd_context.verify(req.pin, user["pinHash"]):
         # Generic error so we don't leak whether the account exists
+        await record_failure("pin", identifier, request)
         raise HTTPException(status_code=401, detail="Identifiant ou PIN incorrect")
-
-    # Brute-force protection: 5 wrong PINs → locked 15 minutes
-    now = datetime.now(timezone.utc)
-    locked_until = user.get("pinLockedUntil")
-    if locked_until:
-        if locked_until.tzinfo is None:
-            locked_until = locked_until.replace(tzinfo=timezone.utc)
-        if locked_until > now:
-            minutes = max(1, int((locked_until - now).total_seconds() // 60) + 1)
-            raise HTTPException(status_code=429, detail=f"Trop d'essais. Réessayez dans {minutes} min ou utilisez votre mot de passe.")
-
-    if not pwd_context.verify(req.pin, user["pinHash"]):
-        fails = int(user.get("pinFailedCount") or 0) + 1
-        update = {"pinFailedCount": fails}
-        if fails >= 5:
-            update = {"pinFailedCount": 0, "pinLockedUntil": now + timedelta(minutes=15)}
-        await db.users.update_one({"_id": user["_id"]}, {"$set": update})
-        raise HTTPException(status_code=401, detail="Identifiant ou PIN incorrect")
-
-    await db.users.update_one({"_id": user["_id"]}, {"$set": {"pinFailedCount": 0}, "$unset": {"pinLockedUntil": ""}})
+    await clear_failures("pin", identifier, request)
 
     token = create_access_token(str(user["_id"]), user.get("phoneNumber", ""))
     return {"success": True, "token": token, "user": serialize_user(user)}

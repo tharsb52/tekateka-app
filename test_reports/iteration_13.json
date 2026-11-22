@@ -1,0 +1,50 @@
+{
+  "summary": "Security hardening retest (iteration 13). Backend: 29/29 pytest pass (tests/test_security_hardening.py). Verified: JWT_SECRET is required at startup (RuntimeError if it is missing or under 32 chars); tokens signed with the OLD default secret get 401 on /auth/profile, /data/*, stripe checkout and ambassador endpoints; email-signup -> setup-pin -> login-pin and credential-login work; 5 failures lock for 15 min per account AND per IP with the French message (login-pin, credential-login, ambassador/login, admin/*); a successful login resets the counter; X-Forwarded-For spoofing is ignored (checked through the real public ingress: real client IP 34.170.12.145 was used, client-prepended XFF had no effect); /admin/change-password returns 404; webhook without or with a forged signature -> 400 and nothing is activated; generating an activation code and activating it -> subscription active; Stripe test checkout returns a checkout.stripe.com URL; /otp/* and /firebase-auth* -> 404; CORS rejects evil.com and lookalike domains and allows the preview origin. Frontend (375x667): a stale old-secret token is cleared and the login screen shows with no crash; email+password login -> /dashboard; PIN tab login -> /dashboard; the 6th wrong PIN shows the readable red message 'Trop de tentatives échouées. Accès bloqué pendant 15 min...'. Admin HTML: login works, no 'Changer le mot de passe' button, export downloads .json.gz, backups list loads. Ambassador panel login works. No deprecated Expo packages found (no expo-av, expo-barcode-scanner or firebase in package.json). Found issues are outside the audit scope (unauthenticated /api/reports/*, $undefined commission column) plus design notes.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "GET /api/reports/analytics, POST /api/reports/send-report, GET /api/reports/test-email", "issue": "No authentication at all. analytics exposes admin-level business stats (it currently returns 500, see minor). send-report lets anyone trigger the weekly report email. test-email lets anyone trigger an SMTP login. These were missed by the security audit. Protect them with require_admin or remove them.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "GET /api/reports/analytics", "issue": "500 AttributeError at reporting.py:98 get_country_from_phone: phone.replace on None. Email-signup users have phoneNumber=None."},
+      {"endpoint": "/api/admin/* lockout design", "issue": "The account key is the constant 'admin:acct:admin'. Anyone on the internet can send 5 wrong passwords and lock the real admin out of the backoffice and ambassador panel for 15 min, and repeat this forever. Consider keeping only per-IP lockout for admin, or not letting failures from other IPs block an IP that has succeeded before."},
+      {"endpoint": "security_config.clear_failures", "issue": "A successful login also deletes the IP counter. An attacker who owns one valid account can log in with it after every 4 failures to reset the per-IP limit, then keep guessing across many accounts (the per-account limit of 5 per 15 min still applies)."},
+      {"endpoint": "POST /api/subscription/activate-code", "issue": "No auth: userId comes from the request body (ambassador_api.py:641). Anyone holding a valid code can apply it to any userId, and there is no rate limit on guessing codes. This existed before this session."},
+      {"endpoint": "stripe_api.py:87-93", "issue": "Stale startup warning says 'Webhook signature verification is DISABLED' when the secret is empty. The webhook now refuses all events (503) in that case. Update the message."},
+      {"endpoint": "config", "issue": "ADMIN_PASSWORD is read from backend/.env (plaintext file), not from the process environment / Secrets like JWT_SECRET. If 'Secrets only' is required, move it to Secrets."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Ambassador panel (/api/admin/ambassador-panel) Tarification table", "issue": "COMMISSION column shows '$undefined' for every plan. /api/admin/pricing-info has no 'commission' field per plan (admin_ambassador_panel.py:209). Existed before this session.", "testID": "n/a (HTML)", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "LoginScreen (web dev)", "issues": ["Expected login failures are logged with console.error ('PIN login error: ...'), which shows a red LogBox toast over the login button in dev/web preview. Use console.warn or don't log expected 401/429."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_security_hardening.py", "/app/test_reports/pytest/pytest_iter13.xml"],
+  "action_items": [
+    "Protect or remove /api/reports/analytics, /api/reports/send-report and /api/reports/test-email (require_admin).",
+    "Fix reporting.py:98: handle phoneNumber None (email-only users) so analytics does not return 500.",
+    "Reconsider the admin lockout design so an attacker cannot lock out the real admin indefinitely (e.g. per-IP only for scope 'admin').",
+    "Optional: on success, clear only the account key (not the IP key) to stop resetting the IP counter with an attacker-owned account.",
+    "Optional: require a user JWT on /api/subscription/activate-code instead of trusting userId from the body.",
+    "Fix '$undefined' commission column in the ambassador panel pricing table.",
+    "Update the stale Stripe webhook warning text. Remove leftover EXPO_PUBLIC_OTP_PROVIDER / AT_USERNAME env keys if unused (do not touch protected keys).",
+    "Update /app/memory/test_credentials.md: the 'OTP Login (Primary User)' section is obsolete (OTP and phone-login are removed)."
+  ],
+  "critical_code_review_comments": [
+    "security_config.py: the lockout logic is correct (aggregation-pipeline upsert, 15-min window, TTL cleanup). client_ip correctly takes chain[-3] with 2 trusted hops. Verified live through the ingress.",
+    "auth_email_pin.py / stripe_api.py still have MONGO_URL/DB_NAME default fallbacks (os.getenv with defaults). Guidelines say fail fast without defaults.",
+    "/api/auth/phone-login returns 410 but keeps unreachable dead code after the raise (data_api.py:174+). Remove it.",
+    "ambassador_api.py is 1346 lines and data_api.py 866 lines: over the 700-line guideline."
+  ],
+  "updated_files": ["/app/backend/tests/test_security_hardening.py (new)"],
+  "success_rate": {"backend": "100% (29/29 requested security tests); out-of-scope issue found in /api/reports/*", "frontend": "100% of requested flows"},
+  "seed_data_creation": "None kept. TEST_ merchants/ambassadors and their activation_codes, ambassador_sales and commissions were deleted by id. login_lockouts cleared at the end (0 docs).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend && export MONGO_URL/DB_NAME from .env && pytest tests/test_security_hardening.py. Tests call localhost:8001 with 'X-Forwarded-For: <fake>, 1.1.1.1, 2.2.2.2' to simulate IPs, and the fixture clears login_lockouts before and after. Through the public URL, the real client IP of this container is 34.170.12.145 (the browser shares it), so clear login_lockouts between UI lockout tests. Webhook secret IS configured in preview (returns 400, not 503).",
+  "rca_of_issue": "/api/reports/analytics 500: get_country_from_phone(phone) calls phone.replace without a None check. Users created by /auth/email-signup store phoneNumber=None."
+}

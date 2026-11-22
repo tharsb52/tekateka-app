@@ -196,8 +196,8 @@ async function loadDashboard(){
     <div class="stats-grid">
       <div class="stat-card"><div class="value">${ambassadors.length}</div><div class="label">Ambassadeurs</div></div>
       <div class="stat-card"><div class="value">${totalSales}</div><div class="label">Ventes totales</div></div>
-      <div class="stat-card"><div class="value">$${totalRevenue}</div><div class="label">Revenus</div></div>
-      <div class="stat-card"><div class="value">$${totalCommissions}</div><div class="label">Commissions versées</div></div>
+      <div class="stat-card"><div class="value">${totalRevenue} €</div><div class="label">Revenus</div></div>
+      <div class="stat-card"><div class="value">${totalCommissions} €</div><div class="label">Commissions versées</div></div>
     </div>
     <div class="card">
       <h2>Tarification actuelle</h2>
@@ -206,7 +206,7 @@ async function loadDashboard(){
         <thead><tr><th>Plan</th><th>Prix App</th><th>Prix Ambassadeur</th><th>Commission</th></tr></thead>
         <tbody>
           ${Object.entries(pricingInfo.pricing?.[pricingInfo.currentTier]||{}).map(([k,v])=>`
-            <tr><td style="text-transform:capitalize">${k}</td><td>$${v.appPrice}</td><td>$${v.ambassadorPrice}</td><td style="color:#34d399">$${v.commission}</td></tr>
+            <tr><td style="text-transform:capitalize">${k}</td><td>${v.appPrice} €</td><td>${v.ambassadorPrice} €</td><td style="color:#34d399">${v.commission ?? (v.appPrice - v.ambassadorPrice)} €</td></tr>
           `).join('')}
         </tbody>
       </table>
@@ -439,8 +439,8 @@ async function loadSales(){
         <td style="font-weight:600">${s.ambassadorName||'-'}</td>
         <td>${s.clientName||s.clientPhone||'-'}</td>
         <td><span class="badge active">${s.plan}</span></td>
-        <td>$${s.price||0}</td>
-        <td style="color:#34d399;font-weight:700">$${s.commission||0}</td>
+        <td>${s.price||0} €</td>
+        <td style="color:#34d399;font-weight:700">${s.commission||0} €</td>
         <td style="font-family:monospace;font-size:12px;color:#60a5fa">${s.activationCode||'-'}</td>
       </tr>
     `).join('')}</tbody></table>`}

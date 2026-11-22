@@ -32,7 +32,7 @@ SANDBOX_MODE = not FLW_SECRET_KEY or FLW_SECRET_KEY.startswith("FLWSECK_TEST")
 
 # JWT - reuse from data_api
 import jwt
-JWT_SECRET = os.getenv("JWT_SECRET", "tekateka-secret-key-2024")
+from security_config import JWT_SECRET
 
 router = APIRouter()
 

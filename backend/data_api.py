@@ -34,8 +34,7 @@ client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
 # Auth config
-SECRET_KEY = os.getenv("JWT_SECRET", "tekateka-secret-key-2025-change-in-production")
-ALGORITHM = "HS256"
+from security_config import JWT_SECRET as SECRET_KEY, JWT_ALGORITHM as ALGORITHM, check_not_locked, record_failure, clear_failures
 ACCESS_TOKEN_EXPIRE_DAYS = 365  # 1 year — keeps users signed in long-term so we don't burn Firebase SMS quota on every reconnect. Security is enforced by the local PIN + server-side token blacklist on logout.
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -248,24 +247,21 @@ async def setup_credentials(req: SetupCredentialsRequest, user_id: str = Depends
     return {"success": True, "user": serialize_user(user)}
 
 @router.post("/auth/credential-login")
-async def credential_login(req: CredentialLoginRequest):
-    """Login with email/username + password."""
+async def credential_login(req: CredentialLoginRequest, request: Request):
+    """Login with email/username + password (5 failures -> 15 min lock per account and per IP)."""
     identifier = req.identifier.lower().strip()
-    
+    await check_not_locked("password", identifier, request)
+
     # Try email first, then username
     user = await db.users.find_one({"email": identifier})
     if not user:
         user = await db.users.find_one({"username": identifier})
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Identifiant non trouvé")
-    
-    if not user.get("passwordHash"):
-        raise HTTPException(status_code=401, detail="Aucun mot de passe configuré pour ce compte")
-    
-    if not pwd_context.verify(req.password, user["passwordHash"]):
-        raise HTTPException(status_code=401, detail="Mot de passe incorrect")
-    
+
+    if not user or not user.get("passwordHash") or not pwd_context.verify(req.password, user["passwordHash"]):
+        await record_failure("password", identifier, request)
+        raise HTTPException(status_code=401, detail="Identifiant ou mot de passe incorrect")
+    await clear_failures("password", identifier, request)
+
     token = create_access_token(str(user["_id"]), user.get("phoneNumber", ""))
     
     return {

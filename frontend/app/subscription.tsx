@@ -20,6 +20,7 @@ import { processPayment, getPaymentProviderInfo } from '../services/paymentServi
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AppHeader from '../components/AppHeader';
 import { buySubscription } from '../services/stripeCheckout';
+import { getToken } from '../services/apiService';
 import { formatLocal } from '../utils/dateUtils';
 
 const BG = '#fef3e7';
@@ -152,8 +153,8 @@ export default function SubscriptionScreen() {
       const backendUrl = API_BASE_URL;
       const res = await fetch(`${backendUrl}/api/subscription/activate-code`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user?.id, code: activationCode.trim() }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await getToken()}` },
+        body: JSON.stringify({ code: activationCode.trim() }),
       });
       const responseText = await res.text();
       let data;
@@ -395,6 +396,7 @@ export default function SubscriptionScreen() {
 
         {/* Activation code shortcut */}
         <TouchableOpacity
+          testID="activation-code-open-btn"
           style={styles.codeButton}
           onPress={openActivationCodeModal}
           activeOpacity={0.7}
@@ -449,6 +451,7 @@ export default function SubscriptionScreen() {
               </Text>
               <View style={{ flexDirection: 'row', gap: 10 }}>
                 <TextInput
+                  testID="activation-code-input"
                   style={{ flex: 1, backgroundColor: '#f1f5f9', borderRadius: 12, paddingHorizontal: 16, height: 50, fontSize: 16, fontWeight: '600', letterSpacing: 1, borderWidth: 1, borderColor: '#e2e8f0' }}
                   placeholder="TK-XXXX-XXXX"
                   placeholderTextColor="#94a3b8"
@@ -457,6 +460,7 @@ export default function SubscriptionScreen() {
                   autoCapitalize="characters"
                 />
                 <TouchableOpacity
+                  testID="activation-code-submit"
                   style={{ backgroundColor: '#059669', borderRadius: 12, width: 50, height: 50, alignItems: 'center', justifyContent: 'center' }}
                   onPress={handleActivateCode}
                   disabled={codeLoading}

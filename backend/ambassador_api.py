@@ -10,7 +10,8 @@ from datetime import datetime, timedelta
 from typing import Optional, List
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
+from security_config import JWT_SECRET, require_admin, check_not_locked, record_failure, clear_failures
 from pydantic import BaseModel, Field
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
@@ -30,7 +31,7 @@ client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
 # Auth config
-SECRET_KEY = os.getenv("JWT_SECRET", "tekateka-secret-key-2025-change-in-production")
+SECRET_KEY = JWT_SECRET
 ALGORITHM = "HS256"
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -219,7 +220,7 @@ async def get_ambassador_from_token(authorization: str = None):
 # Ambassador Auth
 # ==========================================
 @router.post("/ambassador/login")
-async def ambassador_login(req: AmbassadorLogin):
+async def ambassador_login(req: AmbassadorLogin, request: Request):
     # Normalise to lowercase to make the login case-insensitive — historically
     # we had duplicate accounts because `Jane@x.com` and `jane@x.com` were
     # stored as two different ambassadors. We match on a case-insensitive regex
@@ -227,16 +228,14 @@ async def ambassador_login(req: AmbassadorLogin):
     email_input = (req.email or "").strip()
     if not email_input:
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
-    logger.info(f"Ambassador login attempt: email='{email_input}'")
+    await check_not_locked("ambassador", email_input, request)
     import re as _re
     safe_email = _re.escape(email_input)
     ambassador = await db.ambassadors.find_one({"email": {"$regex": f"^{safe_email}$", "$options": "i"}})
-    if not ambassador:
-        logger.warning(f"Ambassador not found for email: '{email_input}'")
+    if not ambassador or not pwd_context.verify(req.password, ambassador.get("passwordHash") or ""):
+        await record_failure("ambassador", email_input, request)
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
-    
-    if not pwd_context.verify(req.password, ambassador["passwordHash"]):
-        raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
+    await clear_failures("ambassador", email_input, request)
     
     ambassador = await enforce_purchase_rule(ambassador)
     if ambassador.get("status") == "pending":
@@ -639,13 +638,20 @@ async def ambassador_commissions(body: dict):
 # Client Self-Activate with Code
 # ==========================================
 @router.post("/subscription/activate-code")
-async def client_activate_code(body: dict):
-    """Allow a user to self-activate using a code bought from an ambassador"""
-    user_id = body.get("userId", "")
+async def client_activate_code(body: dict, request: Request):
+    """Allow a logged-in merchant to self-activate using a code bought from an ambassador.
+    The account comes from the login token, never from the request body."""
+    auth = request.headers.get("authorization", "")
+    try:
+        user_id = jwt.decode(auth[7:], SECRET_KEY, algorithms=[ALGORITHM]).get("sub") if auth.startswith("Bearer ") else None
+    except JWTError:
+        user_id = None
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Connectez-vous pour activer un code")
     # Normalise input: trim spaces, uppercase, remove any non-alphanumeric/dash
     # so "tk qtfp 6t7x", "tk-qtfp-6t7x" and "TKQTFP6T7X" all resolve correctly.
     raw_code = (body.get("code", "") or "").strip().upper()
-    logger.info(f"[ACTIVATE-CODE] raw='{raw_code}' userId='{user_id}'")
+    logger.info(f"[ACTIVATE-CODE] attempt userId='{user_id}'")
     import re as _re
     cleaned = _re.sub(r"[^A-Z0-9-]", "", raw_code)
     # If the user typed without dashes, restore them at expected positions
@@ -655,8 +661,8 @@ async def client_activate_code(body: dict):
         cleaned = f"{no_dash[:2]}-{no_dash[2:6]}-{no_dash[6:]}"
     code_str = cleaned
 
-    if not user_id or not code_str:
-        raise HTTPException(status_code=400, detail="ID utilisateur et code requis")
+    if not code_str:
+        raise HTTPException(status_code=400, detail="Code requis")
 
     # Sanity check on length before hitting DB — helps catch truncated codes
     # (typical bug: user reads code from screen and misses the last character).
@@ -792,11 +798,8 @@ async def client_activate_code(body: dict):
 # Admin: Create Ambassador
 # ==========================================
 @router.post("/admin/ambassadors/create")
-async def admin_create_ambassador(body: dict):
-    password = body.get("adminPassword", "")
-    admin_pass = os.getenv("ADMIN_PASSWORD", "TekaTeka2025")
-    if password != admin_pass:
-        raise HTTPException(status_code=401, detail="Mot de passe admin incorrect")
+async def admin_create_ambassador(body: dict, request: Request):
+    await require_admin(request, body.get("adminPassword", ""))
     
     name = body.get("name", "")
     country = body.get("country", "")
@@ -842,11 +845,8 @@ async def admin_create_ambassador(body: dict):
 # Admin: List Ambassadors
 # ==========================================
 @router.post("/admin/ambassadors/list")
-async def admin_list_ambassadors(body: dict):
-    password = body.get("adminPassword", "")
-    admin_pass = os.getenv("ADMIN_PASSWORD", "TekaTeka2025")
-    if password != admin_pass:
-        raise HTTPException(status_code=401, detail="Mot de passe admin incorrect")
+async def admin_list_ambassadors(body: dict, request: Request):
+    await require_admin(request, body.get("adminPassword", ""))
     
     ambassadors = await db.ambassadors.find().sort("createdAt", -1).to_list(500)
     for amb in ambassadors:
@@ -883,11 +883,8 @@ async def admin_list_ambassadors(body: dict):
 # Admin: Block/Unblock Ambassador
 # ==========================================
 @router.post("/admin/ambassadors/toggle-status")
-async def admin_toggle_ambassador(body: dict):
-    password = body.get("adminPassword", "")
-    admin_pass = os.getenv("ADMIN_PASSWORD", "TekaTeka2025")
-    if password != admin_pass:
-        raise HTTPException(status_code=401, detail="Mot de passe admin incorrect")
+async def admin_toggle_ambassador(body: dict, request: Request):
+    await require_admin(request, body.get("adminPassword", ""))
     
     ambassador_id = body.get("ambassadorId", "")
     try:
@@ -912,11 +909,8 @@ async def admin_toggle_ambassador(body: dict):
 # Admin: Delete Ambassador (and their unused codes)
 # ==========================================
 @router.post("/admin/ambassadors/delete")
-async def admin_delete_ambassador(body: dict):
-    password = body.get("adminPassword", "")
-    admin_pass = os.getenv("ADMIN_PASSWORD", "TekaTeka2025")
-    if password != admin_pass:
-        raise HTTPException(status_code=401, detail="Mot de passe admin incorrect")
+async def admin_delete_ambassador(body: dict, request: Request):
+    await require_admin(request, body.get("adminPassword", ""))
 
     ambassador_id = body.get("ambassadorId", "")
     try:
@@ -938,11 +932,8 @@ async def admin_delete_ambassador(body: dict):
 # Admin: Reset Ambassador Password
 # ==========================================
 @router.post("/admin/ambassadors/reset-password")
-async def admin_reset_ambassador_password(body: dict):
-    password = body.get("adminPassword", "")
-    admin_pass = os.getenv("ADMIN_PASSWORD", "TekaTeka2025")
-    if password != admin_pass:
-        raise HTTPException(status_code=401, detail="Mot de passe admin incorrect")
+async def admin_reset_ambassador_password(body: dict, request: Request):
+    await require_admin(request, body.get("adminPassword", ""))
 
     ambassador_id = body.get("ambassadorId", "")
     new_password = (body.get("newPassword", "") or "").strip()
@@ -1006,11 +997,8 @@ async def ambassador_change_password(body: dict):
 # Admin: Generate Codes
 # ==========================================
 @router.post("/admin/codes/generate")
-async def admin_generate_codes(body: dict):
-    password = body.get("adminPassword", "")
-    admin_pass = os.getenv("ADMIN_PASSWORD", "TekaTeka2025")
-    if password != admin_pass:
-        raise HTTPException(status_code=401, detail="Mot de passe admin incorrect")
+async def admin_generate_codes(body: dict, request: Request):
+    await require_admin(request, body.get("adminPassword", ""))
     
     count = body.get("count", 10)
     plan = body.get("plan", "monthly")
@@ -1068,11 +1056,8 @@ async def admin_generate_codes(body: dict):
 # Admin: List All Activation Codes
 # ==========================================
 @router.post("/admin/codes/list")
-async def admin_list_all_codes(body: dict):
-    password = body.get("adminPassword", "")
-    admin_pass = os.getenv("ADMIN_PASSWORD", "TekaTeka2025")
-    if password != admin_pass:
-        raise HTTPException(status_code=401, detail="Mot de passe admin incorrect")
+async def admin_list_all_codes(body: dict, request: Request):
+    await require_admin(request, body.get("adminPassword", ""))
     
     # Optional filters
     ambassador_id = body.get("ambassadorId")
@@ -1120,11 +1105,8 @@ async def admin_list_all_codes(body: dict):
 # Admin: All Sales
 # ==========================================
 @router.post("/admin/ambassador-sales")
-async def admin_all_sales(body: dict):
-    password = body.get("adminPassword", "")
-    admin_pass = os.getenv("ADMIN_PASSWORD", "TekaTeka2025")
-    if password != admin_pass:
-        raise HTTPException(status_code=401, detail="Mot de passe admin incorrect")
+async def admin_all_sales(body: dict, request: Request):
+    await require_admin(request, body.get("adminPassword", ""))
     
     sales = await db.ambassador_sales.find().sort("createdAt", -1).to_list(1000)
     return [serialize_doc(s) for s in sales]
@@ -1133,11 +1115,8 @@ async def admin_all_sales(body: dict):
 # Admin: Pricing Info
 # ==========================================
 @router.post("/admin/pricing-info")
-async def admin_pricing_info(body: dict):
-    password = body.get("adminPassword", "")
-    admin_pass = os.getenv("ADMIN_PASSWORD", "TekaTeka2025")
-    if password != admin_pass:
-        raise HTTPException(status_code=401, detail="Mot de passe admin incorrect")
+async def admin_pricing_info(body: dict, request: Request):
+    await require_admin(request, body.get("adminPassword", ""))
     
     tier = await get_current_pricing_tier()
     active_subs = await db.users.count_documents({"subscription.status": "active"})
@@ -1156,7 +1135,7 @@ async def admin_pricing_info(body: dict):
 # Admin: Backfill commissions from legacy ambassador_sales
 # ==========================================
 @router.post("/admin/commissions/backfill")
-async def backfill_commissions(body: dict):
+async def backfill_commissions(body: dict, request: Request):
     """One-shot maintenance endpoint.
 
     Purpose: many activations happened BEFORE the dedicated `commissions`
@@ -1174,10 +1153,7 @@ async def backfill_commissions(body: dict):
 
     Auth: requires the admin password (same as other /api/admin/* endpoints).
     """
-    password = body.get("password", "")
-    admin_pass = os.getenv("ADMIN_PASSWORD", "TekaTeka2025")
-    if password != admin_pass:
-        raise HTTPException(status_code=401, detail="Mot de passe administrateur incorrect")
+    await require_admin(request, body.get("password", ""))
 
     fixed = 0
     created = 0
@@ -1302,9 +1278,8 @@ async def ambassador_register(body: dict, background_tasks: BackgroundTasks):
 
 
 @router.post("/admin/ambassadors/approve")
-async def admin_approve_ambassador(body: dict, background_tasks: BackgroundTasks):
-    if body.get("adminPassword", "") != os.getenv("ADMIN_PASSWORD", "TekaTeka2025"):
-        raise HTTPException(status_code=401, detail="Mot de passe admin incorrect")
+async def admin_approve_ambassador(body: dict, request: Request, background_tasks: BackgroundTasks):
+    await require_admin(request, body.get("adminPassword", ""))
     try:
         amb = await db.ambassadors.find_one({"_id": ObjectId(body.get("ambassadorId", ""))})
     except Exception:

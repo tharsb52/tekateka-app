@@ -84,11 +84,10 @@ STRIPE_LIVE_MODE = STRIPE_SECRET_KEY.startswith("sk_live_")
 if STRIPE_ENABLED:
     mode = "LIVE (production)" if STRIPE_LIVE_MODE else "TEST (sandbox)"
     logger.info(f"Stripe enabled in {mode} mode")
-    if STRIPE_LIVE_MODE and not STRIPE_WEBHOOK_SECRET:
+    if not STRIPE_WEBHOOK_SECRET:
         logger.warning(
-            "STRIPE_LIVE_MODE is on but STRIPE_WEBHOOK_SECRET is empty. "
-            "Webhook signature verification is DISABLED — this is unsafe in "
-            "production. Set STRIPE_WEBHOOK_SECRET from the Stripe Dashboard "
+            "STRIPE_WEBHOOK_SECRET is empty: every Stripe webhook will be REFUSED "
+            "until it is set. Set STRIPE_WEBHOOK_SECRET from the Stripe Dashboard "
             "(Developers -> Webhooks -> your endpoint -> Signing secret)."
         )
 else:
@@ -96,7 +95,7 @@ else:
 
 # JWT auth (reuse data_api logic)
 import jwt
-JWT_SECRET = os.getenv("JWT_SECRET", "tekateka-secret-key-2025-change-in-production")
+from security_config import JWT_SECRET
 
 router = APIRouter()
 
@@ -608,38 +607,22 @@ async def stripe_webhook(request: Request, stripe_signature: Optional[str] = Hea
     """Receives Stripe webhook events. Signature-verified in production."""
     raw_body = await request.body()
 
-    if STRIPE_WEBHOOK_SECRET:
-        # Production path: verify signature (REQUIRED in live mode)
-        try:
-            event = stripe.Webhook.construct_event(
-                payload=raw_body,
-                sig_header=stripe_signature or "",
-                secret=STRIPE_WEBHOOK_SECRET,
-            )
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid payload")
-        except stripe.error.SignatureVerificationError:
-            raise HTTPException(status_code=400, detail="Invalid signature")
-    else:
-        # Dev fallback: accept unsigned payloads ONLY in test mode. In live
-        # mode we refuse, because anyone could fake a "payment completed"
-        # event and activate subscriptions for free.
-        if STRIPE_LIVE_MODE:
-            logger.error(
-                "Webhook received in LIVE mode but STRIPE_WEBHOOK_SECRET is empty. "
-                "Refusing to process. Configure the signing secret from the Stripe "
-                "Dashboard (Developers -> Webhooks)."
-            )
-            raise HTTPException(
-                status_code=503,
-                detail="Webhook secret not configured (live mode requires signature verification)",
-            )
-        logger.warning("STRIPE_WEBHOOK_SECRET is empty - skipping signature check (DEV/TEST ONLY)")
-        try:
-            import json
-            event = json.loads(raw_body)
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid payload")
+    # Every event MUST carry a valid Stripe signature: without it we refuse,
+    # otherwise anyone could fake "payment completed" and get free premium.
+    if not STRIPE_WEBHOOK_SECRET:
+        logger.error("Stripe webhook refused: STRIPE_WEBHOOK_SECRET is not configured")
+        raise HTTPException(status_code=503, detail="Webhook secret not configured")
+    try:
+        event = stripe.Webhook.construct_event(
+            payload=raw_body,
+            sig_header=stripe_signature or "",
+            secret=STRIPE_WEBHOOK_SECRET,
+        )
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid payload")
+    except stripe.error.SignatureVerificationError:
+        logger.warning("Stripe webhook refused: invalid signature")
+        raise HTTPException(status_code=400, detail="Invalid signature")
 
     event_type = event.get("type") if isinstance(event, dict) else event["type"]
     data_object = (event.get("data") or {}).get("object") if isinstance(event, dict) else event["data"]["object"]

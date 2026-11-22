@@ -3,6 +3,7 @@
 # Runs every Friday at 20:00 (8 PM)
 
 # Call the backend endpoint to trigger the weekly report
-curl -X POST http://localhost:8001/api/reports/send-report
+# Needs ADMIN_PASSWORD in the environment (same value as the app Secret)
+curl -X POST -H "X-Admin-Password: ${ADMIN_PASSWORD}" http://localhost:8001/api/reports/send-report
 
 echo "Weekly report triggered at $(date)"

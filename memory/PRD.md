@@ -77,3 +77,9 @@ The user builds locally with `eas build` (package `com.tekateka.app`). Download 
 - `restore_backup.py` : restauration (--list, fichier local, --remote, --db pour tester). Vérifié.
 - Admin : bouton « Exporter toutes les données » (`POST /api/admin/export`, sans hachés PIN/mot de passe) + liste des sauvegardes (`POST /api/admin/backups`, runNow).
 - Audit sécurité : CRITIQUE JWT_SECRET par défaut (non défini dans .env) ; HAUTE webhook Stripe non signé. À corriger (en attente de validation utilisateur).
+
+## Juin 2026 – Durcissement sécurité (iterations 13-14 OK)
+- `security_config.py` : JWT_SECRET + ADMIN_PASSWORD obligatoires (Secrets, aucun défaut, démarrage refusé sinon), CORS restreint, verrouillage 5 échecs/15 min par compte ET par IP (collection `login_lockouts`) sur admin (tous les endpoints), ambassadeur, PIN, mot de passe.
+- Webhook Stripe : signature obligatoire (`/api/payments/stripe/webhook`).
+- Supprimés : firebase_auth_page.py, firebase_otp.py, otp_service.py, routes /otp/*, change-password admin.
+- /api/reports/* protégés (header X-Admin-Password). activate-code utilise le token, plus le userId du body.
